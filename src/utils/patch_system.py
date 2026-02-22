@@ -2,9 +2,9 @@
 
 import json
 import shutil
-import os
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List
+from packaging import version
 from .logger import logger
 from .config import config
 
@@ -46,7 +46,7 @@ class PatchSystem:
             
         data = {
             'patches': applied,
-            'last_updated': config.version
+            'last_updated': self.current_version
         }
         
         try:
@@ -59,6 +59,7 @@ class PatchSystem:
         """적용 가능한 패치 찾기"""
         available_patches = []
         applied = self.get_applied_patches()
+        current_ver = version.parse(self.current_version)
         
         # patches/ 폴더 스캔
         if not self.patches_dir.exists():
@@ -80,16 +81,24 @@ class PatchSystem:
                     # 이미 적용된 패치는 제외
                     if patch_id in applied:
                         continue
-                    
+
+                    patch_version_text = str(patch_info.get('version', '0.0.0'))
+                    patch_version = version.parse(patch_version_text)
+
+                    # 현재 버전 이하 패치는 건너뜀
+                    if patch_version <= current_ver:
+                        continue
+
                     patch_info['id'] = patch_id
                     patch_info['path'] = patch_dir
+                    patch_info['_parsed_version'] = patch_version
                     available_patches.append(patch_info)
                     
             except Exception as e:
                 logger.error(f"패치 정보 읽기 실패 ({patch_dir}): {e}")
         
         # 버전 순서로 정렬
-        available_patches.sort(key=lambda x: x.get('version', '0.0.0'))
+        available_patches.sort(key=lambda x: x.get('_parsed_version', version.parse('0.0.0')))
         
         return available_patches
     
@@ -155,8 +164,18 @@ class PatchSystem:
         
         applied_count = 0
         for patch in available_patches:
+            min_required = patch.get('min_version')
+            current_ver = version.parse(self.current_version)
+            if min_required and current_ver < version.parse(str(min_required)):
+                logger.warning(
+                    f"패치 {patch.get('id')} 스킵: 최소 버전 {min_required} 필요 (현재 {self.current_version})"
+                )
+                continue
+
             if self.apply_patch(patch):
                 applied_count += 1
+                # 최신 적용 버전으로 내부 상태 갱신 (런타임 기준)
+                self.current_version = str(patch.get('version', self.current_version))
         
         if applied_count > 0:
             logger.info(f"총 {applied_count}개의 패치가 적용되었습니다.")

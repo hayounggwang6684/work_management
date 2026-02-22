@@ -128,7 +128,7 @@ python src/main.py
 
 ### 사용자 설치
 
-1. `WorkManagement_Setup_v1.0.0.exe` 다운로드
+1. `WorkManagement_Setup_v1.1.0.exe` 다운로드
 2. 설치 프로그램 실행
 3. 설치 완료 후 바탕화면 아이콘 클릭
 
@@ -161,14 +161,14 @@ pyinstaller --name work_management \
 
 # 3. Compile 버튼 클릭
 
-# 결과: dist/installer/WorkManagement_Setup_v1.0.0.exe
+# 결과: dist/installer/WorkManagement_Setup_v1.1.0.exe
 ```
 
 ### 3. 배포
 
 ```
 배포 파일:
-- WorkManagement_Setup_v1.0.0.exe (설치 프로그램)
+- WorkManagement_Setup_v1.1.0.exe (설치 프로그램)
 - README.pdf (사용자 매뉴얼)
 ```
 
@@ -191,12 +191,14 @@ pyinstaller --name work_management \
 
 2. patch.json 예시:
 {
-  "version": "1.0.1",
-  "description": "인원 계산 로직 개선",
+  "id": "patch-v1.1.0",
+  "version": "1.1.0",
+  "min_version": "1.0.0",
+  "description": "자동 패치 시스템 개선",
   "files": [
     {
-      "source": "src/business/calculations.py",
-      "target": "src/business/calculations.py"
+      "source": "src/utils/patch_system.py",
+      "target": "src/utils/patch_system.py"
     }
   ]
 }

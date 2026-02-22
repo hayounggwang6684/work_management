@@ -56,7 +56,7 @@ python src/main.py
 // config/settings.json
 {
   "app": {
-    "version": "1.0.0"  ← 이 버전 번호 확인
+    "version": "1.1.0"  ← 이 버전 번호 확인
   }
 }
 ```
@@ -98,15 +98,15 @@ pyinstaller ^
 3. **버전 확인**
    ```ini
    [Setup]
-   AppVersion=1.0.0  ← 확인
-   OutputBaseFilename=WorkManagement_Setup_v1.0.0  ← 확인
+   AppVersion=1.1.0  ← 확인
+   OutputBaseFilename=WorkManagement_Setup_v1.1.0  ← 확인
    ```
 
 4. **컴파일**
    - Build > Compile (F9)
    - 완료 대기 (약 1-2분)
 
-**결과**: `dist/installer/WorkManagement_Setup_v1.0.0.exe`
+**결과**: `dist/installer/WorkManagement_Setup_v1.1.0.exe`
 
 ---
 
@@ -119,7 +119,7 @@ pyinstaller ^
    \\서버\공유\WorkManagement\Installer\
 
 2. 설치 파일 복사
-   WorkManagement_Setup_v1.0.0.exe
+   WorkManagement_Setup_v1.1.0.exe
    사용자매뉴얼.pdf
    README.pdf
 
@@ -153,7 +153,7 @@ pyinstaller ^
 ===============================================
 
 1. 설치 프로그램 다운로드
-   - WorkManagement_Setup_v1.0.0.exe
+   - WorkManagement_Setup_v1.1.0.exe
 
 2. 설치 프로그램 실행
    - 더블클릭
@@ -185,28 +185,29 @@ pyinstaller ^
 
 ```
 1. 수정된 파일 준비
-   예: src/business/calculations.py
+   예: src/utils/patch_system.py
 
 2. 패치 폴더 생성
-   patches/patch-v1.0.1/
-   ├── src/business/calculations.py
+   patches/patch-v1.1.0/
+   ├── src/utils/patch_system.py
    └── patch.json
 
 3. patch.json 작성
 {
-  "id": "patch-v1.0.1",
-  "version": "1.0.1",
-  "description": "인원 계산 버그 수정",
+  "id": "patch-v1.1.0",
+  "version": "1.1.0",
+  "min_version": "1.0.0",
+  "description": "자동 패치 시스템 개선",
   "files": [
     {
-      "source": "src/business/calculations.py",
-      "target": "src/business/calculations.py"
+      "source": "src/utils/patch_system.py",
+      "target": "src/utils/patch_system.py"
     }
   ]
 }
 
 4. ZIP으로 압축
-   patch-v1.0.1.zip
+   patch-v1.1.0.zip
 
 5. 사용자에게 배포
    - ZIP 파일 전달
