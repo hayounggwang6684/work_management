@@ -1,0 +1,33 @@
+# 금일작업현황 관리 시스템 - Python Dependencies
+
+# Core
+python-dateutil>=2.8.2
+
+# GUI Framework (HTML UI Bridge)
+Eel>=0.16.0
+
+# Database
+# SQLite3 is built-in to Python
+
+# Excel Export
+openpyxl>=3.1.2
+pandas>=2.0.0
+
+# Cloud Sync
+google-api-python-client>=2.100.0
+google-auth-httplib2>=0.1.1
+google-auth-oauthlib>=1.1.0
+dropbox>=11.36.2
+
+# Utilities
+python-dotenv>=1.0.0
+requests>=2.31.0
+packaging>=23.0  # For version comparison
+
+# Build & Package
+pyinstaller>=6.0.0
+
+# Development
+pytest>=7.4.0
+black>=23.0.0
+flake8>=6.1.0

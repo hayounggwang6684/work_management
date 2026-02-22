@@ -1,0 +1,43 @@
+{
+  "app": {
+    "name": "금일작업현황 관리",
+    "version": "1.0.0",
+    "author": "Your Company"
+  },
+  "database": {
+    "filename": "work_management.db",
+    "cloud_sync_enabled": false,
+    "sync_provider": "google_drive",
+    "local_path": "C:\\Users\\사용자명\\Desktop\\db",
+    "cloud_path": "",
+    "backup_path": ""
+  },
+  "ui": {
+    "window_width": 1400,
+    "window_height": 900,
+    "enable_dev_tools": false
+  },
+  "sync": {
+    "auto_sync_interval": 300,
+    "conflict_resolution": "newest_wins"
+  },
+  "update": {
+    "check_on_startup": true,
+    "github_token": "",
+    "current_version": "1.0.0"
+  },
+  "telegram": {
+    "bot_token": "",
+    "enabled": false,
+    "polling_interval": 2
+  },
+  "admin": {
+    "admin_initial_password": "변경하세요"
+  },
+  "logging": {
+    "level": "INFO",
+    "file": "logs/app.log",
+    "max_bytes": 10485760,
+    "backup_count": 5
+  }
+}

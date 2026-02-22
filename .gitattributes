@@ -1,0 +1,17 @@
+# Windows 환경 - CRLF 통일
+* text=auto eol=crlf
+*.py text eol=crlf
+*.js text eol=crlf
+*.html text eol=crlf
+*.json text eol=crlf
+*.bat text eol=crlf
+*.md text eol=crlf
+*.txt text eol=crlf
+*.iss text eol=crlf
+
+# 바이너리
+*.png binary
+*.jpg binary
+*.ico binary
+*.zip binary
+*.exe binary
