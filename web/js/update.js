@@ -60,6 +60,13 @@ async function checkForUpdatesManual() {
 // ============================================================================
 
 function showUpdateNotification() {
+    // XSS 방어용 이스케이프
+    function esc(text) {
+        const div = document.createElement('div');
+        div.textContent = String(text ?? '');
+        return div.innerHTML;
+    }
+
     // 우측 하단에 작은 알림 표시
     const notification = document.createElement('div');
     notification.id = 'updateNotification';
@@ -70,14 +77,14 @@ function showUpdateNotification() {
             <div class="flex-1">
                 <div class="font-bold mb-1">새 버전이 있습니다!</div>
                 <div class="text-sm mb-3">
-                    ${updateInfo.current_version} → ${updateInfo.latest_version}
+                    ${esc(updateInfo.current_version)} → ${esc(updateInfo.latest_version)}
                 </div>
                 <div class="flex gap-2">
-                    <button onclick="showUpdateModal()" 
+                    <button onclick="showUpdateModal()"
                             class="px-3 py-1 bg-white text-blue-600 rounded text-sm font-semibold hover:bg-blue-50">
                         자세히
                     </button>
-                    <button onclick="closeUpdateNotification()" 
+                    <button onclick="closeUpdateNotification()"
                             class="px-3 py-1 bg-blue-700 rounded text-sm hover:bg-blue-800">
                         나중에
                     </button>
@@ -85,7 +92,7 @@ function showUpdateNotification() {
             </div>
         </div>
     `;
-    
+
     document.body.appendChild(notification);
 }
 
@@ -188,25 +195,46 @@ function resetUpdateButtons() {
 // ============================================================================
 
 function formatReleaseNotes(markdown) {
-    // 간단한 Markdown → HTML 변환
+    // XSS 방어: 텍스트 노드를 이용한 이스케이프
+    function escapeText(text) {
+        const div = document.createElement('div');
+        div.textContent = String(text ?? '');
+        return div.innerHTML;
+    }
+
+    // URL 안전성 검증 (javascript: / data: 등 위험 프로토콜 차단)
+    function safeUrl(url) {
+        try {
+            const u = new URL(url, window.location.href);
+            if (u.protocol === 'https:' || u.protocol === 'http:') {
+                return u.href;
+            }
+        } catch (_) {
+            // 상대경로 등 파싱 실패 시 차단
+        }
+        return '#';
+    }
+
+    // 간단한 Markdown → HTML 변환 (링크 먼저 처리하여 URL 검증)
     let html = markdown
         // 헤더
-        .replace(/^### (.+)$/gm, '<h3 class="font-bold text-lg mt-4 mb-2">$1</h3>')
-        .replace(/^## (.+)$/gm, '<h2 class="font-bold text-xl mt-4 mb-2">$1</h2>')
-        .replace(/^# (.+)$/gm, '<h1 class="font-bold text-2xl mt-4 mb-2">$1</h1>')
+        .replace(/^### (.+)$/gm, (_, t) => `<h3 class="font-bold text-lg mt-4 mb-2">${escapeText(t)}</h3>`)
+        .replace(/^## (.+)$/gm, (_, t) => `<h2 class="font-bold text-xl mt-4 mb-2">${escapeText(t)}</h2>`)
+        .replace(/^# (.+)$/gm, (_, t) => `<h1 class="font-bold text-2xl mt-4 mb-2">${escapeText(t)}</h1>`)
         // 리스트
-        .replace(/^\* (.+)$/gm, '<li class="ml-4">• $1</li>')
-        .replace(/^- (.+)$/gm, '<li class="ml-4">• $1</li>')
+        .replace(/^\* (.+)$/gm, (_, t) => `<li class="ml-4">• ${escapeText(t)}</li>`)
+        .replace(/^- (.+)$/gm, (_, t) => `<li class="ml-4">• ${escapeText(t)}</li>`)
         // 강조
-        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-        .replace(/\*(.+?)\*/g, '<em>$1</em>')
+        .replace(/\*\*(.+?)\*\*/g, (_, t) => `<strong>${escapeText(t)}</strong>`)
+        .replace(/\*(.+?)\*/g, (_, t) => `<em>${escapeText(t)}</em>`)
         // 코드
-        .replace(/`(.+?)`/g, '<code class="bg-slate-200 px-1 rounded">$1</code>')
-        // 링크
-        .replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2" class="text-blue-600 hover:underline" target="_blank">$1</a>')
+        .replace(/`(.+?)`/g, (_, t) => `<code class="bg-slate-200 px-1 rounded">${escapeText(t)}</code>`)
+        // 링크 (URL 검증 포함)
+        .replace(/\[(.+?)\]\((.+?)\)/g, (_, label, url) =>
+            `<a href="${safeUrl(url)}" class="text-blue-600 hover:underline" target="_blank" rel="noopener noreferrer">${escapeText(label)}</a>`)
         // 줄바꿈
         .replace(/\n/g, '<br>');
-    
+
     return html;
 }
 

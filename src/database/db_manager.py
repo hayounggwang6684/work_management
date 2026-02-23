@@ -31,7 +31,7 @@ class DatabaseManager:
     @contextmanager
     def get_connection(self):
         """데이터베이스 연결 컨텍스트 매니저"""
-        conn = sqlite3.connect(str(self.db_path))
+        conn = sqlite3.connect(str(self.db_path), timeout=30)
         conn.row_factory = sqlite3.Row  # 딕셔너리 형태로 반환
         try:
             yield conn
@@ -159,6 +159,16 @@ class DatabaseManager:
             cursor.execute('''
                 CREATE INDEX IF NOT EXISTS idx_work_records_date
                 ON work_records(date)
+            ''')
+
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_work_records_contract_number
+                ON work_records(contract_number)
+            ''')
+
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_work_records_ship_name
+                ON work_records(ship_name)
             ''')
             
             cursor.execute('''
