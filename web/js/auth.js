@@ -90,16 +90,19 @@ async function handleLogin() {
             }
         } else {
             const msg = result.message || '로그인에 실패했습니다.';
-            // 아이디 없음 → 신규 PC 안내
-            if (msg.includes('존재하지 않') || msg.includes('찾을 수 없') || msg.includes('없는 사용자')) {
-                alert(msg + '\n\n💡 이 PC에 계정이 없습니다.\n관리자(ha_admin)로 로그인 후 계정을 승인하거나,\n아래 "계정 등록 요청"을 이용하세요.');
+            // 없는 사용자 → 신규 PC 안내
+            if (msg.includes('없는 사용자')) {
+                alert(msg + '\n\n💡 이 PC에 아직 계정이 없습니다.\n\n① 관리자(ha_admin) 계정으로 먼저 로그인하거나\n② 아래 "계정 등록 요청"으로 신청 후 관리자 승인을 받으세요.\n\n관리자 초기 비밀번호: 44448901');
+            // 비밀번호 불일치
+            } else if (msg.includes('비밀번호')) {
+                alert(msg + '\n\n💡 관리자 계정(ha_admin) 초기 비밀번호는 44448901 입니다.\n변경하셨다면 변경한 비밀번호를 입력하세요.');
             } else {
                 alert(msg);
             }
         }
     } catch (error) {
         console.error('로그인 오류:', error);
-        alert('로그인 중 오류가 발생했습니다.\n\n서버 연결을 확인해주세요.');
+        alert('로그인 중 오류가 발생했습니다.\n\n프로그램을 재시작하고 다시 시도해주세요.');
     }
 }
 

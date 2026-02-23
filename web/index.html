@@ -846,12 +846,20 @@
 
     <script>
         // eel이 준비되면 스플래시 닫기
-        // eel.js 로드 완료 + Python 백엔드 연결 후 실행
+        // eel.js 로드 + WebSocket 연결 + Python ping 응답까지 확인
         (function waitForEel() {
-            if (typeof eel !== 'undefined' && typeof eel.authenticate === 'function') {
-                if (typeof splashReady === 'function') splashReady();
-            } else {
+            if (typeof eel === 'undefined') {
                 setTimeout(waitForEel, 200);
+                return;
+            }
+            // ping()을 실제로 호출해서 Python 백엔드 연결 확인
+            try {
+                eel.ping()(function(ok) {
+                    if (ok && typeof splashReady === 'function') splashReady();
+                    else setTimeout(waitForEel, 300);
+                });
+            } catch(e) {
+                setTimeout(waitForEel, 300);
             }
         })();
     </script>
