@@ -57,7 +57,9 @@ class Config:
             self._config = self._get_default_config()
     
     def _get_default_config(self) -> Dict[str, Any]:
-        """기본 설정 반환"""
+        """기본 설정 반환 (settings.json 없을 때 사용)"""
+        # DB 기본 경로: 현재 사용자 바탕화면/db (어떤 PC에서도 동작)
+        default_db_path = str(Path.home() / "Desktop" / "db")
         return {
             "app": {
                 "name": "금일작업현황 관리",
@@ -65,8 +67,8 @@ class Config:
             },
             "database": {
                 "filename": "work_management.db",
-                "cloud_sync_enabled": True,
-                "local_path": "./data"
+                "cloud_sync_enabled": False,
+                "local_path": default_db_path
             },
             "ui": {
                 "window_width": 1400,
@@ -125,9 +127,11 @@ class Config:
     
     @property
     def db_path(self) -> Path:
-        """데이터베이스 파일 경로"""
-        local_path = self.get('database.local_path', './data')
+        """데이터베이스 파일 경로 (비어 있으면 현재 사용자 Desktop/db 사용)"""
+        local_path = self.get('database.local_path', '')
         filename = self.get('database.filename', 'work_management.db')
+        if not local_path or local_path.strip() == '':
+            local_path = str(Path.home() / "Desktop" / "db")
         return Path(local_path) / filename
     
     @property
