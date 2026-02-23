@@ -80,7 +80,7 @@ async function handleLogin() {
         
         if (result.success) {
             currentUser = result.user;
-            
+
             // 역할에 따라 화면 전환
             if (currentUser.role === 'admin') {
                 showAdminApp();
@@ -89,11 +89,17 @@ async function handleLogin() {
                 await loadWorkRecords();
             }
         } else {
-            alert(result.message);
+            const msg = result.message || '로그인에 실패했습니다.';
+            // 아이디 없음 → 신규 PC 안내
+            if (msg.includes('존재하지 않') || msg.includes('찾을 수 없') || msg.includes('없는 사용자')) {
+                alert(msg + '\n\n💡 이 PC에 계정이 없습니다.\n관리자(ha_admin)로 로그인 후 계정을 승인하거나,\n아래 "계정 등록 요청"을 이용하세요.');
+            } else {
+                alert(msg);
+            }
         }
     } catch (error) {
         console.error('로그인 오류:', error);
-        alert('로그인 중 오류가 발생했습니다.');
+        alert('로그인 중 오류가 발생했습니다.\n\n서버 연결을 확인해주세요.');
     }
 }
 
