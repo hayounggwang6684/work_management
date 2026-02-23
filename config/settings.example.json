@@ -8,7 +8,7 @@
     "filename": "work_management.db",
     "cloud_sync_enabled": false,
     "sync_provider": "google_drive",
-    "local_path": "C:\\Users\\사용자명\\Desktop\\db",
+    "local_path": "",
     "cloud_path": "",
     "backup_path": ""
   },

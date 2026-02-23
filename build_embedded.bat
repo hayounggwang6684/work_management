@@ -133,9 +133,15 @@ REM web 폴더 복사
 xcopy /E /I /Y "web" "%BUILD_DIR%\app\web" >nul
 echo     web\ 복사 완료
 
-REM config 폴더 복사
-xcopy /E /I /Y "config" "%BUILD_DIR%\app\config" >nul
-echo     config\ 복사 완료
+REM config 폴더 복사 (settings.json 제외 - 개인 토큰/경로 포함되어 배포 금지)
+mkdir "%BUILD_DIR%\app\config" 2>nul
+for %%F in (config\*) do (
+    if /I not "%%~nxF"=="settings.json" (
+        copy /Y "%%F" "%BUILD_DIR%\app\config\" >nul
+    )
+)
+if exist "config\holidays.json" copy /Y "config\holidays.json" "%BUILD_DIR%\app\config\" >nul
+echo     config\ 복사 완료 (settings.json 제외)
 
 REM resources 폴더 복사 (아이콘 등)
 if exist "resources" (
@@ -149,7 +155,7 @@ if exist "assets" (
     echo     assets\ 복사 완료
 )
 
-REM 실행 스크립트 생성
+REM 실행 스크립트 생성 (창 없는 백그라운드 실행)
 (
     echo @echo off
     echo cd /d "%%~dp0"
@@ -157,11 +163,19 @@ REM 실행 스크립트 생성
 ) > "%BUILD_DIR%\run.bat"
 echo     run.bat 생성 완료
 
-REM 콘솔 디버그용 실행 스크립트
+REM 콘솔 디버그용 실행 스크립트 (에러 확인용)
 (
     echo @echo off
+    echo chcp 65001 ^>nul
     echo cd /d "%%~dp0"
+    echo echo ================================================
+    echo echo  금일작업현황 관리 - 디버그 모드
+    echo echo  오류 발생 시 이 창의 내용을 캡처해주세요
+    echo echo ================================================
+    echo echo.
     echo python\python.exe app\src\main.py
+    echo echo.
+    echo echo 프로그램이 종료되었습니다. 오류가 있으면 위 내용을 확인하세요.
     echo pause
 ) > "%BUILD_DIR%\run_debug.bat"
 echo     run_debug.bat 생성 완료
