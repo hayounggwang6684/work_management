@@ -1,7 +1,7 @@
 {
   "app": {
     "name": "금일작업현황 관리",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "author": "Your Company"
   },
   "database": {
