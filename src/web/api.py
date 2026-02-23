@@ -28,9 +28,15 @@ def authenticate(user_id: str, password: str) -> Dict[str, Any]:
         
         if result is None:
             return {'success': False, 'message': '아이디 또는 비밀번호가 일치하지 않습니다.'}
-        
+
         if 'error' in result:
-            return {'success': False, 'message': result['error']}
+            err = result['error']
+            if err == 'USER_NOT_FOUND':
+                return {'success': False, 'message': '없는 사용자입니다.'}
+            elif err == 'WRONG_PASSWORD':
+                return {'success': False, 'message': '비밀번호가 일치하지 않습니다.'}
+            else:
+                return {'success': False, 'message': err}
         
         # 로그인 성공
         return {

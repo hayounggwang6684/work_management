@@ -34,7 +34,7 @@ class AuthManager:
     @contextmanager
     def get_connection(self):
         """데이터베이스 연결 컨텍스트 매니저"""
-        conn = sqlite3.connect(str(self.db_path))
+        conn = sqlite3.connect(str(self.db_path), timeout=30)
         conn.row_factory = sqlite3.Row
         try:
             yield conn
@@ -172,14 +172,14 @@ class AuthManager:
                 row = cursor.fetchone()
 
                 if not row:
-                    logger.warning(f"로그인 실패: {user_id}")
-                    return None
+                    logger.warning(f"로그인 실패 - 없는 사용자: {user_id}")
+                    return {'error': 'USER_NOT_FOUND'}
 
                 user = dict(row)
 
                 if not self._verify_password(password, user['password_hash']):
-                    logger.warning(f"로그인 실패: {user_id}")
-                    return None
+                    logger.warning(f"로그인 실패 - 비밀번호 불일치: {user_id}")
+                    return {'error': 'WRONG_PASSWORD'}
 
                 # 상태 확인
                 if user['status'] == 'pending':
