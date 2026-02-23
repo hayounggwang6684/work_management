@@ -1,4 +1,14 @@
 // ========================================
+// XSS 방어용 HTML 이스케이프 헬퍼
+// ========================================
+
+function escapeHtmlReport(text) {
+    const div = document.createElement('div');
+    div.textContent = String(text ?? '');
+    return div.innerHTML;
+}
+
+// ========================================
 // 본사/외주 분리 함수
 // ========================================
 
@@ -33,7 +43,7 @@ function separateWorkers(leader, teammates) {
         
         // 2. 일당 패턴 추출: 업체명[직원명들]
         const dailyRegex = /([^,]+?)\[([^\]]+)\]/g;
-        while ((match = dailyRegex.exec(teammates)) !== null) {
+        while ((match = dailyRegex.exec(remaining)) !== null) {
             const fullMatch = match[0].trim(); // "업체명[직원명들]"
             if (fullMatch) {
                 outsourcedList.push(fullMatch);
@@ -252,13 +262,13 @@ async function loadDailyReport() {
             const row = document.createElement('tr');
             row.innerHTML = `
                 <td class="border p-2 text-center">${index + 1}</td>
-                <td class="border p-2 text-center">${record.company || '-'}</td>
-                <td class="border p-2 text-center">${shipName}</td>
-                <td class="border p-2 text-center">${projectPeriod}</td>
-                <td class="border p-2 text-center">${record.location || '-'}</td>
-                <td class="border p-2 text-left">${fullWorkContent}</td>
-                <td class="border p-2 text-center">${inHouse}</td>
-                <td class="border p-2 text-center">${outsourced}</td>
+                <td class="border p-2 text-center">${escapeHtmlReport(record.company || '-')}</td>
+                <td class="border p-2 text-center">${escapeHtmlReport(shipName)}</td>
+                <td class="border p-2 text-center">${escapeHtmlReport(projectPeriod)}</td>
+                <td class="border p-2 text-center">${escapeHtmlReport(record.location || '-')}</td>
+                <td class="border p-2 text-left">${escapeHtmlReport(fullWorkContent)}</td>
+                <td class="border p-2 text-center">${escapeHtmlReport(inHouse)}</td>
+                <td class="border p-2 text-center">${escapeHtmlReport(outsourced)}</td>
             `;
             tbody.appendChild(row);
         });
@@ -366,17 +376,17 @@ async function loadMonthlyReport() {
         monthlyData.forEach((ship, index) => {
             // 본사/외주 분리
             const { inHouse, outsourced } = separateWorkers(ship.leader, ship.teammates);
-            
+
             const row = document.createElement('tr');
             row.innerHTML = `
                 <td class="border p-2 text-center">${index + 1}</td>
-                <td class="border p-2 text-center">${ship.company || '-'}</td>
-                <td class="border p-2 text-center">${ship.ship_name || '-'}</td>
-                <td class="border p-2 text-center">${ship.project_period || '-'}</td>
-                <td class="border p-2 text-center">${ship.location || '-'}</td>
-                <td class="border p-2 text-left">${ship.work_content || '-'}</td>
-                <td class="border p-2 text-center">${inHouse}</td>
-                <td class="border p-2 text-center">${outsourced}</td>
+                <td class="border p-2 text-center">${escapeHtmlReport(ship.company || '-')}</td>
+                <td class="border p-2 text-center">${escapeHtmlReport(ship.ship_name || ship.shipName || '-')}</td>
+                <td class="border p-2 text-center">${escapeHtmlReport(ship.project_period || '-')}</td>
+                <td class="border p-2 text-center">${escapeHtmlReport(ship.location || '-')}</td>
+                <td class="border p-2 text-left">${escapeHtmlReport(ship.work_content || ship.workContent || '-')}</td>
+                <td class="border p-2 text-center">${escapeHtmlReport(inHouse)}</td>
+                <td class="border p-2 text-center">${escapeHtmlReport(outsourced)}</td>
                 <td class="border p-2 text-center">${ship.total_manpower.toFixed(1)}</td>
             `;
             tbody.appendChild(row);

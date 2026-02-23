@@ -314,12 +314,23 @@ def save_work_records(date: str, records: List[Dict[str, Any]], username: str) -
 
 
 @eel.expose
-def clear_all_records() -> Dict[str, Any]:
-    """전체 작업 레코드 삭제"""
+def clear_all_records(admin_id: str = '') -> Dict[str, Any]:
+    """전체 작업 레코드 삭제 (관리자 전용)"""
     try:
+        # 관리자 권한 확인
+        if not admin_id:
+            logger.warning("clear_all_records: admin_id 없음 - 권한 거부")
+            return {'success': False, 'message': '관리자 권한이 필요합니다.'}
+
+        user = auth_manager.get_user(admin_id)
+        if not user or user.get('role') != 'admin':
+            logger.warning(f"clear_all_records: 권한 없음 - user_id={admin_id}")
+            return {'success': False, 'message': '관리자만 실행할 수 있습니다.'}
+
         success = db.clear_all_work_records()
         if success:
-            logger.info("전체 작업 레코드 삭제 완료")
+            db.add_activity_log(admin_id, 'clear_all', '', '전체 작업 레코드 삭제')
+            logger.info(f"전체 작업 레코드 삭제 완료 by {admin_id}")
             return {'success': True, 'message': '전체 작업 레코드가 삭제되었습니다.'}
         else:
             return {'success': False, 'message': '삭제 실패'}

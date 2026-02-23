@@ -262,6 +262,22 @@ class AuthManager:
             logger.error(f"사용자 목록 조회 실패: {e}")
             return []
     
+    def get_user(self, user_id: str) -> Optional[Dict[str, Any]]:
+        """특정 사용자 조회"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT id, user_id, full_name, role, status, created_at, last_login
+                    FROM auth_users
+                    WHERE user_id = ?
+                ''', (user_id,))
+                row = cursor.fetchone()
+                return dict(row) if row else None
+        except Exception as e:
+            logger.error(f"사용자 조회 실패: {e}")
+            return None
+
     def get_pending_requests(self) -> List[Dict[str, Any]]:
         """승인 대기 중인 요청 조회"""
         try:

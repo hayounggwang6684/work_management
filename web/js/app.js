@@ -330,12 +330,13 @@ async function loadGanttChart() {
         projects.forEach((project, idx) => {
             const color = GANTT_COLORS[idx % GANTT_COLORS.length];
             const workDatesSet = new Set(project.workDates || []);
+            const safeCn = escapeHtml(project.contractNumber || '');
 
-            html += `<tr class="hover:bg-slate-50 cursor-pointer" ondblclick="navigateToSearch('${project.contractNumber || ''}')">`;
+            html += `<tr class="hover:bg-slate-50 cursor-pointer" ondblclick="navigateToSearch('${safeCn}')">`;
             // 고정 열
             html += `<td class="border p-2 text-xs sticky left-0 bg-white z-10 whitespace-nowrap">
-                <div class="font-semibold">${project.company || ''}</div>
-                <div class="text-slate-500">${project.shipName || ''}</div>
+                <div class="font-semibold">${escapeHtml(project.company || '')}</div>
+                <div class="text-slate-500">${escapeHtml(project.shipName || '')}</div>
             </td>`;
 
             // 작업내용 (엔진모델 + 작업내용)
@@ -345,7 +346,7 @@ async function loadGanttChart() {
             } else {
                 workDesc = project.engineModel || project.workContent || '';
             }
-            html += `<td class="border p-2 text-xs">${workDesc}</td>`;
+            html += `<td class="border p-2 text-xs">${escapeHtml(workDesc)}</td>`;
 
             // 기간
             html += `<td class="border p-2 text-xs text-center whitespace-nowrap">${project.startMD}~${project.endMD}</td>`;
@@ -415,19 +416,22 @@ async function loadKanbanBoard() {
             } else {
                 workDesc = project.engineModel || project.workContent || '';
             }
+            const safeCompany = escapeHtml(project.company || '');
+            const safeShipName = escapeHtml(project.shipName || '');
+            const safeTitle = escapeHtml(`${project.company || ''} ${project.shipName || ''}`);
             return `
                 <div class="bg-white rounded-lg shadow-sm p-3 border-l-4 border-yellow-400 hover:shadow-md transition-shadow">
                     <div class="flex justify-between items-start">
-                        <div class="font-bold text-sm">${project.company || ''} ${project.shipName || ''}</div>
+                        <div class="font-bold text-sm">${safeCompany} ${safeShipName}</div>
                         <div class="flex gap-1">
                             <button onclick="promptStartProject(${project.id})" class="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded hover:bg-blue-200" title="착수 전환">착수 ▶</button>
                             <button onclick="deleteBoardProject(${project.id})" class="text-xs px-1 py-0.5 bg-red-100 text-red-600 rounded hover:bg-red-200" title="삭제">✕</button>
                         </div>
                     </div>
-                    <div class="text-xs mt-1 text-slate-700">${workDesc}</div>
+                    <div class="text-xs mt-1 text-slate-700">${escapeHtml(workDesc)}</div>
                     <div class="flex justify-between items-center mt-1">
                         <div class="text-xs text-slate-400">접수 대기</div>
-                        <button onclick="event.stopPropagation(); openCommentModal('', ${project.id}, '${(project.company || '')} ${(project.shipName || '')}')" class="text-slate-400 hover:text-blue-500 text-sm" title="댓글">💬</button>
+                        <button onclick="event.stopPropagation(); openCommentModal('', ${project.id}, ${JSON.stringify(safeTitle)})" class="text-slate-400 hover:text-blue-500 text-sm" title="댓글">💬</button>
                     </div>
                 </div>
             `;
@@ -442,13 +446,17 @@ async function loadKanbanBoard() {
                 workDesc = project.engineModel || project.workContent || '';
             }
             const cn = project.contractNumber || '';
+            const safeCn = escapeHtml(cn);
             const currentStatus = project.status || '';
+            const safeCompany = escapeHtml(project.company || '');
+            const safeShipName = escapeHtml(project.shipName || '');
+            const safeTitle = escapeHtml(`${project.company || ''} ${project.shipName || ''}`);
 
             // 상태 드롭다운 옵션
             let statusSelect = '';
             if (currentStatus !== '아카이브') {
                 statusSelect = `
-                    <select onchange="changeKanbanStatus('${cn}', this.value)" class="text-xs border rounded px-1 py-0.5 bg-slate-50">
+                    <select onchange="changeKanbanStatus(${JSON.stringify(safeCn)}, this.value)" class="text-xs border rounded px-1 py-0.5 bg-slate-50">
                         <option value="착수" ${currentStatus === '착수' ? 'selected' : ''}>착수</option>
                         <option value="준공" ${currentStatus === '준공' ? 'selected' : ''}>준공</option>
                     </select>`;
@@ -456,20 +464,20 @@ async function loadKanbanBoard() {
 
             return `
                 <div class="bg-white rounded-lg shadow-sm p-3 border-l-4 ${borderColor} hover:shadow-md transition-shadow cursor-pointer"
-                     ondblclick="navigateToSearch('${cn}')">
+                     ondblclick="navigateToSearch(${JSON.stringify(safeCn)})">
                     <div class="flex justify-between items-start">
-                        <div class="font-bold text-sm">${project.company || ''} ${project.shipName || ''}</div>
+                        <div class="font-bold text-sm">${safeCompany} ${safeShipName}</div>
                         ${statusSelect}
                     </div>
-                    <div class="text-xs text-slate-500 mt-0.5">${cn}</div>
-                    <div class="text-xs mt-1 text-slate-700">${workDesc}</div>
+                    <div class="text-xs text-slate-500 mt-0.5">${safeCn}</div>
+                    <div class="text-xs mt-1 text-slate-700">${escapeHtml(workDesc)}</div>
                     <div class="flex justify-between mt-2 text-xs text-slate-500">
-                        <span>${project.startMD || ''} ~ ${project.endMD || ''}</span>
+                        <span>${escapeHtml(project.startMD || '')} ~ ${escapeHtml(project.endMD || '')}</span>
                         <span class="font-semibold text-blue-600">${project.totalManpower || 0}공</span>
                     </div>
                     <div class="flex justify-between items-center mt-1">
                         <div class="text-xs text-slate-400">${project.workDays || 0}일 작업</div>
-                        <button onclick="event.stopPropagation(); openCommentModal('${cn}', null, '${(project.company || '')} ${(project.shipName || '')}')" class="text-slate-400 hover:text-blue-500 text-sm" title="댓글">💬</button>
+                        <button onclick="event.stopPropagation(); openCommentModal(${JSON.stringify(safeCn)}, null, ${JSON.stringify(safeTitle)})" class="text-slate-400 hover:text-blue-500 text-sm" title="댓글">💬</button>
                     </div>
                 </div>
             `;
@@ -694,8 +702,9 @@ function renderComment(comment, isReply) {
     const isOwner = comment.userId === userId;
     const indent = isReply ? 'ml-6 border-l-2 border-slate-200 pl-3' : '';
     const time = comment.createdAt ? formatCommentTime(comment.createdAt) : '';
+    const safeUserName = escapeHtml(comment.userName || '익명');
 
-    let actions = `<button onclick="setReplyTo(${comment.id}, '${comment.userName}')" class="text-xs text-blue-500 hover:text-blue-700">답글</button>`;
+    let actions = `<button onclick="setReplyTo(${comment.id}, ${JSON.stringify(safeUserName)})" class="text-xs text-blue-500 hover:text-blue-700">답글</button>`;
     if (isOwner) {
         actions += ` <button onclick="deleteComment(${comment.id})" class="text-xs text-red-400 hover:text-red-600">삭제</button>`;
     }
@@ -703,7 +712,7 @@ function renderComment(comment, isReply) {
     return `
         <div class="${indent} py-2">
             <div class="flex justify-between items-start">
-                <div class="text-xs font-semibold text-slate-700">${comment.userName || '익명'} <span class="font-normal text-slate-400">${time}</span></div>
+                <div class="text-xs font-semibold text-slate-700">${safeUserName} <span class="font-normal text-slate-400">${time}</span></div>
                 <div class="flex gap-2">${actions}</div>
             </div>
             <div class="text-sm text-slate-600 mt-1">${escapeHtml(comment.content)}</div>
@@ -1480,17 +1489,17 @@ function renderSearchResults(records, container, searchTerm, searchType) {
             dateDisplay = `${d.getMonth() + 1}/${d.getDate()}`;
         }
 
-        // 기울임체 태그 제거
-        const leader = (record.leader || '-').replace(/<i>/g, '').replace(/<\/i>/g, '');
-        const teammates = (record.teammates || '-').replace(/<i>/g, '').replace(/<\/i>/g, '');
+        // 기울임체 태그 제거 후 XSS 방어
+        const leader = escapeHtml((record.leader || '-').replace(/<i>/g, '').replace(/<\/i>/g, ''));
+        const teammates = escapeHtml((record.teammates || '-').replace(/<i>/g, '').replace(/<\/i>/g, ''));
 
         html += `
                     <tr class="hover:bg-blue-50">
-                        <td class="border p-2 text-center">${dateDisplay}</td>
-                        <td class="border p-2 text-center">${record.company || '-'}</td>
-                        <td class="border p-2 text-center">${record.ship_name || '-'}</td>
-                        <td class="border p-2 text-center">${record.engine_model || '-'}</td>
-                        <td class="border p-2">${record.work_content || '-'}</td>
+                        <td class="border p-2 text-center">${escapeHtml(dateDisplay)}</td>
+                        <td class="border p-2 text-center">${escapeHtml(record.company || '-')}</td>
+                        <td class="border p-2 text-center">${escapeHtml(record.ship_name || '-')}</td>
+                        <td class="border p-2 text-center">${escapeHtml(record.engine_model || '-')}</td>
+                        <td class="border p-2">${escapeHtml(record.work_content || '-')}</td>
                         <td class="border p-2 text-center">${leader}</td>
                         <td class="border p-2 text-center font-semibold text-blue-600">${record.manpower > 0 ? record.manpower : ''}</td>
                         <td class="border p-2">${teammates}</td>
