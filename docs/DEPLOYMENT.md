@@ -357,3 +357,55 @@ pyinstaller ^
 ---
 
 **배포 성공을 기원합니다! 🎉**
+
+
+## 🚀 GitHub 릴리즈 자동 배포 세팅 (패치 ZIP 업로드)
+
+앱은 시작 시 GitHub Releases에서 `patch`가 포함된 zip asset을 조회해 자동 적용합니다.
+
+### 1) 토큰/CLI 세팅
+
+```bash
+# gh CLI 로그인 (권장: 환경변수)
+export GH_TOKEN=<github_pat_with_repo_scope>
+
+# 로그인 확인
+gh auth status
+```
+
+> 보안 주의: 토큰은 채팅/문서에 평문으로 남기지 말고, 환경변수/CI Secret으로만 관리하세요.
+
+### 2) 패치 폴더 구성
+
+`patch.json`을 포함한 폴더를 준비합니다.
+
+```json
+{
+  "id": "patch-v1.1.7",
+  "version": "1.1.7",
+  "min_version": "1.1.0",
+  "description": "버그 수정",
+  "files": [
+    {
+      "source": "src/utils/example.py",
+      "target": "src/utils/example.py"
+    }
+  ]
+}
+```
+
+### 3) 릴리즈/업로드 실행
+
+저장소에 추가된 스크립트로 릴리즈 생성 + patch zip 업로드를 한 번에 수행합니다.
+
+```bash
+./scripts/release_patch.sh \
+  --version 1.1.7 \
+  --patch-dir ./patches/patch-v1.1.7 \
+  --notes-file ./docs/releases/v1.1.7.md
+```
+
+### 4) 동작 확인
+
+- GitHub Release `v1.1.7`에 `patch-v1.1.7.zip`이 업로드되었는지 확인
+- 설치된 앱 재시작 후 패치 자동 다운로드/적용 로그 확인
