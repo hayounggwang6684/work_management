@@ -191,22 +191,17 @@ function checkAutoLogin() {
 // ============================================================================
 
 function showAdminTab(tab) {
-    const tabUsers = document.getElementById('tabUsers');
-    const tabSettings = document.getElementById('tabSettings');
-    const usersTab = document.getElementById('adminUsersTab');
-    const settingsTab = document.getElementById('adminSettingsTab');
-    
-    if (tab === 'users') {
-        tabUsers.className = 'px-6 py-3 font-medium border-b-2 border-blue-600 text-blue-600';
-        tabSettings.className = 'px-6 py-3 font-medium text-slate-600 hover:text-slate-800';
-        usersTab.classList.remove('hidden');
-        settingsTab.classList.add('hidden');
-    } else if (tab === 'settings') {
-        tabUsers.className = 'px-6 py-3 font-medium text-slate-600 hover:text-slate-800';
-        tabSettings.className = 'px-6 py-3 font-medium border-b-2 border-blue-600 text-blue-600';
-        usersTab.classList.add('hidden');
-        settingsTab.classList.remove('hidden');
-    }
+    const tabs = ['users', 'settings', 'db', 'telegram'];
+    const activeClass = 'px-6 py-3 font-medium border-b-2 border-blue-600 text-blue-600';
+    const inactiveClass = 'px-6 py-3 font-medium text-slate-600 hover:text-slate-800';
+
+    tabs.forEach(t => {
+        const key = t.charAt(0).toUpperCase() + t.slice(1);
+        const btn = document.getElementById('tab' + key);
+        const panel = document.getElementById('admin' + key + 'Tab');
+        if (btn) btn.className = t === tab ? activeClass : inactiveClass;
+        if (panel) panel.classList.toggle('hidden', t !== tab);
+    });
 }
 
 async function loadAdminData() {

@@ -167,29 +167,50 @@ def admin_update_user_status(user_id: str, status: str, admin_id: str) -> Dict[s
 
 @eel.expose
 def select_folder_path() -> Dict[str, Any]:
-    """폴더 선택 다이얼로그"""
+    """폴더 선택 다이얼로그 (Windows Shell API - Embedded Python 호환)"""
     try:
-        import tkinter as tk
-        from tkinter import filedialog
-        
-        # Tkinter 루트 창 생성 (숨김)
-        root = tk.Tk()
-        root.withdraw()
-        root.attributes('-topmost', True)
-        
-        # 폴더 선택 다이얼로그
-        folder_path = filedialog.askdirectory(
-            title='폴더 선택',
-            mustexist=False
-        )
-        
-        root.destroy()
-        
-        if folder_path:
-            return {'success': True, 'path': folder_path}
+        import ctypes
+        import ctypes.wintypes
+
+        # Embedded Python에는 Tkinter가 없으므로 Windows Shell32 API 직접 사용
+        BIF_RETURNONLYFSDIRS = 0x0001
+        BIF_NEWDIALOGSTYLE   = 0x0040  # 새 스타일 폴더 선택창
+
+        class BROWSEINFOW(ctypes.Structure):
+            _fields_ = [
+                ('hwndOwner',      ctypes.wintypes.HWND),
+                ('pidlRoot',       ctypes.c_void_p),
+                ('pszDisplayName', ctypes.c_wchar_p),
+                ('lpszTitle',      ctypes.c_wchar_p),
+                ('ulFlags',        ctypes.wintypes.UINT),
+                ('lpfn',           ctypes.c_void_p),
+                ('lParam',         ctypes.c_long),
+                ('iImage',         ctypes.c_int),
+            ]
+
+        shell32 = ctypes.windll.shell32
+        ole32   = ctypes.windll.ole32
+        ole32.CoInitialize(None)
+
+        display_buf = ctypes.create_unicode_buffer(260)
+        bi = BROWSEINFOW()
+        bi.hwndOwner      = None
+        bi.pidlRoot       = None
+        bi.pszDisplayName = display_buf
+        bi.lpszTitle      = '폴더 선택'
+        bi.ulFlags        = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE
+        bi.lpfn           = None
+        bi.lParam         = 0
+
+        pidl = shell32.SHBrowseForFolderW(ctypes.byref(bi))
+        if pidl:
+            path_buf = ctypes.create_unicode_buffer(260)
+            shell32.SHGetPathFromIDListW(pidl, path_buf)
+            ole32.CoTaskMemFree(pidl)
+            return {'success': True, 'path': path_buf.value}
         else:
             return {'success': False, 'path': None}
-            
+
     except Exception as e:
         logger.error(f"폴더 선택 오류: {e}")
         return {'success': False, 'error': str(e)}
