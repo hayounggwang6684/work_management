@@ -1604,6 +1604,21 @@ def import_excel_data(base64_data: str, username: str = 'admin') -> Dict[str, An
 # ============================================================================
 
 @eel.expose
+def get_startup_patch_result() -> Dict[str, Any]:
+    """앱 시작 시 자동 적용된 패치 결과 반환 (로그인 후 JS에서 호출)"""
+    try:
+        from src.utils.patch_system import patch_system
+        applied = patch_system.get_applied_patches()
+        return {
+            'needs_restart': getattr(patch_system, '_startup_patches_applied', 0) > 0,
+            'applied_count': getattr(patch_system, '_startup_patches_applied', 0),
+            'current_version': config.version
+        }
+    except Exception as e:
+        return {'needs_restart': False, 'applied_count': 0, 'current_version': config.version}
+
+
+@eel.expose
 def check_for_updates(force: bool = False) -> Dict[str, Any]:
     """업데이트 확인"""
     try:

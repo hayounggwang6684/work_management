@@ -100,6 +100,9 @@ async function handleLogin() {
                 showMainApp();
                 await loadWorkRecords();
             }
+
+            // 로그인 성공 후: 시작 시 적용된 패치 확인 → 재시작 안내
+            notifyLoginSuccess();
         } else {
             const msg = result.message || '로그인에 실패했습니다.';
             // 없는 사용자 → 신규 PC 안내
@@ -650,6 +653,48 @@ async function clearAllRecords() {
         console.error('DB 전체 삭제 오류:', error);
         showCustomAlert('오류', 'DB 삭제 중 오류가 발생했습니다.', 'error');
     }
+}
+
+// ============================================================================
+// 로그인 성공 후 패치 알림
+// ============================================================================
+
+async function notifyLoginSuccess() {
+    try {
+        // 시작 시 자동 적용된 패치 결과 확인
+        const patchResult = await eel.get_startup_patch_result()();
+        if (patchResult && patchResult.needs_restart) {
+            // 우하단에 재시작 안내 알림 표시
+            showRestartNotification(patchResult.applied_count);
+        } else {
+            // 패치 없어도 업데이트 확인 (백그라운드)
+            if (typeof checkForUpdatesAuto === 'function') {
+                setTimeout(checkForUpdatesAuto, 3000);
+            }
+        }
+    } catch(e) {
+        // 오류 시 무시
+    }
+}
+
+function showRestartNotification(count) {
+    // 기존 알림 제거
+    const existing = document.getElementById('restartNotification');
+    if (existing) existing.remove();
+
+    const div = document.createElement('div');
+    div.id = 'restartNotification';
+    div.style.cssText = 'position:fixed;bottom:24px;right:24px;z-index:9000;max-width:320px;';
+    div.innerHTML = `
+        <div style="background:#1d4ed8;color:#fff;border-radius:12px;padding:16px 20px;box-shadow:0 4px 20px rgba(0,0,0,0.3);">
+            <div style="font-weight:700;font-size:14px;margin-bottom:6px;">🔄 패치 ${count}개 적용 완료</div>
+            <div style="font-size:13px;opacity:0.9;">변경사항을 완전히 적용하려면 프로그램을 재시작하세요.</div>
+            <div style="margin-top:12px;display:flex;gap:8px;">
+                <button onclick="window.close()" style="flex:1;background:#fff;color:#1d4ed8;border:none;border-radius:6px;padding:6px 0;font-size:12px;font-weight:700;cursor:pointer;">재시작</button>
+                <button onclick="document.getElementById('restartNotification').remove()" style="flex:1;background:rgba(255,255,255,0.2);color:#fff;border:none;border-radius:6px;padding:6px 0;font-size:12px;cursor:pointer;">나중에</button>
+            </div>
+        </div>`;
+    document.body.appendChild(div);
 }
 
 // ============================================================================

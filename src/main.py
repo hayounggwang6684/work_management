@@ -11,6 +11,7 @@ from src.utils.logger import logger
 from src.utils.config import config
 from src.sync.cloud_sync import cloud_sync
 from src.utils.patch_system import patch_system
+from src.utils.update_manager import update_manager
 from src.utils.telegram_notifier import telegram_notifier
 import src.web.api  # API 함수들을 로드
 
@@ -50,15 +51,31 @@ def main():
     logger.info(f"{config.app_name} v{config.version} 시작")
     logger.info("="*60)
     
-    # 패치 확인 및 적용
+    # 패치 확인 및 적용 (GitHub에서 자동 다운로드 + 적용)
     try:
-        logger.info("패치 확인 중...")
-        patches_applied = patch_system.check_and_apply_patches()
-        if patches_applied > 0:
-            logger.info(f"{patches_applied}개의 패치가 적용되었습니다. 재시작이 필요합니다.")
-            # pythonw.exe 환경에서 input() 호출 시 무한 대기 발생 → 제거
+        logger.info("GitHub에서 패치 확인 및 자동 다운로드 중...")
+        patch_result = update_manager.download_and_apply_patches()
+        applied = patch_result.get('applied_count', 0)
+        if applied > 0:
+            logger.info(f"패치 {applied}개 적용 완료. 재시작 필요.")
+        elif patch_result.get('downloaded_count', 0) > 0:
+            logger.info(f"패치 {patch_result['downloaded_count']}개 다운로드됨.")
+        else:
+            # 다운로드할 것 없으면 로컬 patches/ 폴더만 재확인 (수동 설치 패치 대비)
+            applied = patch_system.check_and_apply_patches()
+            if applied > 0:
+                logger.info(f"로컬 패치 {applied}개 적용 완료.")
+        # JS에서 재시작 안내를 위해 카운터 저장
+        patch_system._startup_patches_applied = applied
     except Exception as e:
-        logger.error(f"패치 확인 오류: {e}")
+        logger.error(f"패치 확인/적용 오류: {e}")
+        patch_system._startup_patches_applied = 0
+        # GitHub 접근 실패 시 로컬 패치만 적용
+        try:
+            local = patch_system.check_and_apply_patches()
+            patch_system._startup_patches_applied = local
+        except Exception as e2:
+            logger.error(f"로컬 패치 적용 오류: {e2}")
     
     # Eel 초기화
     web_folder = Path(__file__).parent.parent / "web"
