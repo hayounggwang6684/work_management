@@ -169,12 +169,20 @@ class UpdateManager:
                     # 패치 ZIP 파일만 (.zip이고 patch 포함)
                     if name.endswith('.zip') and 'patch' in name.lower():
                         if name not in downloaded:
+                            asset_id = asset['id']
+                            # Private repo: browser_download_url은 토큰 있어도 404
+                            # → GitHub API URL로 다운로드해야 함
+                            api_download_url = (
+                                f"{self.api_base_url}/repos/"
+                                f"{self.github_repo_owner}/{self.github_repo_name}"
+                                f"/releases/assets/{asset_id}"
+                            )
                             new_patches.append({
                                 'name': name,
                                 'size': asset['size'],
-                                'url': asset['browser_download_url'],
+                                'url': api_download_url,
                                 'release_tag': release_tag,
-                                'asset_id': asset['id']
+                                'asset_id': asset_id
                             })
 
         except Exception as e:
