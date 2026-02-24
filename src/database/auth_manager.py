@@ -119,24 +119,35 @@ class AuthManager:
             conn.commit()
 
     def _create_admin_account(self):
-        """관리자 계정 생성"""
+        """관리자 계정 생성 또는 초기 비번으로 복구"""
         try:
+            initial_password = config.get('admin.admin_initial_password', '44448901')
             with self.get_connection() as conn:
                 cursor = conn.cursor()
-                
-                # 관리자 계정이 없으면 생성
-                cursor.execute('SELECT id FROM auth_users WHERE user_id = ?', ('ha_admin',))
-                if not cursor.fetchone():
-                    initial_password = config.get('admin.admin_initial_password', '44448901')
+
+                cursor.execute('SELECT id, password_hash FROM auth_users WHERE user_id = ?', ('ha_admin',))
+                row = cursor.fetchone()
+                if not row:
+                    # 관리자 계정이 없으면 생성
                     password_hash = self._hash_password(initial_password)
                     cursor.execute('''
                         INSERT INTO auth_users (user_id, password_hash, full_name, role, status, approved_at)
                         VALUES (?, ?, ?, ?, ?, ?)
                     ''', ('ha_admin', password_hash, '시스템 관리자', 'admin', 'active', datetime.now().isoformat()))
                     logger.info("관리자 계정 생성 완료")
-                    
+                else:
+                    # 이미 있는 경우: 초기 비번으로 검증해보고 틀리면 재설정
+                    # (다른 PC에서 이전 DB를 가져온 경우 등 비번 불일치 방지)
+                    if not self._verify_password(initial_password, row['password_hash']):
+                        new_hash = self._hash_password(initial_password)
+                        cursor.execute(
+                            'UPDATE auth_users SET password_hash = ?, status = ?, role = ? WHERE user_id = ?',
+                            (new_hash, 'active', 'admin', 'ha_admin')
+                        )
+                        logger.info("관리자 계정 비밀번호 초기화 완료 (설정 파일 기준)")
+
         except Exception as e:
-            logger.error(f"관리자 계정 생성 실패: {e}")
+            logger.error(f"관리자 계정 생성/복구 실패: {e}")
     
     def _hash_password(self, password: str) -> str:
         """비밀번호 해시화 (PBKDF2-HMAC-SHA256, salt 포함)"""
