@@ -193,19 +193,38 @@ function checkAutoLogin() {
 function showAdminTab(tab) {
     const tabUsers = document.getElementById('tabUsers');
     const tabSettings = document.getElementById('tabSettings');
+    const tabDb = document.getElementById('tabDb');
+    const tabTelegram = document.getElementById('tabTelegram');
     const usersTab = document.getElementById('adminUsersTab');
     const settingsTab = document.getElementById('adminSettingsTab');
+    const dbTab = document.getElementById('adminDbTab');
+    const telegramTab = document.getElementById('adminTelegramTab');
+
+    const inactiveClass = 'px-6 py-3 font-medium text-slate-600 hover:text-slate-800';
+    const activeClass = 'px-6 py-3 font-medium border-b-2 border-blue-600 text-blue-600';
+
+    tabUsers.className = inactiveClass;
+    tabSettings.className = inactiveClass;
+    if (tabDb) tabDb.className = inactiveClass;
+    if (tabTelegram) tabTelegram.className = inactiveClass;
+
+    usersTab.classList.add('hidden');
+    settingsTab.classList.add('hidden');
+    if (dbTab) dbTab.classList.add('hidden');
+    if (telegramTab) telegramTab.classList.add('hidden');
     
     if (tab === 'users') {
-        tabUsers.className = 'px-6 py-3 font-medium border-b-2 border-blue-600 text-blue-600';
-        tabSettings.className = 'px-6 py-3 font-medium text-slate-600 hover:text-slate-800';
+        tabUsers.className = activeClass;
         usersTab.classList.remove('hidden');
-        settingsTab.classList.add('hidden');
     } else if (tab === 'settings') {
-        tabUsers.className = 'px-6 py-3 font-medium text-slate-600 hover:text-slate-800';
-        tabSettings.className = 'px-6 py-3 font-medium border-b-2 border-blue-600 text-blue-600';
-        usersTab.classList.add('hidden');
+        tabSettings.className = activeClass;
         settingsTab.classList.remove('hidden');
+    } else if (tab === 'db') {
+        if (tabDb) tabDb.className = activeClass;
+        if (dbTab) dbTab.classList.remove('hidden');
+    } else if (tab === 'telegram') {
+        if (tabTelegram) tabTelegram.className = activeClass;
+        if (telegramTab) telegramTab.classList.remove('hidden');
     }
 }
 
