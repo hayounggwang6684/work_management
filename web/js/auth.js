@@ -19,6 +19,18 @@ function showLoginForm() {
     document.getElementById('registerScreen').classList.add('hidden');
     document.getElementById('mainApp').classList.add('hidden');
     document.getElementById('adminApp').classList.add('hidden');
+
+    // 로그인 화면 하단에 현재 버전 표시
+    try {
+        eel.get_app_info()(function(info) {
+            const el = document.getElementById('loginVersionText');
+            if (el && info && info.version) {
+                el.textContent = 'v' + info.version;
+            }
+        });
+    } catch(e) {
+        // eel 연결 전 호출 시 무시
+    }
 }
 
 function showRegisterForm() {
