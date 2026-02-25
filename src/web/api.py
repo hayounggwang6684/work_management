@@ -1,6 +1,7 @@
 # src/web/api.py - 웹 API (Python ↔ JavaScript)
 
 import eel
+import threading
 from datetime import datetime
 from typing import List, Dict, Any
 from ..business.work_record_service import work_record_service
@@ -340,9 +341,10 @@ def save_work_records(date: str, records: List[Dict[str, Any]], username: str) -
         logger.info(f"작업 레코드 저장 요청: {date}, 사용자: {username}")
         success = work_record_service.save_records_for_date(date, records, username)
         
-        # 저장 성공 시 클라우드 동기화
+        # 저장 성공 시 클라우드 동기화 (백그라운드 스레드 - UI 블로킹 방지)
         if success and cloud_sync.enabled:
-            cloud_sync.sync_to_cloud()
+            t = threading.Thread(target=cloud_sync.sync_to_cloud, daemon=True)
+            t.start()
         
         return {'success': success, 'message': '저장되었습니다.' if success else '저장 실패'}
     except Exception as e:
@@ -665,7 +667,7 @@ def load_monthly_report_grouped(year: int, month: int) -> List[Dict[str, Any]]:
             AND strftime('%m', date) = ?
             AND ship_name != ''
             GROUP BY ship_name
-            ORDER BY ship_name
+            ORDER BY MIN(date)
         '''
 
         year_str = str(year)
@@ -1777,6 +1779,9 @@ def admin_save_telegram_settings(bot_token: str, enabled: bool, admin_id: str) -
         config.set('telegram.bot_token', bot_token)
         config.set('telegram.enabled', enabled)
         config.save()
+        # DB app_settings에도 동기화 (다른 PC에서 자동 로드용)
+        db.set_setting('telegram.bot_token', bot_token)
+        db.set_setting('telegram.enabled', 'true' if enabled else 'false')
         telegram_notifier.reconfigure(bot_token, enabled)
         logger.info(f"텔레그램 설정 변경: enabled={enabled}, by={admin_id}")
         return {'success': True, 'message': '텔레그램 설정이 저장되었습니다.'}

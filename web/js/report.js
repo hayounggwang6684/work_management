@@ -261,14 +261,14 @@ async function loadDailyReport() {
             
             const row = document.createElement('tr');
             row.innerHTML = `
-                <td class="border p-2 text-center">${index + 1}</td>
-                <td class="border p-2 text-center">${escapeHtmlReport(record.company || '-')}</td>
-                <td class="border p-2 text-center">${escapeHtmlReport(shipName)}</td>
-                <td class="border p-2 text-center">${escapeHtmlReport(projectPeriod)}</td>
-                <td class="border p-2 text-center">${escapeHtmlReport(record.location || '-')}</td>
-                <td class="border p-2 text-left">${escapeHtmlReport(fullWorkContent)}</td>
-                <td class="border p-2 text-center">${escapeHtmlReport(inHouse)}</td>
-                <td class="border p-2 text-center">${escapeHtmlReport(outsourced)}</td>
+                <td class="border border-gray-900 p-2 text-center">${index + 1}</td>
+                <td class="border border-gray-900 p-2 text-center">${escapeHtmlReport(record.company || '-')}</td>
+                <td class="border border-gray-900 p-2 text-center">${escapeHtmlReport(shipName)}</td>
+                <td class="border border-gray-900 p-2 text-center">${escapeHtmlReport(projectPeriod)}</td>
+                <td class="border border-gray-900 p-2 text-center">${escapeHtmlReport(record.location || '-')}</td>
+                <td class="border border-gray-900 p-2 text-left">${escapeHtmlReport(fullWorkContent)}</td>
+                <td class="border border-gray-900 p-2 text-center">${escapeHtmlReport(inHouse)}</td>
+                <td class="border border-gray-900 p-2 text-center">${escapeHtmlReport(outsourced)}</td>
             `;
             tbody.appendChild(row);
         });
@@ -377,17 +377,23 @@ async function loadMonthlyReport() {
             // 본사/외주 분리
             const { inHouse, outsourced } = separateWorkers(ship.leader, ship.teammates);
 
+            // 월간보고 전용: "홍길동 외 N명" 형식
+            const inHouseNames = inHouse === '-' ? [] : inHouse.split(',').map(n => n.trim()).filter(n => n);
+            const inHouseDisplay = inHouseNames.length === 0 ? '-'
+                : inHouseNames.length === 1 ? inHouseNames[0]
+                : `${inHouseNames[0]} 외 ${inHouseNames.length - 1}명`;
+
             const row = document.createElement('tr');
             row.innerHTML = `
-                <td class="border p-2 text-center">${index + 1}</td>
-                <td class="border p-2 text-center">${escapeHtmlReport(ship.company || '-')}</td>
-                <td class="border p-2 text-center">${escapeHtmlReport(ship.ship_name || ship.shipName || '-')}</td>
-                <td class="border p-2 text-center">${escapeHtmlReport(ship.project_period || '-')}</td>
-                <td class="border p-2 text-center">${escapeHtmlReport(ship.location || '-')}</td>
-                <td class="border p-2 text-left">${escapeHtmlReport(ship.work_content || ship.workContent || '-')}</td>
-                <td class="border p-2 text-center">${escapeHtmlReport(inHouse)}</td>
-                <td class="border p-2 text-center">${escapeHtmlReport(outsourced)}</td>
-                <td class="border p-2 text-center">${ship.total_manpower.toFixed(1)}</td>
+                <td class="border border-gray-900 p-2 text-center">${index + 1}</td>
+                <td class="border border-gray-900 p-2 text-center">${escapeHtmlReport(ship.company || '-')}</td>
+                <td class="border border-gray-900 p-2 text-center">${escapeHtmlReport(ship.ship_name || ship.shipName || '-')}</td>
+                <td class="border border-gray-900 p-2 text-center">${escapeHtmlReport(ship.project_period || '-')}</td>
+                <td class="border border-gray-900 p-2 text-center">${escapeHtmlReport(ship.location || '-')}</td>
+                <td class="border border-gray-900 p-2 text-left">${escapeHtmlReport(ship.work_content || ship.workContent || '-')}</td>
+                <td class="border border-gray-900 p-2 text-center">${escapeHtmlReport(inHouseDisplay)}</td>
+                <td class="border border-gray-900 p-2 text-center">${escapeHtmlReport(outsourced)}</td>
+                <td class="border border-gray-900 p-2 text-center">${ship.total_manpower.toFixed(1)}</td>
             `;
             tbody.appendChild(row);
         });

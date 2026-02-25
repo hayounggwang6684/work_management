@@ -101,6 +101,16 @@ def main():
         'disable_cache': config.get('ui.enable_dev_tools', False)
     }
 
+    # DB에서 텔레그램 설정 보완 로드 (다른 PC에서 settings.json에 토큰이 없을 때)
+    if not config.get('telegram.bot_token', ''):
+        from src.database.db_manager import db as _db
+        db_token = _db.get_setting('telegram.bot_token', '')
+        if db_token:
+            db_enabled = _db.get_setting('telegram.enabled', 'false') == 'true'
+            config.set('telegram.bot_token', db_token)
+            config.set('telegram.enabled', db_enabled)
+            logger.info("텔레그램 설정을 DB app_settings에서 로드했습니다.")
+
     # 텔레그램 봇 폴링 시작
     telegram_notifier.start_polling()
 
