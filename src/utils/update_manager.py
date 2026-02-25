@@ -102,6 +102,28 @@ class UpdateManager:
             new_patches = self._find_new_patch_assets()
 
             if not new_patches:
+                # ZIP 에셋이 없어도 tag_name 버전 비교로 2차 판단
+                latest_release = self._get_latest_release()
+                if latest_release:
+                    latest_ver = latest_release['tag_name'].lstrip('v')
+                    try:
+                        if version.parse(latest_ver) > version.parse(self.current_version):
+                            result = {
+                                'update_available': True,
+                                'current_version': self.current_version,
+                                'latest_version': latest_ver,
+                                'release_name': f'v{latest_ver}',
+                                'release_notes': latest_release.get('body', ''),
+                                'patches': [],
+                                'message': f'새 버전 v{latest_ver}이 있습니다. GitHub에서 다운로드하세요.',
+                                'manual_download': True
+                            }
+                            self._cache_update_info(result)
+                            logger.info(f"새 버전 발견 (에셋 없음): {latest_ver}")
+                            return result
+                    except Exception:
+                        pass
+
                 result = {
                     'update_available': False,
                     'current_version': self.current_version,
@@ -166,8 +188,8 @@ class UpdateManager:
 
                 for asset in assets:
                     name = asset['name']
-                    # 패치 ZIP 파일만 (.zip이고 patch 포함)
-                    if name.endswith('.zip') and 'patch' in name.lower():
+                    # ZIP 파일이면 모두 패치 에셋으로 인식 (파일명 형식 무관)
+                    if name.endswith('.zip'):
                         if name not in downloaded:
                             asset_id = asset['id']
                             api_download_url = (

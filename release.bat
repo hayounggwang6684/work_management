@@ -80,7 +80,7 @@ if not errorlevel 1 (
 
 REM ── 소스 ZIP 생성 ─────────────────────────────────────────────
 echo [2/5] 소스 ZIP 생성 중...
-set ZIP_NAME=WorkManagement_!VERSION!_source.zip
+set ZIP_NAME=patch_v!VERSION!.zip
 if exist "!ZIP_NAME!" del "!ZIP_NAME!"
 
 REM git archive 로 추적 파일만 압축 (settings.json 제외)
