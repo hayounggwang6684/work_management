@@ -63,7 +63,7 @@ class Config:
         return {
             "app": {
                 "name": "금일작업현황 관리",
-                "version": "1.2.0"
+                "version": "1.2.1"
             },
             "database": {
                 "filename": "work_management.db",
