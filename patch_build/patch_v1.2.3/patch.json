@@ -1,0 +1,15 @@
+{
+  "id": "patch_v1.2.3",
+  "version": "1.2.3",
+  "min_version": "1.1.6",
+  "description": "저장속도 개선(비동기 클라우드 동기화), 보고서 테두리 개선, 월간보고 작업자 표기 변경, 텔레그램 설정 DB 동기화, 업데이트 시스템 버그 수정",
+  "release_date": "2026-02-26",
+  "files": [
+    {"source": "src/web/api.py",             "target": "src/web/api.py"},
+    {"source": "src/main.py",                "target": "src/main.py"},
+    {"source": "web/index.html",             "target": "web/index.html"},
+    {"source": "web/js/report.js",           "target": "web/js/report.js"},
+    {"source": "src/utils/update_manager.py","target": "src/utils/update_manager.py"},
+    {"source": "web/js/update.js",           "target": "web/js/update.js"}
+  ]
+}

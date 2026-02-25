@@ -11,8 +11,16 @@ REM   release.bat 1.2.4        <- 지정 버전으로 릴리즈
 REM
 REM 실행 전 준비:
 REM   1. config\settings.json 의 "version" 을 새 버전으로 수정
-REM   2. git commit -am "v버전: 변경사항"  으로 커밋
-REM   3. 이 스크립트 실행
+REM   2. patch_build\patch_v{버전}\ 폴더에 patch.json + 변경 파일 배치
+REM      예) patch_build\patch_v1.2.4\patch.json
+REM          patch_build\patch_v1.2.4\src\web\api.py  (변경된 파일들)
+REM   3. git commit -am "v버전: 변경사항"  으로 커밋
+REM   4. 이 스크립트 실행
+REM
+REM patch.json 형식:
+REM   { "id": "patch_v1.2.4", "version": "1.2.4", "min_version": "1.2.3",
+REM     "description": "변경사항 설명",
+REM     "files": [{"source": "src/web/api.py", "target": "src/web/api.py"}] }
 REM ===================================================================
 
 REM ── 버전 결정 ────────────────────────────────────────────────
@@ -78,18 +86,23 @@ if not errorlevel 1 (
     pause & exit /b 1
 )
 
-REM ── 소스 ZIP 생성 ─────────────────────────────────────────────
-echo [2/5] 소스 ZIP 생성 중...
+REM ── 패치 ZIP 생성 ─────────────────────────────────────────────
+echo [2/5] 패치 ZIP 생성 중...
 set ZIP_NAME=patch_v!VERSION!.zip
+set PATCH_BUILD_DIR=patch_build\patch_v!VERSION!
+
 if exist "!ZIP_NAME!" del "!ZIP_NAME!"
 
-REM git archive 로 추적 파일만 압축 (settings.json 제외)
-git archive --format=zip --output="!ZIP_NAME!" HEAD -- ^
-    src/ web/ config/settings.example.json config/holidays.json ^
-    build.bat build_embedded.bat run.bat 2>nul
-
-REM settings.example.json 이 없을 경우 대비
-if errorlevel 1 (
+REM patch_build\patch_vVERSION\ 폴더가 있으면 해당 폴더로 ZIP 생성
+if exist "!PATCH_BUILD_DIR!\" (
+    echo     patch_build\patch_v!VERSION!\ 폴더 발견 → 패치 ZIP 생성
+    powershell -Command ^
+        "Compress-Archive -Path '!PATCH_BUILD_DIR!' -DestinationPath '!ZIP_NAME!' -Force" 2>nul
+) else (
+    echo [경고] !PATCH_BUILD_DIR!\ 폴더가 없습니다.
+    echo        patch_build\patch_v!VERSION!\patch.json 과 변경 파일을 준비하세요.
+    echo.
+    echo        폴더 없이 소스 ZIP으로 대체합니다 (패치 기능 동작 안 함).
     git archive --format=zip --output="!ZIP_NAME!" HEAD -- ^
         src/ web/ config/holidays.json ^
         build.bat build_embedded.bat 2>nul

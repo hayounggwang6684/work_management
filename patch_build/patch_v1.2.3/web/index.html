@@ -1,0 +1,874 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>금일작업현황 관리 - 로그인</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
+    <!-- 스플래시: head에서 가장 먼저 로드 (body 파싱 전에 실행 준비) -->
+    <script src="/js/splash.js"></script>
+</head>
+<body class="min-h-screen bg-gradient-to-br from-slate-100 via-blue-50 to-slate-100">
+
+    <!-- ======================================================== -->
+    <!-- 스플래시 로딩 화면 -->
+    <!-- ======================================================== -->
+    <div id="splashScreen" class="fixed inset-0 z-[9999] flex flex-col items-center justify-center"
+         style="background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 50%, #0f172a 100%);">
+
+        <!-- 로고 / 타이틀 -->
+        <div class="mb-10 text-center">
+            <h1 class="text-4xl font-bold text-white tracking-wide">금일작업현황 관리</h1>
+            <p class="text-blue-300 mt-2 text-sm tracking-widest">WORK MANAGEMENT SYSTEM</p>
+        </div>
+
+        <!-- 진행 메시지 -->
+        <div class="mb-8 text-center min-h-[3rem]">
+            <p id="splashMessage" class="text-blue-200 text-lg font-medium transition-all duration-500">
+                시스템을 깨우는 중...
+            </p>
+            <p id="splashSubMessage" class="text-slate-400 text-sm mt-1">잠시만 기다려 주세요</p>
+        </div>
+
+        <!-- 프로그레스 바 -->
+        <div class="w-72 bg-slate-700 rounded-full h-2 overflow-hidden">
+            <div id="splashProgress"
+                 class="h-full bg-gradient-to-r from-blue-400 to-cyan-400 rounded-full transition-all duration-700 ease-out"
+                 style="width: 0%;">
+            </div>
+        </div>
+        <p id="splashPercent" class="text-slate-500 text-xs mt-2">0%</p>
+
+        <!-- 하단 버전 -->
+        <p class="absolute bottom-6 text-slate-600 text-xs">v1.1.0 &nbsp;|&nbsp; HA Engineering</p>
+    </div>
+
+    <!-- 로그인 화면 -->
+    <div id="loginScreen" class="hidden min-h-screen flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full">
+            <div class="text-center mb-8">
+                <img src="assets/logo_login.png" alt="Logo" class="mx-auto mb-4 h-24 w-auto">
+                <h1 class="text-3xl font-bold text-slate-800 mb-2">금일작업현황 관리</h1>
+                <p class="text-slate-600">Work Management System</p>
+            </div>
+            
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-2">아이디</label>
+                    <input type="text" id="userId" 
+                           class="w-full px-4 py-3 border-2 border-slate-300 rounded-lg focus:border-blue-500 outline-none"
+                           placeholder="아이디를 입력하세요">
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-2">비밀번호</label>
+                    <input type="password" id="password" 
+                           class="w-full px-4 py-3 border-2 border-slate-300 rounded-lg focus:border-blue-500 outline-none"
+                           placeholder="비밀번호를 입력하세요"
+                           onkeypress="if(event.key==='Enter') handleLogin()">
+                </div>
+                
+                <button onclick="handleLogin()" 
+                        class="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors">
+                    로그인
+                </button>
+                
+                <button onclick="showRegisterForm()"
+                        class="w-full bg-slate-200 text-slate-700 py-3 rounded-lg font-semibold hover:bg-slate-300 transition-colors">
+                    계정 등록 요청
+                </button>
+            </div>
+            <p class="text-center text-xs text-slate-400 mt-5" id="loginVersionText">v-.-.-</p>
+        </div>
+    </div>
+
+    <!-- 등록 화면 -->
+    <div id="registerScreen" class="hidden min-h-screen flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full">
+            <h2 class="text-2xl font-bold text-slate-800 mb-6">계정 등록 요청</h2>
+            
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-2">아이디</label>
+                    <input type="text" id="regUserId" 
+                           class="w-full px-4 py-3 border-2 border-slate-300 rounded-lg focus:border-blue-500 outline-none"
+                           placeholder="사용할 아이디">
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-2">비밀번호</label>
+                    <input type="password" id="regPassword" 
+                           class="w-full px-4 py-3 border-2 border-slate-300 rounded-lg focus:border-blue-500 outline-none"
+                           placeholder="비밀번호">
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-2">이름</label>
+                    <input type="text" id="regFullName" 
+                           class="w-full px-4 py-3 border-2 border-slate-300 rounded-lg focus:border-blue-500 outline-none"
+                           placeholder="실명">
+                </div>
+                
+                <button onclick="handleRegister()" 
+                        class="w-full bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700 transition-colors">
+                    등록 요청
+                </button>
+                
+                <button onclick="showLoginForm()" 
+                        class="w-full bg-slate-200 text-slate-700 py-3 rounded-lg font-semibold hover:bg-slate-300 transition-colors">
+                    로그인 화면으로
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 메인 앱 (일반 사용자) -->
+    <div id="mainApp" class="hidden">
+        <!-- 기존 작업 관리 화면 -->
+        <header class="bg-white shadow-md sticky top-0 z-50">
+            <div class="container mx-auto px-6 py-4 flex justify-between items-center">
+                <h1 class="text-2xl font-bold">금일작업현황 관리</h1>
+                <div class="flex items-center gap-4">
+                    <button onclick="showView('dashboard')" id="btnDashboard" 
+                            class="px-4 py-2 rounded-lg bg-blue-600 text-white">대시보드</button>
+                    <button onclick="showView('daily')" id="btnDaily" 
+                            class="px-4 py-2 rounded-lg bg-slate-200">일일 작업</button>
+                    <button onclick="showView('report')" id="btnReport" 
+                            class="px-4 py-2 rounded-lg bg-slate-200">보고서</button>
+                    <button onclick="showView('search')" id="btnSearch" 
+                            class="px-4 py-2 rounded-lg bg-slate-200">조회</button>
+                    <span id="currentUser" class="font-medium"></span>
+                    <button onclick="showView('settings')" id="btnSettings" 
+                            class="px-4 py-2 bg-slate-200 rounded-lg">설정</button>
+                    <button onclick="handleLogout()" class="px-4 py-2 bg-slate-200 rounded-lg">로그아웃</button>
+                </div>
+            </div>
+        </header>
+
+        <main class="container mx-auto px-6 py-8">
+            <!-- 일일 작업 화면 -->
+            <div id="dailyView">
+                <div class="bg-white rounded-lg shadow-xl p-6">
+                    <div class="mb-4 flex justify-between">
+                        <div class="flex gap-2 items-center">
+                            <button onclick="changeDate(-1)"
+                                    class="px-3 py-2 bg-slate-200 hover:bg-slate-300 rounded-lg text-lg font-bold" title="이전일">◀</button>
+                            <input type="date" id="dateInput" onchange="onDateChange()"
+                                   class="px-4 py-2 border rounded-lg">
+                            <button onclick="changeDate(1)"
+                                    class="px-3 py-2 bg-slate-200 hover:bg-slate-300 rounded-lg text-lg font-bold" title="다음일">▶</button>
+                            <button onclick="loadYesterdayRecords()"
+                                    class="px-4 py-2 bg-cyan-600 text-white rounded-lg ml-2">어제 작업</button>
+                        </div>
+                        <button onclick="saveWorkRecords()" 
+                                class="px-6 py-2 bg-green-600 text-white rounded-lg font-semibold">저장</button>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full border-collapse">
+                            <thead>
+                                <tr class="bg-green-100">
+                                    <th class="border p-2 w-10">순번</th>
+                                    <th class="border p-2 w-32">계약번호</th>
+                                    <th class="border p-2 w-20">선사</th>
+                                    <th class="border p-2 w-20">선명</th>
+                                    <th class="border p-2 w-28">엔진모델</th>
+                                    <th class="border p-2 w-40">작업내용</th>
+                                    <th class="border p-2 w-20">장소</th>
+                                    <th class="border p-2 w-28">작업자</th>
+                                    <th class="border p-2 w-12">인원</th>
+                                    <th class="border p-2">동반자</th>
+                                </tr>
+                            </thead>
+                            <tbody id="workRecordsTable"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 조회 화면 -->
+            <div id="searchView" class="hidden">
+                <div class="bg-white rounded-lg shadow-xl p-6">
+                    <!-- 조회 하위 탭 -->
+                    <div class="flex gap-2 mb-6 border-b pb-2">
+                        <button onclick="showSearchTab('status')" id="btnSearchStatus" 
+                                class="px-6 py-2 rounded-lg bg-blue-600 text-white font-semibold">현황 조회</button>
+                        <button onclick="showSearchTab('work')" id="btnSearchWork" 
+                                class="px-6 py-2 rounded-lg bg-slate-200 font-semibold">작업별 조회</button>
+                    </div>
+
+                    <!-- 현황 조회 (계약번호 기준) -->
+                    <div id="statusSearchTab">
+                        <h2 class="text-2xl font-bold mb-4">현황 조회</h2>
+                        <div class="flex gap-2 mb-6 items-center flex-wrap">
+                            <label class="font-semibold text-slate-700">계약번호:</label>
+                            <div class="flex items-center gap-0 border rounded-lg overflow-hidden bg-white">
+                                <span class="px-2 py-2 bg-slate-100 text-slate-600 font-mono text-sm border-r">SH-</span>
+                                <input type="text" id="contractYear"
+                                       class="w-16 px-2 py-2 text-center font-mono text-sm border-0 focus:bg-yellow-50"
+                                       value="2025" maxlength="4">
+                                <span class="px-1 py-2 bg-slate-100 text-slate-600 font-mono text-sm border-x">-</span>
+                                <input type="text" id="contractSeq"
+                                       class="w-12 px-2 py-2 text-center font-mono text-sm border-0 focus:bg-yellow-50"
+                                       value="001" maxlength="3">
+                                <span class="px-2 py-2 bg-slate-100 text-slate-600 font-mono text-sm border-l">-T</span>
+                            </div>
+                            <div class="flex gap-1">
+                                <button onclick="changeContractPart('seq', -1)" class="px-2 py-1 bg-slate-200 hover:bg-slate-300 rounded text-sm" title="이전 공사">◀</button>
+                                <button onclick="changeContractPart('seq', 1)" class="px-2 py-1 bg-slate-200 hover:bg-slate-300 rounded text-sm" title="다음 공사">▶</button>
+                            </div>
+                            <button onclick="searchByContract()"
+                                    class="px-6 py-2 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700">조회</button>
+                        </div>
+                        <div id="statusSearchResult">
+                            <p class="text-slate-500">계약번호를 입력하고 조회 버튼을 클릭하세요.</p>
+                        </div>
+                    </div>
+
+                    <!-- 작업별 조회 (선명 기준) -->
+                    <div id="workSearchTab" class="hidden">
+                        <h2 class="text-2xl font-bold mb-4">작업별 조회</h2>
+                        <div class="flex gap-2 mb-6 items-center">
+                            <label class="font-semibold text-slate-700">선명:</label>
+                            <input type="text" id="searchShipInput"
+                                   class="px-4 py-2 border rounded-lg w-64 uppercase"
+                                   placeholder="선박명 입력"
+                                   onkeydown="if(event.key==='Enter') searchByShipName()">
+                            <button onclick="searchByShipName()"
+                                    class="px-6 py-2 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700">조회</button>
+                        </div>
+                        <div id="workSearchResult">
+                            <p class="text-slate-500">선명을 입력하고 조회 버튼을 클릭하세요.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 대시보드 화면 -->
+            <div id="dashboardView" class="hidden">
+                <div class="bg-white rounded-lg shadow-xl p-6">
+                    <!-- 대시보드 하위 탭 -->
+                    <div class="flex gap-2 mb-6 border-b pb-2">
+                        <button onclick="showDashboardTab('chart')" id="btnDashboardChart" 
+                                class="px-6 py-2 rounded-lg bg-blue-600 text-white font-semibold">차트</button>
+                        <button onclick="showDashboardTab('board')" id="btnDashboardBoard" 
+                                class="px-6 py-2 rounded-lg bg-slate-200 font-semibold">보드</button>
+                    </div>
+
+                    <!-- 간트 차트 -->
+                    <div id="chartTab">
+                        <div class="flex justify-between items-center mb-4">
+                            <h2 class="text-xl font-bold">월별 작업 진행 현황</h2>
+                            <div class="flex items-center gap-2">
+                                <button onclick="changeGanttMonth(-1)"
+                                        class="px-3 py-1 bg-slate-200 hover:bg-slate-300 rounded text-lg font-bold">◀</button>
+                                <span id="ganttMonthDisplay" class="text-lg font-bold px-4">2026년 2월</span>
+                                <button onclick="changeGanttMonth(1)"
+                                        class="px-3 py-1 bg-slate-200 hover:bg-slate-300 rounded text-lg font-bold">▶</button>
+                            </div>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table id="ganttTable" class="w-full border-collapse text-sm">
+                                <!-- JS 동적 생성 -->
+                            </table>
+                        </div>
+                        <div id="ganttEmpty" class="hidden text-center text-slate-500 py-12">
+                            이 달에 등록된 작업이 없습니다.
+                        </div>
+                    </div>
+
+                    <!-- 칸반 보드 -->
+                    <div id="boardTab" class="hidden">
+                        <div class="grid grid-cols-3 gap-4" id="kanbanContainer">
+                            <!-- 접수 -->
+                            <div class="bg-yellow-50 rounded-lg p-4 min-h-96">
+                                <h3 class="font-bold text-yellow-800 mb-3 flex items-center gap-2">
+                                    📋 접수
+                                    <span id="receptionCount" class="bg-yellow-200 px-2 rounded-full text-sm">0</span>
+                                    <button onclick="showNewProjectModal()" class="ml-auto text-xs bg-yellow-200 hover:bg-yellow-300 px-2 py-1 rounded" title="새 프로젝트 접수">+ 추가</button>
+                                </h3>
+                                <div id="receptionCards" class="space-y-3"></div>
+                            </div>
+                            <!-- 착수 -->
+                            <div class="bg-blue-50 rounded-lg p-4 min-h-96">
+                                <h3 class="font-bold text-blue-800 mb-3 flex items-center gap-2">
+                                    🔵 착수
+                                    <span id="startedCount" class="bg-blue-200 px-2 rounded-full text-sm">0</span>
+                                </h3>
+                                <div id="startedCards" class="space-y-3"></div>
+                            </div>
+                            <!-- 준공 -->
+                            <div class="bg-green-50 rounded-lg p-4 min-h-96">
+                                <h3 class="font-bold text-green-800 mb-3 flex items-center gap-2">
+                                    🟢 준공
+                                    <span id="doneCount" class="bg-green-200 px-2 rounded-full text-sm">0</span>
+                                    <button onclick="toggleArchive()" id="archiveToggleBtn" class="ml-auto text-xs bg-slate-200 hover:bg-slate-300 px-2 py-1 rounded">아카이브 ▼</button>
+                                </h3>
+                                <div id="doneCards" class="space-y-3"></div>
+                            </div>
+                        </div>
+                        <!-- 아카이브 (접이식) -->
+                        <div id="archivePanel" class="hidden mt-4 bg-slate-50 rounded-lg p-4">
+                            <h3 class="font-bold text-slate-600 mb-3 flex items-center gap-2">
+                                📦 아카이브 (지난 달 준공)
+                                <span id="archiveCount" class="bg-slate-200 px-2 rounded-full text-sm">0</span>
+                            </h3>
+                            <div id="archiveCards" class="grid grid-cols-3 gap-3"></div>
+                        </div>
+
+                        <!-- 새 프로젝트 접수 모달 -->
+                        <div id="newProjectModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                            <div class="bg-white rounded-lg p-6 max-w-md w-full shadow-2xl">
+                                <h3 class="font-bold text-lg mb-4">새 프로젝트 접수</h3>
+                                <div class="space-y-3">
+                                    <div>
+                                        <label class="block text-sm font-medium text-slate-700 mb-1">선사</label>
+                                        <input type="text" id="npCompany" class="w-full px-3 py-2 border rounded-lg" placeholder="선사명">
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-slate-700 mb-1">선명</label>
+                                        <input type="text" id="npShipName" class="w-full px-3 py-2 border rounded-lg uppercase" placeholder="선명">
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-slate-700 mb-1">엔진모델</label>
+                                        <input type="text" id="npEngineModel" class="w-full px-3 py-2 border rounded-lg" placeholder="엔진모델">
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-slate-700 mb-1">작업내용</label>
+                                        <input type="text" id="npWorkContent" class="w-full px-3 py-2 border rounded-lg" placeholder="작업내용">
+                                    </div>
+                                </div>
+                                <div class="flex gap-2 mt-4">
+                                    <button onclick="submitNewProject()" class="flex-1 bg-yellow-500 text-white py-2 rounded-lg font-semibold hover:bg-yellow-600">접수 등록</button>
+                                    <button onclick="closeNewProjectModal()" class="flex-1 bg-slate-200 py-2 rounded-lg font-semibold hover:bg-slate-300">취소</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 댓글 모달 -->
+                        <div id="commentModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                            <div class="bg-white rounded-lg p-6 max-w-2xl w-full shadow-2xl max-h-[80vh] flex flex-col">
+                                <div class="flex justify-between items-center mb-4">
+                                    <h3 id="commentTitle" class="font-bold text-lg">댓글</h3>
+                                    <button onclick="closeCommentModal()" class="text-slate-400 hover:text-slate-600 text-xl">&times;</button>
+                                </div>
+                                <div id="commentsList" class="flex-1 overflow-y-auto space-y-3 mb-4 min-h-[400px]"></div>
+                                <div id="replyIndicator" class="hidden text-xs text-blue-600 mb-1 flex items-center gap-1">
+                                    <span id="replyToName"></span>에게 답글
+                                    <button onclick="cancelReply()" class="text-slate-400 hover:text-red-500 ml-1">&times;</button>
+                                </div>
+                                <div class="flex gap-2">
+                                    <input type="text" id="commentInput" class="flex-1 px-3 py-2 border rounded-lg text-sm" placeholder="댓글을 입력하세요..."
+                                           onkeypress="if(event.key==='Enter') submitComment()">
+                                    <button onclick="submitComment()" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700">등록</button>
+                                </div>
+                                <input type="hidden" id="commentContractNumber">
+                                <input type="hidden" id="commentBoardProjectId">
+                                <input type="hidden" id="commentReplyToId">
+                            </div>
+                        </div>
+
+                        <!-- 착수 전환 모달 (계약번호 입력) -->
+                        <div id="startProjectModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                            <div class="bg-white rounded-lg p-6 max-w-md w-full shadow-2xl">
+                                <h3 class="font-bold text-lg mb-4">착수 전환 - 계약번호 입력</h3>
+                                <input type="hidden" id="spProjectId">
+                                <div class="flex items-center gap-0 border rounded-lg overflow-hidden bg-white mb-4">
+                                    <span class="px-2 py-2 bg-slate-100 text-slate-600 font-mono text-sm border-r">SH-</span>
+                                    <input type="text" id="spContractYear" class="w-16 px-2 py-2 text-center font-mono text-sm border-0 focus:bg-yellow-50" value="2025" maxlength="4">
+                                    <span class="px-1 py-2 bg-slate-100 text-slate-600 font-mono text-sm border-x">-</span>
+                                    <input type="text" id="spContractSeq" class="w-12 px-2 py-2 text-center font-mono text-sm border-0 focus:bg-yellow-50" value="001" maxlength="3">
+                                    <span class="px-2 py-2 bg-slate-100 text-slate-600 font-mono text-sm border-l">-T</span>
+                                </div>
+                                <div class="flex gap-2">
+                                    <button onclick="confirmStartProject()" class="flex-1 bg-blue-600 text-white py-2 rounded-lg font-semibold hover:bg-blue-700">착수 전환</button>
+                                    <button onclick="closeStartProjectModal()" class="flex-1 bg-slate-200 py-2 rounded-lg font-semibold hover:bg-slate-300">취소</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 설정 화면 -->
+            <div id="settingsView" class="hidden">
+                <div class="bg-white rounded-lg shadow-xl p-6">
+                    <h2 class="text-2xl font-bold mb-6">사용자 설정</h2>
+                    
+                    <div class="space-y-6">
+                        <!-- 로그인 후 기본 화면 설정 -->
+                        <div class="bg-blue-50 p-4 rounded-lg">
+                            <label class="block text-sm font-semibold mb-2 text-blue-900">로그인 후 기본 화면</label>
+                            <select id="defaultViewSelect" class="w-full px-4 py-2 border rounded-lg">
+                                <option value="dashboard">대시보드</option>
+                                <option value="daily">일일 작업</option>
+                                <option value="report">보고서</option>
+                                <option value="search">조회</option>
+                            </select>
+                            <p class="text-xs text-blue-700 mt-2">
+                                프로그램 실행 시 기본으로 표시될 화면을 선택하세요.
+                            </p>
+                            <button onclick="saveUserSettings()" class="mt-3 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                                저장
+                            </button>
+                        </div>
+                        
+                        <!-- 텔레그램 알림 연결 -->
+                        <div class="bg-green-50 p-4 rounded-lg">
+                            <label class="block text-sm font-semibold mb-2 text-green-900">📱 텔레그램 알림 연결</label>
+                            <div id="telegramBotDisabled" class="hidden">
+                                <p class="text-slate-500 text-sm">텔레그램 봇이 아직 설정되지 않았습니다. 관리자에게 문의하세요.</p>
+                            </div>
+                            <div id="telegramLinked" class="hidden">
+                                <p class="text-green-700 mb-2">
+                                    ✅ 텔레그램이 연결되어 있습니다.
+                                    <span id="telegramLinkedDate" class="text-sm text-green-600"></span>
+                                </p>
+                                <p class="text-xs text-slate-500 mb-3">댓글 알림을 텔레그램으로 받고, 답장으로 댓글을 달 수 있습니다.</p>
+                                <button onclick="unlinkTelegram()"
+                                    class="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 text-sm">
+                                    연결 해제
+                                </button>
+                            </div>
+                            <div id="telegramNotLinked" class="hidden">
+                                <p class="text-slate-600 mb-3 text-sm">
+                                    텔레그램을 연결하면 프로젝트 댓글 알림을 받을 수 있고,<br>
+                                    알림에 답장하면 해당 프로젝트에 댓글이 등록됩니다.
+                                </p>
+                                <button onclick="generateTelegramCode()"
+                                    class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm">
+                                    🔗 텔레그램 연결하기
+                                </button>
+                            </div>
+                            <div id="telegramLinkCode" class="hidden mt-3 bg-white p-3 rounded-lg border border-green-200">
+                                <p class="text-sm mb-2 text-green-800">아래 링크를 클릭하여 텔레그램에서 연결하세요:</p>
+                                <a id="telegramDeepLink" href="#" target="_blank"
+                                   class="text-blue-600 underline text-lg font-bold block mb-1"></a>
+                                <p class="text-xs text-slate-500">코드는 5분 후 만료됩니다.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 보고서 화면 -->
+            <div id="reportView" class="hidden">
+                <div class="bg-white rounded-lg shadow-xl p-6">
+                    <!-- 보고서 하위 탭 -->
+                    <div class="flex gap-2 mb-6 border-b pb-2">
+                        <button onclick="showReportTab('daily')" id="btnReportDaily" 
+                                class="px-6 py-2 rounded-lg bg-blue-600 text-white font-semibold">일일 보고</button>
+                        <button onclick="showReportTab('monthly')" id="btnReportMonthly" 
+                                class="px-6 py-2 rounded-lg bg-slate-200 font-semibold">월간 보고</button>
+                    </div>
+
+                    <!-- 일일 보고 -->
+                    <div id="dailyReportTab">
+                        <div class="flex justify-end items-center mb-4">
+                            <div class="flex items-center gap-2">
+                                <button onclick="captureReport('dailyReportCapture')"
+                                        class="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-semibold" title="클립보드에 이미지 복사">📋 캡쳐</button>
+                                <button onclick="changeReportDate(-1)"
+                                        class="px-3 py-2 bg-slate-200 hover:bg-slate-300 rounded-lg text-lg font-bold" title="이전일">◀</button>
+                                <input type="date" id="reportDate" onchange="onReportDateChange()"
+                                       class="px-4 py-2 border rounded-lg">
+                                <button onclick="changeReportDate(1)"
+                                        class="px-3 py-2 bg-slate-200 hover:bg-slate-300 rounded-lg text-lg font-bold" title="다음일">▶</button>
+                            </div>
+                        </div>
+
+                        <div id="dailyReportCapture" class="bg-white p-4">
+                            <h2 class="text-2xl font-bold text-center mb-2">선진종합 선박별 작업 현황</h2>
+                            <div class="text-right mb-4">
+                                <span id="reportDateDisplay" class="text-lg font-semibold"></span>
+                            </div>
+
+                            <div class="overflow-x-auto">
+                                <table class="w-full border-collapse border border-gray-900">
+                                    <thead>
+                                        <tr class="bg-blue-100">
+                                            <th class="border border-gray-900 p-3 text-center">No.</th>
+                                            <th class="border border-gray-900 p-3 text-center">선사</th>
+                                            <th class="border border-gray-900 p-3 text-center">선명</th>
+                                            <th class="border border-gray-900 p-3 text-center">공사기간</th>
+                                            <th class="border border-gray-900 p-3 text-center">장소</th>
+                                            <th class="border border-gray-900 p-3 text-center" style="min-width: 200px;">작업내용</th>
+                                            <th class="border border-gray-900 p-3 text-center">담당공무</th>
+                                            <th class="border border-gray-900 p-3 text-center">협력업체</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="dailyReportTable">
+                                        <!-- JavaScript로 동적 생성 -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 월간 보고 -->
+                    <div id="monthlyReportTab" class="hidden">
+                        <div class="flex justify-end items-center mb-4">
+                            <div class="flex items-center gap-4">
+                                <button onclick="captureReport('monthlyReportCapture')"
+                                        class="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-semibold" title="클립보드에 이미지 복사">📋 캡쳐</button>
+                                <input type="month" id="reportMonth" onchange="loadMonthlyReport()"
+                                       class="px-4 py-2 border rounded-lg">
+                            </div>
+                        </div>
+
+                        <div id="monthlyReportCapture" class="bg-white p-4">
+                            <h2 class="text-2xl font-bold text-center mb-4">
+                                <span id="monthlyReportTitle">월간 작업 현황</span>
+                            </h2>
+                            <div class="overflow-x-auto">
+                                <table class="w-full border-collapse border border-gray-900">
+                                    <thead>
+                                        <tr class="bg-blue-100">
+                                            <th class="border border-gray-900 p-3 text-center">No.</th>
+                                            <th class="border border-gray-900 p-3 text-center">선사</th>
+                                            <th class="border border-gray-900 p-3 text-center">선명</th>
+                                            <th class="border border-gray-900 p-3 text-center">공사기간</th>
+                                            <th class="border border-gray-900 p-3 text-center">장소</th>
+                                            <th class="border border-gray-900 p-3 text-center" style="min-width: 200px;">작업내용</th>
+                                            <th class="border border-gray-900 p-3 text-center">작업자</th>
+                                            <th class="border border-gray-900 p-3 text-center">협력업체</th>
+                                            <th class="border border-gray-900 p-3 text-center">투입공수</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="monthlyReportTable">
+                                        <!-- JavaScript로 동적 생성 -->
+                                </tbody>
+                            </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- 관리자 페이지 -->
+    <div id="adminApp" class="hidden">
+        <header class="bg-slate-800 text-white shadow-md">
+            <div class="container mx-auto px-6 py-4 flex justify-between items-center">
+                <h1 class="text-2xl font-bold">관리자 페이지</h1>
+                <div class="flex items-center gap-4">
+                    <span id="adminName" class="font-medium"></span>
+                    <button onclick="handleLogout()" class="px-4 py-2 bg-slate-600 rounded-lg hover:bg-slate-700">로그아웃</button>
+                </div>
+            </div>
+        </header>
+
+        <div class="container mx-auto px-6 py-8">
+            <!-- 탭 메뉴 -->
+            <div class="bg-white rounded-lg shadow-md mb-6">
+                <div class="flex border-b">
+                    <button onclick="showAdminTab('users')" id="tabUsers"
+                            class="px-6 py-3 font-medium border-b-2 border-blue-600 text-blue-600">
+                        사용자 관리
+                    </button>
+                    <button onclick="showAdminTab('settings')" id="tabSettings"
+                            class="px-6 py-3 font-medium text-slate-600 hover:text-slate-800">
+                        저장 위치 설정
+                    </button>
+                    <button onclick="showAdminTab('db')" id="tabDb"
+                            class="px-6 py-3 font-medium text-slate-600 hover:text-slate-800">
+                        DB 관리
+                    </button>
+                    <button onclick="showAdminTab('telegram')" id="tabTelegram"
+                            class="px-6 py-3 font-medium text-slate-600 hover:text-slate-800">
+                        텔레그램
+                    </button>
+                </div>
+            </div>
+
+            <!-- 사용자 관리 탭 -->
+            <div id="adminUsersTab" class="bg-white rounded-lg shadow-md p-6">
+                <h2 class="text-xl font-bold mb-4">사용자 관리</h2>
+                
+                <!-- 승인 대기 -->
+                <div class="mb-8">
+                    <h3 class="text-lg font-semibold mb-3">승인 대기 중</h3>
+                    <div id="pendingUsers" class="space-y-2">
+                        <!-- JavaScript로 동적 생성 -->
+                    </div>
+                </div>
+                
+                <!-- 전체 사용자 -->
+                <div>
+                    <h3 class="text-lg font-semibold mb-3">전체 사용자</h3>
+                    <div id="allUsers" class="space-y-2">
+                        <!-- JavaScript로 동적 생성 -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- 설정 탭 -->
+            <div id="adminSettingsTab" class="hidden bg-white rounded-lg shadow-md p-6">
+                <h2 class="text-xl font-bold mb-6">저장 위치 설정</h2>
+                
+                <div class="space-y-6">
+                    <!-- 로컬 DB 경로 -->
+                    <div class="bg-blue-50 p-4 rounded-lg">
+                        <label class="block text-sm font-semibold mb-2 text-blue-900">로컬 DB 경로</label>
+                        <div class="mb-2">
+                            <p class="text-sm text-blue-800">현재 경로: <span id="currentDbPath" class="font-mono text-blue-600">-</span></p>
+                        </div>
+                        <div class="flex gap-2">
+                            <input type="text" id="dbPath"
+                                   class="flex-1 px-4 py-2 border rounded-lg"
+                                   placeholder="예: C:\WorkManagement\data\work_management.db">
+                            <button onclick="selectDbPath()" 
+                                    class="px-4 py-2 bg-slate-600 text-white rounded-lg hover:bg-slate-700">
+                                경로 선택
+                            </button>
+                            <button onclick="updateLocalDbPath()" 
+                                    class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                                변경
+                            </button>
+                        </div>
+                        <p class="text-xs text-blue-700 mt-2">
+                            ⚠️ 기존 DB 파일이 새 위치로 복사됩니다. 변경 후 프로그램을 재시작하세요.
+                        </p>
+                    </div>
+
+                    <!-- 클라우드 동기화 경로 -->
+                    <div class="bg-green-50 p-4 rounded-lg">
+                        <label class="block text-sm font-semibold mb-2 text-green-900">클라우드 동기화 경로</label>
+                        <div class="mb-2">
+                            <p class="text-sm text-green-800">현재 경로: <span id="currentCloudPath" class="font-mono text-green-600">-</span></p>
+                        </div>
+                        <div class="flex gap-2">
+                            <input type="text" id="cloudPath"
+                                   class="flex-1 px-4 py-2 border rounded-lg"
+                                   placeholder="예: C:\OneDrive\WorkManagement">
+                            <button onclick="selectCloudPath()" 
+                                    class="px-4 py-2 bg-slate-600 text-white rounded-lg hover:bg-slate-700">
+                                경로 선택
+                            </button>
+                            <button onclick="updateCloudPath()" 
+                                    class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">
+                                변경
+                            </button>
+                        </div>
+                        <p class="text-xs text-green-700 mt-2">
+                            💡 OneDrive, Google Drive 등 클라우드 폴더 경로를 입력하세요.
+                        </p>
+                    </div>
+
+                    <!-- 백업 경로 -->
+                    <div class="bg-purple-50 p-4 rounded-lg">
+                        <label class="block text-sm font-semibold mb-2 text-purple-900">백업 경로</label>
+                        <div class="mb-2">
+                            <p class="text-sm text-purple-800">현재 경로: <span id="currentBackupPath" class="font-mono text-purple-600">-</span></p>
+                        </div>
+                        <div class="flex gap-2">
+                            <input type="text" id="backupPath"
+                                   class="flex-1 px-4 py-2 border rounded-lg"
+                                   placeholder="예: C:\Backups\WorkManagement">
+                            <button onclick="selectBackupPath()" 
+                                    class="px-4 py-2 bg-slate-600 text-white rounded-lg hover:bg-slate-700">
+                                경로 선택
+                            </button>
+                            <button onclick="updateBackupPath()" 
+                                    class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700">
+                                변경
+                            </button>
+                        </div>
+                        <p class="text-xs text-purple-700 mt-2">
+                            💾 수동 백업 파일이 저장될 위치입니다.
+                        </p>
+                    </div>
+
+                    <!-- 수동 백업 버튼 -->
+                    <div class="bg-slate-50 p-4 rounded-lg">
+                        <h3 class="font-semibold mb-2">수동 백업</h3>
+                        <button onclick="createManualBackup()" 
+                                class="px-6 py-3 bg-slate-700 text-white rounded-lg hover:bg-slate-800 font-semibold">
+                            지금 백업 생성
+                        </button>
+                        <p class="text-xs text-slate-600 mt-2">
+                            현재 DB를 백업 경로에 저장합니다.
+                        </p>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- DB 관리 탭 -->
+            <div id="adminDbTab" class="hidden bg-white rounded-lg shadow-md p-6">
+                <h2 class="text-xl font-bold mb-6">DB 관리</h2>
+
+                <div class="space-y-6">
+                    <!-- 엑셀 데이터 불러오기 -->
+                    <div class="bg-amber-50 p-4 rounded-lg">
+                        <h3 class="font-semibold mb-2 text-amber-900">엑셀 데이터 불러오기</h3>
+                        <p class="text-xs text-amber-700 mb-3">
+                            기존 엑셀 파일(.xlsx, .xlsb)을 프로그램 DB로 일괄 업로드합니다.<br>
+                            ⚠️ 동일 날짜의 기존 데이터는 덮어쓰기 됩니다.
+                        </p>
+                        <div class="flex gap-2 items-center flex-wrap">
+                            <input type="file" id="excelFileInput" accept=".xlsx,.xls,.xlsb"
+                                   class="text-sm file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-amber-600 file:text-white file:font-semibold hover:file:bg-amber-700">
+                            <button onclick="importExcelData()"
+                                    class="px-6 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 font-semibold">
+                                불러오기
+                            </button>
+                        </div>
+                        <div id="importResult" class="mt-3"></div>
+                    </div>
+
+                    <!-- DB 전체 삭제 -->
+                    <div class="bg-red-50 p-4 rounded-lg">
+                        <h3 class="font-semibold mb-2 text-red-900">DB 전체 삭제</h3>
+                        <p class="text-xs text-red-700 mb-3">
+                            모든 작업 레코드를 삭제합니다.<br>
+                            ⚠️ 이 작업은 되돌릴 수 없습니다. 삭제 전 백업을 권장합니다.
+                        </p>
+                        <button onclick="clearAllRecords()"
+                                class="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-semibold">
+                            전체 삭제
+                        </button>
+                        <div id="clearResult" class="mt-3"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 텔레그램 탭 -->
+            <div id="adminTelegramTab" class="hidden bg-white rounded-lg shadow-md p-6">
+                <h2 class="text-xl font-bold mb-6">텔레그램 봇 설정</h2>
+
+                <div class="space-y-6">
+                    <div class="bg-cyan-50 p-4 rounded-lg">
+                        <h3 class="font-semibold mb-2 text-cyan-900">📱 텔레그램 봇 설정</h3>
+                        <p class="text-xs text-cyan-700 mb-3">
+                            텔레그램 @BotFather에서 봇을 생성하고 토큰을 입력하세요.<br>
+                            사용자들이 각자 텔레그램을 연결하여 댓글 알림을 받을 수 있습니다.
+                        </p>
+                        <div class="flex gap-2 mb-3">
+                            <input type="text" id="telegramBotToken"
+                                   class="flex-1 px-4 py-2 border rounded-lg font-mono text-sm"
+                                   placeholder="봇 토큰 입력 (예: 123456:ABC-DEF...)">
+                        </div>
+                        <div class="flex items-center gap-4 mb-3">
+                            <label class="flex items-center gap-2 cursor-pointer">
+                                <input type="checkbox" id="telegramEnabled" class="w-4 h-4 text-cyan-600">
+                                <span class="text-sm text-cyan-800">텔레그램 알림 활성화</span>
+                            </label>
+                            <span id="telegramBotStatus" class="text-xs text-slate-500"></span>
+                        </div>
+                        <button onclick="saveTelegramBotToken()"
+                                class="px-4 py-2 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 text-sm font-semibold">
+                            저장
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 로딩 오버레이 -->
+    <div id="loadingOverlay" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div class="bg-white rounded-lg p-8 flex flex-col items-center">
+            <div class="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600 mb-4"></div>
+            <p class="text-lg font-semibold text-slate-700" id="loadingMessage">처리 중...</p>
+        </div>
+    </div>
+
+    <!-- 커스텀 알림 -->
+    <div id="customAlert" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div class="bg-white rounded-lg shadow-2xl p-6 max-w-md w-full mx-4">
+            <div class="flex items-center mb-4">
+                <div id="alertIcon" class="mr-3"></div>
+                <h3 id="alertTitle" class="text-lg font-bold"></h3>
+            </div>
+            <p id="alertMessage" class="text-slate-600 mb-6"></p>
+            <div class="flex justify-end">
+                <button onclick="closeCustomAlert()" class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">확인</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 업데이트 모달 -->
+    <div id="updateModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-2xl shadow-2xl p-8 max-w-2xl w-full">
+            <div class="text-center mb-6">
+                <div class="text-6xl mb-4">🚀</div>
+                <h2 class="text-2xl font-bold text-slate-800">새 버전이 있습니다!</h2>
+            </div>
+            
+            <div class="space-y-4 mb-6">
+                <div class="bg-blue-50 p-4 rounded-lg">
+                    <div class="flex justify-between items-center mb-2">
+                        <span class="font-semibold">현재 버전:</span>
+                        <span id="currentVersion" class="text-slate-600"></span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="font-semibold text-green-700">최신 버전:</span>
+                        <span id="latestVersion" class="text-green-700 font-bold"></span>
+                    </div>
+                </div>
+                
+                <div>
+                    <h3 class="font-semibold mb-2">📝 업데이트 내용</h3>
+                    <div id="releaseNotes" class="bg-slate-50 p-4 rounded-lg max-h-64 overflow-y-auto text-sm">
+                        <!-- JavaScript로 채워짐 -->
+                    </div>
+                </div>
+                
+                <div id="downloadProgress" class="hidden">
+                    <div class="mb-2 flex justify-between text-sm">
+                        <span>다운로드 중...</span>
+                        <span id="downloadPercent">0%</span>
+                    </div>
+                    <div class="w-full bg-gray-200 rounded-full h-4">
+                        <div id="downloadBar" class="bg-blue-600 h-4 rounded-full transition-all duration-300" style="width: 0%"></div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="flex gap-3">
+                <button onclick="startUpdate()" id="btnUpdate"
+                        class="flex-1 bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700">
+                    지금 업데이트
+                </button>
+                <button onclick="closeUpdateModal()" id="btnLater"
+                        class="flex-1 bg-slate-200 text-slate-700 py-3 rounded-lg font-semibold hover:bg-slate-300">
+                    나중에
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 중요: eel.js를 먼저 로드 -->
+    <script type="text/javascript" src="/eel.js"></script>
+    <!-- 그 다음 app.js 로드 (버전 파라미터로 캐시 방지) -->
+    <script src="js/auth.js?v=1.0.8"></script>
+    <script src="js/app.js?v=1.0.8"></script>
+    <script src="js/report.js?v=1.0.8"></script>
+    <script src="js/update.js?v=1.0.8"></script>
+
+    <script>
+        // eel이 준비되면 스플래시 닫기
+        // eel.js 로드 + WebSocket 연결 + Python ping 응답까지 확인
+        (function waitForEel() {
+            if (typeof eel === 'undefined') {
+                setTimeout(waitForEel, 200);
+                return;
+            }
+            // ping()을 실제로 호출해서 Python 백엔드 연결 확인
+            try {
+                eel.ping()(function(ok) {
+                    if (ok && typeof splashReady === 'function') splashReady();
+                    else setTimeout(waitForEel, 300);
+                });
+            } catch(e) {
+                setTimeout(waitForEel, 300);
+            }
+        })();
+    </script>
+</body>
+</html>
