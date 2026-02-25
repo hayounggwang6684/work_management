@@ -29,24 +29,35 @@ class SettingsManager:
         try:
             new_path = Path(new_path)
             current_path = Path(config.db_path)
-            
+
             # 새 경로 디렉토리 생성
             new_path.parent.mkdir(parents=True, exist_ok=True)
-            
-            # 기존 DB 파일이 있으면 복사
+
+            # 대상 경로에 DB 파일이 이미 존재하면 덮어쓰지 않음
+            if new_path.exists():
+                logger.info(f"대상 경로에 기존 DB 파일 존재, 설정만 업데이트: {new_path}")
+                self._update_config_file('database.local_path', str(new_path.parent))
+                return {
+                    'success': True,
+                    'message': '대상 경로에 기존 DB 파일이 있어 그대로 사용합니다. 프로그램을 재시작하세요.',
+                    'used_existing': True
+                }
+
+            # 대상에 파일 없음 → 현재 DB를 새 경로로 복사
             if current_path.exists():
                 logger.info(f"DB 파일 복사 중: {current_path} -> {new_path}")
                 shutil.copy2(current_path, new_path)
                 logger.info("DB 파일 복사 완료")
-            
+
             # 설정 파일 업데이트
             self._update_config_file('database.local_path', str(new_path.parent))
-            
+
             return {
                 'success': True,
-                'message': 'DB 경로가 변경되었습니다. 프로그램을 재시작하세요.'
+                'message': 'DB 경로가 변경되었습니다. 프로그램을 재시작하세요.',
+                'used_existing': False
             }
-            
+
         except Exception as e:
             logger.error(f"DB 경로 변경 실패: {e}")
             return {

@@ -1,7 +1,7 @@
 {
   "app": {
     "name": "금일작업현황 관리",
-    "version": "1.2.1",
+    "version": "1.2.2",
     "author": "Your Company"
   },
   "database": {
@@ -24,7 +24,7 @@
   "update": {
     "check_on_startup": true,
     "github_token": "",
-    "current_version": "1.2.1"
+    "current_version": "1.2.2"
   },
   "telegram": {
     "bot_token": "",

@@ -488,21 +488,30 @@ async function selectBackupPath() {
 
 async function updateLocalDbPath() {
     const newPath = document.getElementById('dbPath').value.trim();
-    
+
     if (!newPath) {
         alert('경로를 입력하세요.');
         return;
     }
-    
-    if (!confirm('로컬 DB 경로를 변경하시겠습니까?\n기존 DB가 새 위치로 복사되며, 프로그램 재시작이 필요합니다.')) {
+
+    if (!confirm('로컬 DB 경로를 변경하시겠습니까?\n\n' +
+                 '• 대상 경로에 DB 파일이 없으면: 현재 DB를 복사합니다.\n' +
+                 '• 대상 경로에 DB 파일이 있으면: 기존 DB를 그대로 사용합니다.\n\n' +
+                 '프로그램 재시작이 필요합니다.')) {
         return;
     }
-    
+
     try {
         const result = await eel.admin_update_local_db_path(newPath, currentUser.user_id)();
-        
+
         if (result.success) {
-            alert(result.message + '\n\n프로그램을 재시작해주세요.');
+            if (result.used_existing) {
+                alert('✅ 대상 경로에 기존 DB 파일이 있어 그대로 사용합니다.\n' +
+                      '현재 PC의 데이터는 복사되지 않습니다.\n\n' +
+                      '프로그램을 재시작하면 해당 DB로 연결됩니다.');
+            } else {
+                alert('✅ DB 경로가 변경되었습니다.\n\n프로그램을 재시작해주세요.');
+            }
         } else {
             alert('오류: ' + result.message);
         }
