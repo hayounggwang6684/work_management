@@ -44,13 +44,13 @@ class UpdateManager:
         self.patches_dir.mkdir(parents=True, exist_ok=True)
         self.data_dir.mkdir(parents=True, exist_ok=True)
 
-    def _get_headers(self) -> Dict[str, str]:
+    def _get_headers(self, with_token: bool = True) -> Dict[str, str]:
         """GitHub API 요청 헤더"""
         headers = {
             'Accept': 'application/vnd.github.v3+json',
             'User-Agent': 'WorkManagement-UpdateChecker'
         }
-        if self.github_token:
+        if with_token and self.github_token:
             headers['Authorization'] = f'token {self.github_token}'
         return headers
 
@@ -170,8 +170,6 @@ class UpdateManager:
                     if name.endswith('.zip') and 'patch' in name.lower():
                         if name not in downloaded:
                             asset_id = asset['id']
-                            # Private repo: browser_download_url은 토큰 있어도 404
-                            # → GitHub API URL로 다운로드해야 함
                             api_download_url = (
                                 f"{self.api_base_url}/repos/"
                                 f"{self.github_repo_owner}/{self.github_repo_name}"
@@ -181,6 +179,7 @@ class UpdateManager:
                                 'name': name,
                                 'size': asset['size'],
                                 'url': api_download_url,
+                                'browser_url': asset.get('browser_download_url', ''),
                                 'release_tag': release_tag,
                                 'asset_id': asset_id
                             })
@@ -270,34 +269,42 @@ class UpdateManager:
             }
 
     def _download_patch_zip(self, patch_info: Dict[str, Any]) -> Optional[Path]:
-        """패치 ZIP 파일 다운로드"""
-        try:
-            download_url = patch_info['url']
+        """패치 ZIP 파일 다운로드 (Public repo: 토큰 없이 browser_download_url 우선 사용)"""
+        temp_dir = Path(tempfile.gettempdir()) / "WorkManagement_Patches"
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        zip_path = temp_dir / patch_info['name']
 
-            headers = {'Accept': 'application/octet-stream'}
-            if self.github_token:
-                headers['Authorization'] = f'token {self.github_token}'
+        # 시도할 URL 목록: browser_download_url(인증 불필요) → API URL(인증)
+        attempts = []
+        browser_url = patch_info.get('browser_url', '')
+        if browser_url:
+            attempts.append({'url': browser_url, 'headers': {'User-Agent': 'WorkManagement-UpdateChecker'}})
+        attempts.append({'url': patch_info['url'],
+                         'headers': {'Accept': 'application/octet-stream',
+                                     'User-Agent': 'WorkManagement-UpdateChecker'}})
+        if self.github_token:
+            attempts.append({'url': patch_info['url'],
+                             'headers': {'Accept': 'application/octet-stream',
+                                         'Authorization': f'token {self.github_token}',
+                                         'User-Agent': 'WorkManagement-UpdateChecker'}})
 
-            response = requests.get(download_url, headers=headers, stream=True, timeout=60)
-            response.raise_for_status()
+        for attempt in attempts:
+            try:
+                response = requests.get(attempt['url'], headers=attempt['headers'],
+                                        stream=True, timeout=60, allow_redirects=True)
+                if response.status_code == 200:
+                    with open(zip_path, 'wb') as f:
+                        for chunk in response.iter_content(chunk_size=8192):
+                            if chunk:
+                                f.write(chunk)
+                    logger.info(f"패치 ZIP 다운로드 완료: {zip_path}")
+                    return zip_path
+                logger.warning(f"다운로드 실패 ({response.status_code}): {attempt['url'][:60]}")
+            except Exception as e:
+                logger.warning(f"다운로드 오류: {e}")
 
-            # 임시 파일에 저장
-            temp_dir = Path(tempfile.gettempdir()) / "WorkManagement_Patches"
-            temp_dir.mkdir(parents=True, exist_ok=True)
-
-            zip_path = temp_dir / patch_info['name']
-
-            with open(zip_path, 'wb') as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    if chunk:
-                        f.write(chunk)
-
-            logger.info(f"패치 ZIP 다운로드 완료: {zip_path}")
-            return zip_path
-
-        except Exception as e:
-            logger.error(f"패치 ZIP 다운로드 실패: {e}")
-            return None
+        logger.error(f"패치 ZIP 다운로드 최종 실패: {patch_info['name']}")
+        return None
 
     def _extract_patch_zip(self, zip_path: Path) -> Optional[Path]:
         """
@@ -360,39 +367,50 @@ class UpdateManager:
             return None
 
     def _get_latest_release(self) -> Optional[Dict[str, Any]]:
-        """GitHub에서 최신 릴리스 정보 가져오기"""
-        try:
-            url = f"{self.api_base_url}/repos/{self.github_repo_owner}/{self.github_repo_name}/releases/latest"
-            response = requests.get(url, headers=self._get_headers(), timeout=10)
+        """GitHub에서 최신 릴리스 정보 가져오기 (토큰 만료 시 인증 없이 재시도)"""
+        url = f"{self.api_base_url}/repos/{self.github_repo_owner}/{self.github_repo_name}/releases/latest"
 
-            if response.status_code == 200:
-                return response.json()
-            elif response.status_code == 404:
-                logger.warning("릴리스를 찾을 수 없습니다.")
-                return None
-            else:
+        for with_token in (True, False):
+            try:
+                response = requests.get(url, headers=self._get_headers(with_token), timeout=10)
+                if response.status_code == 200:
+                    return response.json()
+                if response.status_code in (401, 403):
+                    logger.warning(f"GitHub 인증 실패 ({response.status_code}), 토큰 없이 재시도")
+                    continue
+                if response.status_code == 404:
+                    logger.warning("릴리스를 찾을 수 없습니다.")
+                    return None
                 logger.error(f"GitHub API 오류: {response.status_code}")
                 return None
+            except requests.RequestException as e:
+                logger.error(f"GitHub API 요청 실패: {e}")
+                return None
 
-        except requests.RequestException as e:
-            logger.error(f"GitHub API 요청 실패: {e}")
-            return None
+        return None
 
     def _get_all_releases(self, page: int = 1, per_page: int = 10) -> list:
-        """모든 릴리스 목록 가져오기"""
-        try:
-            url = f"{self.api_base_url}/repos/{self.github_repo_owner}/{self.github_repo_name}/releases"
-            params = {'page': page, 'per_page': per_page}
+        """모든 릴리스 목록 가져오기 (토큰 만료 시 인증 없이 재시도)"""
+        url = f"{self.api_base_url}/repos/{self.github_repo_owner}/{self.github_repo_name}/releases"
+        params = {'page': page, 'per_page': per_page}
 
-            response = requests.get(url, headers=self._get_headers(), params=params, timeout=10)
+        for with_token in (True, False):
+            try:
+                response = requests.get(url, headers=self._get_headers(with_token),
+                                        params=params, timeout=10)
+                if response.status_code == 200:
+                    return response.json()
+                if response.status_code in (401, 403):
+                    # 토큰 무효 → 인증 없이 재시도 (public repo인 경우 동작)
+                    logger.warning(f"GitHub 인증 실패 ({response.status_code}), 토큰 없이 재시도")
+                    continue
+                logger.error(f"GitHub API 오류: {response.status_code}")
+                return []
+            except Exception as e:
+                logger.error(f"릴리스 목록 가져오기 실패: {e}")
+                return []
 
-            if response.status_code == 200:
-                return response.json()
-            return []
-
-        except Exception as e:
-            logger.error(f"릴리스 목록 가져오기 실패: {e}")
-            return []
+        return []
 
     def get_release_notes(self, version_tag: str) -> Optional[str]:
         """특정 버전의 릴리스 노트 가져오기"""
