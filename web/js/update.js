@@ -213,6 +213,11 @@ function formatReleaseNotes(markdown) {
         return '#';
     }
 
+    // 줄바꿈 정규화: Windows CRLF(\r\n) → LF(\n), BOM 제거
+    markdown = markdown.replace(/^\uFEFF/, '');      // UTF-8 BOM 제거
+    markdown = markdown.replace(/\r\n/g, '\n');      // CRLF → LF
+    markdown = markdown.replace(/\r/g, '\n');        // 단독 CR → LF
+
     // 간단한 Markdown → HTML 변환 (링크 먼저 처리하여 URL 검증)
     let html = markdown
         // 헤더

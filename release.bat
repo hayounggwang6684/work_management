@@ -133,26 +133,17 @@ set REPO_NAME=work_management
 
 set BODY=## v!VERSION! 변경사항\n\n### 개선\n- 일일 작업 저장 버튼 응답 속도 개선 (클라우드 동기화 비동기 처리)\n- 보고서 일일\/월간 테이블 테두리 검정색으로 변경\n\n### 변경\n- 월간보고 헤더 '담당공무' → '작업자'\n- 월간보고 작업자 표기: 홍길동 외 N명 형식\n- 월간보고 캡쳐 시 착수일 빠른 순으로 정렬\n\n### 신규\n- 텔레그램 봇 설정 DB 동기화 (다른 PC에서 자동 적용)
 
-REM JSON 페이로드 임시 파일 생성
-set PAYLOAD_FILE=%TEMP%\gh_release_payload.json
-(
-echo {
-echo   "tag_name": "!TAG!",
-echo   "name": "!TAG!",
-echo   "body": "## v!VERSION! 변경사항\r\n\r\n### 개선\r\n- 일일 작업 저장 버튼 응답 속도 개선 (클라우드 동기화 비동기 처리)\r\n- 보고서 일일/월간 테이블 테두리 검정색으로 변경\r\n\r\n### 변경\r\n- 월간보고 헤더 '담당공무' → '작업자'\r\n- 월간보고 작업자 표기: 홍길동 외 N명 형식\r\n- 월간보고 캡쳐 시 착수일 빠른 순으로 정렬\r\n\r\n### 신규\r\n- 텔레그램 봇 설정 DB 동기화 (다른 PC에서 자동 적용)",
-echo   "draft": false,
-echo   "prerelease": false
-echo }
-) > "!PAYLOAD_FILE!"
-
-REM 릴리즈 생성 API 호출
+REM JSON 페이로드를 PowerShell에서 직접 생성 (UTF-8 인코딩 보장)
+REM ConvertTo-Json 사용으로 특수문자/한글 이스케이프 자동 처리
 for /f "delims=" %%r in ('powershell -Command ^
-    "$h = @{ Authorization = 'token !GH_TOKEN!'; 'Content-Type' = 'application/json' };" ^
-    "$b = Get-Content '!PAYLOAD_FILE!' -Raw;" ^
-    "$r = Invoke-RestMethod -Uri 'https://api.github.com/repos/!REPO_OWNER!/!REPO_NAME!/releases' -Method POST -Headers $h -Body $b;" ^
+    "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8;" ^
+    "$tag = '!TAG!';" ^
+    "$body = \"## v!VERSION! 변경사항`n`n### 개선`n- 저장 버튼 응답 속도 개선 (클라우드 동기화 비동기 처리)`n- 보고서 일일/월간 테이블 테두리 검정색으로 변경`n`n### 변경`n- 월간보고 헤더 담당공무 to 작업자`n- 월간보고 작업자 표기: 홍길동 외 N명 형식`n- 월간보고 캡쳐 시 착수일 빠른 순으로 정렬`n`n### 신규`n- 텔레그램 봇 설정 DB 동기화 (다른 PC에서 자동 적용)\";" ^
+    "$payload = @{ tag_name=$tag; name=$tag; body=$body; draft=$false; prerelease=$false } ^| ConvertTo-Json -Depth 5;" ^
+    "$bytes = [System.Text.Encoding]::UTF8.GetBytes($payload);" ^
+    "$h = @{ Authorization = \"token !GH_TOKEN!\"; \"Content-Type\" = \"application/json\" };" ^
+    "$r = Invoke-RestMethod -Uri \"https://api.github.com/repos/!REPO_OWNER!/!REPO_NAME!/releases\" -Method POST -Headers $h -Body $bytes;" ^
     "Write-Output $r.id"') do set RELEASE_ID=%%r
-
-del "!PAYLOAD_FILE!" >nul 2>&1
 
 if "!RELEASE_ID!"=="" (
     echo [오류] GitHub Release 생성 실패. 토큰 권한 또는 네트워크를 확인하세요.

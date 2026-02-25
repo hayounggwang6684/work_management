@@ -266,9 +266,13 @@ class UpdateManager:
             from .patch_system import patch_system
             patches_applied = patch_system.check_and_apply_patches()
 
-            message = f'{applied_count}개 패치 다운로드, {patches_applied}개 적용 완료.'
-            if errors:
-                message += f' 오류: {"; ".join(errors)}'
+            if applied_count > 0 and patches_applied == 0 and not errors:
+                # 다운로드는 됐지만 patch.json 없어서 적용 파일 없음 → 최신 버전으로 처리
+                message = f'v{self.current_version} 파일이 다운로드되었습니다. 이미 최신 상태입니다.'
+            else:
+                message = f'{applied_count}개 패치 다운로드, {patches_applied}개 적용 완료.'
+                if errors:
+                    message += f' 오류: {"; ".join(errors)}'
 
             if patches_applied > 0:
                 message += ' 프로그램을 재시작하면 변경사항이 완전히 적용됩니다.'
@@ -372,11 +376,12 @@ class UpdateManager:
                 # 압축 해제
                 zf.extractall(self.patches_dir)
 
-                # patch.json 존재 확인
+                # patch.json 존재 확인 (없어도 경고만 출력하고 계속 진행)
                 patch_json = extract_target / "patch.json"
                 if not patch_json.exists():
-                    logger.error(f"patch.json이 없습니다: {extract_target}")
-                    return None
+                    logger.warning(f"patch.json이 없습니다 (소스 ZIP으로 간주): {extract_target}")
+                    # patch.json 없는 소스 ZIP: 다운로드 완료 기록만 하고 정상 반환
+                    # (patch_system.py가 적용할 파일이 없으면 건너뜀)
 
                 logger.info(f"패치 압축 해제 완료: {extract_target}")
                 return extract_target
