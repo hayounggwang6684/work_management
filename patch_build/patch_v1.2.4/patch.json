@@ -1,0 +1,12 @@
+{
+  "id": "patch_v1.2.4",
+  "version": "1.2.4",
+  "min_version": "1.2.3",
+  "description": "스플래시 업데이트 표시, 보고서 빈셀 테두리 수정, 엑셀 불러오기 파싱 형식 개선",
+  "release_date": "2026-02-26",
+  "files": [
+    {"source": "web/js/report.js",  "target": "web/js/report.js"},
+    {"source": "web/js/splash.js",  "target": "web/js/splash.js"},
+    {"source": "src/web/api.py",    "target": "src/web/api.py"}
+  ]
+}
