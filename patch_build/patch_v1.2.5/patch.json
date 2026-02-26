@@ -1,0 +1,13 @@
+{
+  "id": "patch_v1.2.5",
+  "version": "1.2.5",
+  "min_version": "1.2.4",
+  "description": "엑셀 .xls 지원, 저장 속도 30초 데드락 수정, 텔레그램 토큰 검증/PC2 동기화, 댓글 버튼 onclick 버그 수정",
+  "release_date": "2026-02-26",
+  "files": [
+    {"source": "requirements.txt",              "target": "requirements.txt"},
+    {"source": "src/web/api.py",                "target": "src/web/api.py"},
+    {"source": "src/database/db_manager.py",    "target": "src/database/db_manager.py"},
+    {"source": "web/js/app.js",                 "target": "web/js/app.js"}
+  ]
+}
