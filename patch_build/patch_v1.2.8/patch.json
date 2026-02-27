@@ -1,0 +1,9 @@
+{
+  "version": "1.2.8",
+  "description": "엑셀 불러오기 0건 수정(xlrd date타입 처리) + 업데이트 자동 재시작",
+  "files": [
+    {"source": "src/web/api.py",   "target": "src/web/api.py"},
+    {"source": "src/main.py",      "target": "src/main.py"},
+    {"source": "web/js/splash.js", "target": "web/js/splash.js"}
+  ]
+}
