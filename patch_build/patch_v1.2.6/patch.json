@@ -2,11 +2,11 @@
   "version": "1.2.6",
   "description": "업데이트 알림 개선, 계약번호 IME 수정, 월간 보고 준공 로직, 조회 탭 기본값, DB 동기화 수정",
   "files": [
-    "src/main.py",
-    "src/web/api.py",
-    "src/utils/update_manager.py",
-    "web/js/splash.js",
-    "web/js/auth.js",
-    "web/js/app.js"
+    {"source": "src/main.py",                   "target": "src/main.py"},
+    {"source": "src/web/api.py",                 "target": "src/web/api.py"},
+    {"source": "src/utils/update_manager.py",    "target": "src/utils/update_manager.py"},
+    {"source": "web/js/splash.js",               "target": "web/js/splash.js"},
+    {"source": "web/js/auth.js",                 "target": "web/js/auth.js"},
+    {"source": "web/js/app.js",                  "target": "web/js/app.js"}
   ]
 }
