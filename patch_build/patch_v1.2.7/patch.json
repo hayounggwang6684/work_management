@@ -1,0 +1,10 @@
+{
+  "version": "1.2.7",
+  "description": "버그수정 3건(xls불러오기/클라우드동기화/월간보고준공) + 휴가자현황 기능 추가",
+  "files": [
+    {"source": "src/web/api.py",              "target": "src/web/api.py"},
+    {"source": "src/database/db_manager.py",  "target": "src/database/db_manager.py"},
+    {"source": "web/index.html",              "target": "web/index.html"},
+    {"source": "web/js/app.js",               "target": "web/js/app.js"}
+  ]
+}
