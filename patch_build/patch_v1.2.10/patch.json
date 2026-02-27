@@ -1,0 +1,11 @@
+{
+  "version": "1.2.10",
+  "description": "업데이트 알림 수정 + 텔레그램 딥링크 수정",
+  "files": [
+    "web/js/auth.js",
+    "web/js/app.js",
+    "web/index.html",
+    "src/web/api.py",
+    "src/utils/update_manager.py"
+  ]
+}
