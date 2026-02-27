@@ -1,0 +1,10 @@
+{
+  "version": "1.2.9",
+  "description": "보드 댓글 답글 버튼 수정 (JSON.stringify 큰따옴표 HTML 속성 충돌)",
+  "files": [
+    {
+      "source": "web/js/app.js",
+      "target": "web/js/app.js"
+    }
+  ]
+}
