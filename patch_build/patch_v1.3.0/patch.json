@@ -1,0 +1,11 @@
+{
+  "version": "1.3.0",
+  "description": "클라우드 동기화 재설계: 회사/외부 PC sync_mode 기반 단방향 동기화",
+  "files": [
+    {"source": "src/sync/cloud_sync.py", "target": "src/sync/cloud_sync.py"},
+    {"source": "src/main.py",            "target": "src/main.py"},
+    {"source": "src/web/api.py",         "target": "src/web/api.py"},
+    {"source": "web/index.html",         "target": "web/index.html"},
+    {"source": "web/js/auth.js",         "target": "web/js/auth.js"}
+  ]
+}
