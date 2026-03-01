@@ -4,12 +4,12 @@
 
 [Setup]
 AppName=금일작업현황 관리
-AppVersion=1.2.2
+AppVersion=1.2.10
 AppPublisher=Your Company
 DefaultDirName={autopf}\WorkManagement
 DefaultGroupName=금일작업현황 관리
 OutputDir=dist\installer
-OutputBaseFilename=WorkManagement_Setup_v1.2.2
+OutputBaseFilename=WorkManagement_Setup_v1.2.10
 Compression=lzma2/max
 SolidCompression=yes
 ArchitecturesAllowed=x64compatible
@@ -47,8 +47,14 @@ Source: "build_embedded\run.bat"; DestDir: "{app}"; Flags: ignoreversion
 Source: "build_embedded\run_debug.bat"; DestDir: "{app}"; Flags: ignoreversion
 
 [Dirs]
-Name: "{app}\logs"; Permissions: users-full
-Name: "{app}\data"; Permissions: users-full
+Name: "{app}\logs";          Permissions: users-full
+Name: "{app}\data";          Permissions: users-full
+Name: "{app}\app\src";       Permissions: users-full
+Name: "{app}\app\web";       Permissions: users-full
+Name: "{app}\app\data";      Permissions: users-full
+Name: "{app}\app\patches";   Permissions: users-full
+Name: "{app}\app\backups";   Permissions: users-full
+Name: "{app}\app\config";    Permissions: users-full
 
 [Icons]
 ; 시작 메뉴
