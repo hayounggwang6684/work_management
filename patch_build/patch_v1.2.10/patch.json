@@ -1,11 +1,12 @@
 {
   "version": "1.2.10",
-  "description": "업데이트 알림 수정 + 텔레그램 딥링크 수정",
+  "description": "업데이트 알림 수정 + 텔레그램 딥링크 수정 + 패치 시스템 안정화",
   "files": [
-    {"source": "web/js/auth.js",             "target": "web/js/auth.js"},
-    {"source": "web/js/app.js",              "target": "web/js/app.js"},
-    {"source": "web/index.html",             "target": "web/index.html"},
-    {"source": "src/web/api.py",             "target": "src/web/api.py"},
-    {"source": "src/utils/update_manager.py","target": "src/utils/update_manager.py"}
+    {"source": "web/js/auth.js",              "target": "web/js/auth.js"},
+    {"source": "web/js/app.js",               "target": "web/js/app.js"},
+    {"source": "web/index.html",              "target": "web/index.html"},
+    {"source": "src/web/api.py",              "target": "src/web/api.py"},
+    {"source": "src/utils/update_manager.py", "target": "src/utils/update_manager.py"},
+    {"source": "src/utils/patch_system.py",   "target": "src/utils/patch_system.py"}
   ]
 }
