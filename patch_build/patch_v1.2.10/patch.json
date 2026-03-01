@@ -2,10 +2,10 @@
   "version": "1.2.10",
   "description": "업데이트 알림 수정 + 텔레그램 딥링크 수정",
   "files": [
-    "web/js/auth.js",
-    "web/js/app.js",
-    "web/index.html",
-    "src/web/api.py",
-    "src/utils/update_manager.py"
+    {"source": "web/js/auth.js",             "target": "web/js/auth.js"},
+    {"source": "web/js/app.js",              "target": "web/js/app.js"},
+    {"source": "web/index.html",             "target": "web/index.html"},
+    {"source": "src/web/api.py",             "target": "src/web/api.py"},
+    {"source": "src/utils/update_manager.py","target": "src/utils/update_manager.py"}
   ]
 }
