@@ -220,8 +220,10 @@ class UpdateManager:
                         if name not in downloaded:
                             new_patches.append(patch_entry)
                         else:
-                            # 다운로드 기록은 있지만 patches/ 폴더에 미적용 콘텐츠가
-                            # 남아 있는 경우 재처리 (이전 적용 실패/재시작 실패 대비)
+                            # 다운로드 기록은 있지만:
+                            # 1) patches/ 폴더에 내용이 있으면 → 재처리 (미완료 복구)
+                            # 2) patches/ 폴더 없고 applied_patches에도 없으면 → 재처리
+                            #    (ZIP 구조 오류로 추출 실패한 경우 복구)
                             extracted_name = name[:-4]  # .zip 제거
                             extracted_dir = self.patches_dir / extracted_name
                             try:
@@ -231,6 +233,17 @@ class UpdateManager:
                                         f"미적용 콘텐츠 발견 → 재처리"
                                     )
                                     new_patches.append(patch_entry)
+                                else:
+                                    # patches/ 폴더 없음 → applied_patches 확인
+                                    # 미적용 상태이면 재다운로드 (추출 실패 복구)
+                                    from .patch_system import patch_system
+                                    applied = patch_system.get_applied_patches()
+                                    if extracted_name not in applied:
+                                        logger.warning(
+                                            f"패치 {name}: 다운로드 기록 있으나 "
+                                            f"미적용 → 재처리"
+                                        )
+                                        new_patches.append(patch_entry)
                             except Exception:
                                 pass
 

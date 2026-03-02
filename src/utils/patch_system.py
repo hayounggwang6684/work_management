@@ -171,6 +171,7 @@ class PatchSystem:
 
             # 파일 복사
             files = patch_info.get('files', [])
+            files_copied = 0
             for file_info in files:
                 # files 항목이 문자열인 경우 dict로 정규화
                 if isinstance(file_info, str):
@@ -189,6 +190,12 @@ class PatchSystem:
                 # 파일 복사
                 shutil.copy2(source_path, target_path)
                 logger.info(f"파일 복사: {file_info['source']} → {file_info['target']}")
+                files_copied += 1
+
+            # 파일이 하나도 복사 안 됐으면 패치 실패 (applied 기록 안 함)
+            if files and files_copied == 0:
+                logger.error(f"패치 파일을 하나도 복사하지 못함: {patch_id}")
+                return False
 
             # 패치 적용 기록
             self.save_applied_patch(patch_id)
