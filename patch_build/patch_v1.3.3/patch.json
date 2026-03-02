@@ -1,0 +1,10 @@
+{
+  "version": "1.3.3",
+  "description": "스플래시 버전 동적 표시 + 아카이브 달 이동 버튼 + 로그인 전 업데이트 모달",
+  "files": [
+    {"source": "web/index.html",   "target": "web/index.html"},
+    {"source": "web/js/splash.js", "target": "web/js/splash.js"},
+    {"source": "web/js/update.js", "target": "web/js/update.js"},
+    {"source": "web/js/app.js",    "target": "web/js/app.js"}
+  ]
+}
