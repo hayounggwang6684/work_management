@@ -1,0 +1,14 @@
+{
+  "version": "1.6.1",
+  "description": "v1.6.1 패치",
+  "files": [
+    {
+      "source": "web/js/splash.js",
+      "target": "web/js/splash.js"
+    },
+    {
+      "source": "web/js/auth.js",
+      "target": "web/js/auth.js"
+    }
+  ]
+}
