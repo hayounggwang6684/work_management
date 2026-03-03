@@ -1,0 +1,26 @@
+{
+  "version": "1.6.0",
+  "description": "v1.6.0 패치",
+  "files": [
+    {
+      "source": "src/database/auth_manager.py",
+      "target": "src/database/auth_manager.py"
+    },
+    {
+      "source": "src/web/api.py",
+      "target": "src/web/api.py"
+    },
+    {
+      "source": "web/index.html",
+      "target": "web/index.html"
+    },
+    {
+      "source": "web/js/auth.js",
+      "target": "web/js/auth.js"
+    },
+    {
+      "source": "web/js/app.js",
+      "target": "web/js/app.js"
+    }
+  ]
+}
