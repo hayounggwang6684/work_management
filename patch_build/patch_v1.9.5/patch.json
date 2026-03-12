@@ -1,0 +1,22 @@
+{
+  "version": "1.9.5",
+  "description": "v1.9.5 패치",
+  "files": [
+    {
+      "source": "src/database/auth_manager.py",
+      "target": "src/database/auth_manager.py"
+    },
+    {
+      "source": "src/database/db_manager.py",
+      "target": "src/database/db_manager.py"
+    },
+    {
+      "source": "web/index.html",
+      "target": "web/index.html"
+    },
+    {
+      "source": "web/js/auth.js",
+      "target": "web/js/auth.js"
+    }
+  ]
+}
