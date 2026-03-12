@@ -49,7 +49,6 @@ from src.utils.patch_system import patch_system
 from src.utils.update_manager import update_manager
 from src.utils.telegram_notifier import telegram_notifier
 from src.utils.daily_scheduler import daily_scheduler
-from src.utils.native_splash import NativeSplash as _NativeSplash
 import src.web.api  # API 함수들을 로드
 
 
@@ -59,26 +58,12 @@ import src.web.api  # API 함수들을 로드
 _tray_preference: bool = False  # 기본값: 앱 완전 종료 (사용자가 설정에서 켜야 활성화)
 _tray_icon = None               # pystray.Icon 인스턴스 (트레이 활성화 시 생성)
 
-# ---------------------------------------------------------------------------
-# 네이티브 스플래시 — 전역 상태
-# ---------------------------------------------------------------------------
-_splash: '_NativeSplash | None' = None  # 앱 시작 시 생성, 웹 준비 완료 후 닫힘
-
 
 @eel.expose
 def set_python_tray_mode(enabled: bool):
     """JS에서 로그인·설정변경 시 Python 전역 tray_preference 동기화"""
     global _tray_preference
     _tray_preference = bool(enabled)
-
-
-@eel.expose
-def close_native_splash():
-    """웹 앱 준비 완료 시 JS(splash.js)에서 호출 → tkinter 스플래시 닫기"""
-    global _splash
-    if _splash:
-        _splash.close()
-        _splash = None
 
 
 def _do_full_cleanup():
@@ -227,25 +212,9 @@ def _detect_browser_mode() -> str:
 
 def main():
     """메인 애플리케이션 실행"""
-    global _splash
-
-    # 네이티브 스플래시 즉시 표시 (공백 구간 없앰)
-    try:
-        _splash = _NativeSplash(
-            app_name=config.app_name,
-            version=config.version,
-        )
-        _splash.start()
-    except Exception:
-        _splash = None
-
     logger.info("="*60)
     logger.info(f"{config.app_name} v{config.version} 시작")
     logger.info("="*60)
-
-    # 패치 확인 단계
-    if _splash:
-        _splash.update("🗄️ 데이터베이스 깨우는 중...", 45)
 
     # 패치 확인 및 적용 (GitHub에서 자동 다운로드 + 적용)
     try:
@@ -297,15 +266,9 @@ def main():
         except Exception as e2:
             logger.error(f"로컬 패치 적용 오류: {e2}")
 
-    if _splash:
-        _splash.update("👷 작업자 명단 불러오는 중...", 55)
-
     # Eel 초기화
     web_folder = Path(__file__).parent.parent / "web"
     eel.init(str(web_folder), allowed_extensions=['.js', '.html'])
-
-    if _splash:
-        _splash.update("📡 서버와 악수하는 중...", 65)
 
     # 시작 시 클라우드 동기화 (sync_mode 기반)
     _sync_mode = cloud_sync.sync_mode
@@ -325,9 +288,6 @@ def main():
         # 클라우드 DB 덮어쓰기 후 관리자 계정 재보장
         from src.database.auth_manager import auth_manager as _am
         _am.ensure_admin_account()
-
-    if _splash:
-        _splash.update("🔐 보안 점검 중...", 75)
 
     # 브라우저 모드 결정 (Chrome → Edge → 기본 브라우저 순으로 시도)
     browser_mode = _detect_browser_mode()
@@ -359,9 +319,6 @@ def main():
 
     # 일일 스케줄러 시작 (자동 백업 + 텔레그램 일일 요약)
     daily_scheduler.start()
-
-    if _splash:
-        _splash.update("🎨 화면 단장 중...", 85)
 
     try:
         # 앱 실행

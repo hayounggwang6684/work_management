@@ -220,27 +220,18 @@
     }
 
     // =========================================================
-    // 시작 — 네이티브 스플래시(tkinter) 사용 버전
-    // 웹 스플래시는 기본 hidden 상태이므로 바로 로그인 화면으로 진행.
+    // 시작 — 웹 스플래시 방식 (DOMContentLoaded 즉시 표시)
     // =========================================================
-    document.addEventListener('DOMContentLoaded', async function () {
-        // 1) 네이티브 tkinter 스플래시 닫기 (Python 측 close_native_splash 호출)
-        try { await eel.close_native_splash()(); } catch(e) {}
+    document.addEventListener('DOMContentLoaded', function () {
+        // 스플래시 화면 표시
+        const splash = document.getElementById('splashScreen');
+        if (splash) splash.classList.remove('hidden');
 
-        // 2) 웹 스플래시 건너뛰고 바로 로그인 화면 표시
-        closeSplash();
+        // 버전 텍스트 로드 시도
+        tryLoadSplashVersion();
 
-        // 3) 패치·업데이트 결과는 백그라운드에서 조용히 처리 (1초 후)
-        setTimeout(async () => {
-            try {
-                await eel.get_startup_patch_result()();
-                window._splashUpdateChecked = true;
-            } catch(e) {}
-            try {
-                const upd = await eel.check_for_updates(false)();
-                window._splashUpdateResult = upd;
-            } catch(e) {}
-        }, 1000);
+        // 자동 진행 시작
+        startAutoProgress();
     });
 
 })();
