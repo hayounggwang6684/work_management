@@ -7,11 +7,21 @@
 let workRecords = [];
 let vacationData = { '연차': '', '반차': '', '공가': '' };
 let isDirty = false;
+let _isSaving = false;  // 중복 저장 방지 플래그
+let _autoSaveTimer = null;  // 자동 저장 타이머 핸들
+let _dateLoadedAt = null; // 현재 날짜 데이터 로드 시각 (충돌 감지용)
+let _searchSortState = { records: [], container: null, term: '', type: '', key: 'date', dir: -1 }; // 검색 결과 정렬 상태
 
 // 아카이브 달 네비게이션 상태
 let _archiveAllData = [];
 let _archiveYear    = null;
 let _archiveMonth   = null;
+
+// 업체별 조회 달 네비게이션 상태
+let _companySearchRecords = [];
+let _companySearchName    = '';
+let _companySearchMonths  = []; // 정렬된 YYYY-MM 배열
+let _companySearchMonthIdx = 0;
 
 // 한글→영문 변환 매핑
 const koreanToEnglish = {
@@ -41,24 +51,28 @@ function showView(view) {
     const reportView = document.getElementById('reportView');
     const searchView = document.getElementById('searchView');
     const dashboardView = document.getElementById('dashboardView');
-    const settingsView = document.getElementById('settingsView');
-    
+    const settingsView  = document.getElementById('settingsView');
+    const btnEmployee    = document.getElementById('btnEmployee');
+    const employeeView   = document.getElementById('employeeView');
+
     if (!btnDaily || !btnReport || !dailyView || !reportView) return;
-    
+
     // 모든 버튼 초기화
     btnDaily.className = 'px-4 py-2 rounded-lg bg-slate-200';
     btnReport.className = 'px-4 py-2 rounded-lg bg-slate-200';
-    if (btnSearch) btnSearch.className = 'px-4 py-2 rounded-lg bg-slate-200';
+    if (btnSearch)    btnSearch.className    = 'px-4 py-2 rounded-lg bg-slate-200';
     if (btnDashboard) btnDashboard.className = 'px-4 py-2 rounded-lg bg-slate-200';
-    if (btnSettings) btnSettings.className = 'px-4 py-2 rounded-lg bg-slate-200';
-    
+    if (btnSettings)  btnSettings.className  = 'px-4 py-2 rounded-lg bg-slate-200';
+    if (btnEmployee)  btnEmployee.className  = 'px-4 py-2 rounded-lg bg-slate-200';
+
     // 모든 뷰 숨기기
     dailyView.classList.add('hidden');
     reportView.classList.add('hidden');
-    if (searchView) searchView.classList.add('hidden');
+    if (searchView)   searchView.classList.add('hidden');
     if (dashboardView) dashboardView.classList.add('hidden');
-    if (settingsView) settingsView.classList.add('hidden');
-    
+    if (settingsView)  settingsView.classList.add('hidden');
+    if (employeeView)  employeeView.classList.add('hidden');
+
     // 선택된 뷰 표시
     if (view === 'dashboard') {
         if (btnDashboard) btnDashboard.className = 'px-4 py-2 rounded-lg bg-blue-600 text-white';
@@ -80,6 +94,12 @@ function showView(view) {
         if (btnSettings) btnSettings.className = 'px-4 py-2 rounded-lg bg-blue-600 text-white';
         if (settingsView) settingsView.classList.remove('hidden');
         loadUserSettings();
+        showSettingsTab('userSettings'); // 기본 탭: 사용자 설정
+    } else if (view === 'employee') {
+        if (btnEmployee) btnEmployee.className = 'px-4 py-2 rounded-lg bg-blue-600 text-white';
+        if (employeeView) employeeView.classList.remove('hidden');
+        showEmployeeTab('leave');
+        loadLeaveEmployeeList();
     }
 }
 
@@ -96,6 +116,8 @@ function checkUnsavedChanges() {
 // 날짜 관리
 // ============================================================================
 
+const _DAYS_KO = ['일', '월', '화', '수', '목', '금', '토'];
+
 function updateDateInput() {
     if (!currentDate) {
         currentDate = new Date();
@@ -104,6 +126,16 @@ function updateDateInput() {
     const dateInput = document.getElementById('dateInput');
     if (dateInput) {
         dateInput.value = dateStr;
+    }
+    const dayEl = document.getElementById('dateDayOfWeek');
+    if (dayEl) {
+        const dow = currentDate.getDay();
+        const isHoliday = !!KOREAN_HOLIDAYS[dateStr];
+        const holidayName = isHoliday ? ` ${KOREAN_HOLIDAYS[dateStr]}` : '';
+        dayEl.textContent = `(${_DAYS_KO[dow]}요일${holidayName})`;
+        dayEl.className = (dow === 0 || isHoliday) ? 'font-bold text-lg px-1 text-red-500'
+                        : dow === 6 ? 'font-bold text-lg px-1 text-blue-500'
+                        : 'font-bold text-lg px-1 text-slate-700';
     }
 }
 
@@ -161,23 +193,40 @@ document.addEventListener('DOMContentLoaded', function() {
 function showSearchTab(tab) {
     const statusTab = document.getElementById('statusSearchTab');
     const workTab = document.getElementById('workSearchTab');
+    const companyTab = document.getElementById('companySearchTab');
     const btnStatus = document.getElementById('btnSearchStatus');
     const btnWork = document.getElementById('btnSearchWork');
+    const btnCompany = document.getElementById('btnSearchCompany');
 
-    if (tab === 'status') {
-        statusTab.classList.remove('hidden');
-        workTab.classList.add('hidden');
-        btnStatus.classList.remove('bg-slate-200');
-        btnStatus.classList.add('bg-blue-600', 'text-white');
-        btnWork.classList.remove('bg-blue-600', 'text-white');
-        btnWork.classList.add('bg-slate-200');
-    } else if (tab === 'work') {
-        statusTab.classList.add('hidden');
-        workTab.classList.remove('hidden');
-        btnStatus.classList.remove('bg-blue-600', 'text-white');
-        btnStatus.classList.add('bg-slate-200');
-        btnWork.classList.remove('bg-slate-200');
-        btnWork.classList.add('bg-blue-600', 'text-white');
+    // 모두 숨김 + 버튼 기본 스타일 초기화
+    [statusTab, workTab, companyTab].forEach(t => { if (t) t.classList.add('hidden'); });
+    [btnStatus, btnWork, btnCompany].forEach(b => {
+        if (!b) return;
+        b.classList.remove('bg-blue-600', 'text-white');
+        b.classList.add('bg-slate-200');
+    });
+
+    // 선택된 탭만 표시
+    const tabMap = { status: statusTab, work: workTab, company: companyTab };
+    const btnMap = { status: btnStatus, work: btnWork, company: btnCompany };
+    if (tabMap[tab]) tabMap[tab].classList.remove('hidden');
+    if (btnMap[tab]) {
+        btnMap[tab].classList.remove('bg-slate-200');
+        btnMap[tab].classList.add('bg-blue-600', 'text-white');
+    }
+
+    // 업체별 조회 탭 진입 시 드롭다운 목록 로드
+    if (tab === 'company') loadCompanyNameList();
+}
+
+async function loadCompanyNameList() {
+    try {
+        const names = await eel.get_outsource_company_names()();
+        const datalist = document.getElementById('companyNameList');
+        if (!datalist) return;
+        datalist.innerHTML = names.map(n => `<option value="${escapeHtml(n)}">`).join('');
+    } catch(e) {
+        console.warn('업체명 목록 로드 실패:', e);
     }
 }
 
@@ -192,13 +241,17 @@ async function initSearchTabDefaults() {
             const match = latest.match(/^SH-(\d{4})-(\d{3})-T$/i);
             if (match) {
                 const yearEl = document.getElementById('contractYear');
-                const seqEl = document.getElementById('contractSeq');
+                const seqEl  = document.getElementById('contractSeq');
                 if (yearEl) yearEl.value = match[1];
-                if (seqEl) seqEl.value = match[2];
+                if (seqEl)  seqEl.value  = match[2];
+                // 최신 계약번호 설정 후 자동 조회 실행
+                if (typeof searchByContract === 'function') {
+                    await searchByContract();
+                }
             }
         }
     } catch(e) {
-        // 오류 시 기본값 유지
+        // 오류 시 빈 상태 유지
     }
 }
 
@@ -229,25 +282,31 @@ function navigateToSearch(contractNumber) {
 function showDashboardTab(tab) {
     const chartTab = document.getElementById('chartTab');
     const boardTab = document.getElementById('boardTab');
+    const statsTab = document.getElementById('statsTab');
     const btnChart = document.getElementById('btnDashboardChart');
     const btnBoard = document.getElementById('btnDashboardBoard');
+    const btnStats = document.getElementById('btnDashboardStats');
+
+    // 모든 탭 숨기기, 모든 버튼 초기화
+    [chartTab, boardTab, statsTab].forEach(t => t && t.classList.add('hidden'));
+    [btnChart, btnBoard, btnStats].forEach(b => {
+        if (!b) return;
+        b.classList.remove('bg-blue-600', 'text-white');
+        b.classList.add('bg-slate-200');
+    });
 
     if (tab === 'chart') {
-        chartTab.classList.remove('hidden');
-        boardTab.classList.add('hidden');
-        btnChart.classList.remove('bg-slate-200');
-        btnChart.classList.add('bg-blue-600', 'text-white');
-        btnBoard.classList.remove('bg-blue-600', 'text-white');
-        btnBoard.classList.add('bg-slate-200');
+        chartTab && chartTab.classList.remove('hidden');
+        if (btnChart) { btnChart.classList.remove('bg-slate-200'); btnChart.classList.add('bg-blue-600', 'text-white'); }
         loadGanttChart();
     } else if (tab === 'board') {
-        chartTab.classList.add('hidden');
-        boardTab.classList.remove('hidden');
-        btnChart.classList.remove('bg-blue-600', 'text-white');
-        btnChart.classList.add('bg-slate-200');
-        btnBoard.classList.remove('bg-slate-200');
-        btnBoard.classList.add('bg-blue-600', 'text-white');
+        boardTab && boardTab.classList.remove('hidden');
+        if (btnBoard) { btnBoard.classList.remove('bg-slate-200'); btnBoard.classList.add('bg-blue-600', 'text-white'); }
         loadKanbanBoard();
+    } else if (tab === 'stats') {
+        statsTab && statsTab.classList.remove('hidden');
+        if (btnStats) { btnStats.classList.remove('bg-slate-200'); btnStats.classList.add('bg-blue-600', 'text-white'); }
+        loadStatsData();
     }
 }
 
@@ -259,13 +318,51 @@ let KOREAN_HOLIDAYS = {};
 
 async function loadHolidays() {
     try {
-        const data = await eel.get_holidays()();
+        const data = await eelWithTimeout(eel.get_holidays()(), 5000);
         if (data && typeof data === 'object') {
             KOREAN_HOLIDAYS = data;
         }
     } catch (e) {
         console.warn('공휴일 데이터 로드 실패, 빈 데이터로 진행:', e);
     }
+}
+
+async function saveAndRefreshHolidays() {
+    const keyInput = document.getElementById('holidayApiKey');
+    const statusEl = document.getElementById('holidayApiStatus');
+    const key = keyInput ? keyInput.value.trim() : '';
+    if (!key) {
+        if (statusEl) statusEl.textContent = '❌ 서비스키를 입력하세요.';
+        return;
+    }
+    if (statusEl) statusEl.textContent = '🔄 갱신 중... (최대 1분 소요)';
+    try {
+        const result = await eelWithTimeout(
+            eel.refresh_holidays(key, currentUser?.userId || '')(),
+            70000  // 12개월 × 3년 = 최대 36회 HTTP 요청 여유
+        );
+        if (result && result.success) {
+            if (statusEl) statusEl.textContent = `✅ ${result.message}`;
+            keyInput.value = '';
+            keyInput.placeholder = '●●●●●●●● (저장됨)';
+            await loadHolidays();  // 메모리 갱신
+        } else {
+            if (statusEl) statusEl.textContent = `❌ ${result?.message || '갱신 실패'}`;
+        }
+    } catch (e) {
+        if (statusEl) statusEl.textContent = `❌ 오류: ${e.message}`;
+    }
+}
+
+async function loadHolidayKeyStatus() {
+    try {
+        const settings = await eel.admin_get_settings()();
+        const key = settings?.holidays?.data_go_kr_key || '';
+        const input = document.getElementById('holidayApiKey');
+        if (input && key) {
+            input.placeholder = '●●●●●●●● (저장됨)';
+        }
+    } catch (_) { /* 무시 */ }
 }
 
 // ============================================================================
@@ -365,7 +462,7 @@ function buildGanttTableHTML(projects, year, month) {
         const workDatesSet = new Set(project.workDates || []);
         const safeCn = escapeHtml(project.contractNumber || '');
 
-        html += `<tr class="hover:bg-slate-50 cursor-pointer" ondblclick="navigateToSearch('${safeCn}')">`;
+        html += `<tr class="hover:bg-slate-50 cursor-pointer" data-gantt-cn="${safeCn}">`;
         html += `<td class="border p-2 text-xs sticky left-0 bg-white z-10 whitespace-nowrap">
             <div class="font-semibold">${escapeHtml(project.company || '')}</div>
             <div class="text-slate-500">${escapeHtml(project.shipName || '')}</div>
@@ -404,6 +501,15 @@ async function loadGanttChart() {
     try {
         const display   = document.getElementById('ganttMonthDisplay');
         const container = document.getElementById('ganttContainer');
+
+        // 최초 1회만 이벤트 위임 등록 (ondblclick 인라인 핸들러 대체)
+        if (container && !container._ganttDblClickAttached) {
+            container.addEventListener('dblclick', e => {
+                const row = e.target.closest('[data-gantt-cn]');
+                if (row) navigateToSearch(row.dataset.ganttCn);
+            });
+            container._ganttDblClickAttached = true;
+        }
         const emptyDiv  = document.getElementById('ganttEmpty');
 
         if (ganttDualView) {
@@ -469,6 +575,15 @@ async function loadGanttChart() {
 async function loadKanbanBoard() {
     try {
         const data = await eel.get_kanban_data()();
+        // #12 — 칸반 카드 더블클릭 이벤트 위임 (ondblclick 인라인 핸들러 대체, 최초 1회만 등록)
+        const _kc = document.getElementById('kanbanContainer');
+        if (_kc && !_kc._dblClickAttached) {
+            _kc.addEventListener('dblclick', e => {
+                const card = e.target.closest('[data-kanban-cn]');
+                if (card) navigateToSearch(card.dataset.kanbanCn);
+            });
+            _kc._dblClickAttached = true;
+        }
 
         const receptionCards = document.getElementById('receptionCards');
         const startedCards = document.getElementById('startedCards');
@@ -487,18 +602,10 @@ async function loadKanbanBoard() {
         if (startedCount) startedCount.textContent = (data.started || []).length;
         if (doneCount) doneCount.textContent = (data.done || []).length;
 
-        // 접수
-        (data.reception || []).forEach(p => {
-            receptionCards.innerHTML += renderReceptionCard(p);
-        });
-        // 착수
-        (data.started || []).forEach(p => {
-            startedCards.innerHTML += renderCard(p, 'border-blue-500');
-        });
-        // 준공
-        (data.done || []).forEach(p => {
-            doneCards.innerHTML += renderCard(p, 'border-green-500');
-        });
+        // 접수 / 착수 / 준공 — #5: innerHTML += 루프 → map().join() 한 번 대입 (O(n²)→O(n))
+        receptionCards.innerHTML = (data.reception || []).map(p => renderReceptionCard(p)).join('');
+        startedCards.innerHTML   = (data.started   || []).map(p => renderCard(p, 'border-blue-500')).join('');
+        doneCards.innerHTML      = (data.done       || []).map(p => renderCard(p, 'border-green-500')).join('');
         // 아카이브: 전체 데이터 저장 후 달 필터링으로 렌더링
         _archiveAllData = data.archive || [];
         if (_archiveYear === null) {
@@ -539,6 +646,7 @@ function renderReceptionCard(project) {
     }
     const safeCompany  = escapeHtml(project.company  || '');
     const safeShipName = escapeHtml(project.shipName || '');
+    const safeCn       = escapeHtml(project.contractNumber || '');
     const jsTitle      = escapeJs(`${project.company || ''} ${project.shipName || ''}`);
     return `
         <div class="bg-white rounded-lg shadow-sm p-3 border-l-4 border-yellow-400 hover:shadow-md transition-shadow">
@@ -549,6 +657,7 @@ function renderReceptionCard(project) {
                     <button onclick="deleteBoardProject(${project.id})" class="text-xs px-1 py-0.5 bg-red-100 text-red-600 rounded hover:bg-red-200" title="삭제">✕</button>
                 </div>
             </div>
+            ${safeCn ? `<div class="text-xs text-slate-400 mt-0.5">${safeCn}</div>` : ''}
             <div class="text-xs mt-1 text-slate-700">${escapeHtml(workDesc)}</div>
             <div class="flex justify-between items-center mt-1">
                 <div class="text-xs text-slate-400">접수 대기</div>
@@ -593,7 +702,7 @@ function renderCard(project, borderColor) {
 
     return `
         <div class="bg-white rounded-lg shadow-sm p-3 border-l-4 ${borderColor} hover:shadow-md transition-shadow cursor-pointer"
-             ondblclick="navigateToSearch('${jsCn}')">
+             data-kanban-cn="${escapeHtml(cn)}">
             <div class="flex justify-between items-start">
                 <div class="font-bold text-sm">${safeCompany} ${safeShipName}</div>
                 ${statusSelect}
@@ -606,7 +715,7 @@ function renderCard(project, borderColor) {
             </div>
             <div class="flex justify-between items-center mt-1">
                 <div class="text-xs text-slate-400">${project.workDays || 0}일 작업</div>
-                <button onclick="event.stopPropagation(); openCommentModal('${jsCn}', null, '${jsTitle}')" class="text-slate-400 hover:text-blue-500 text-sm" title="댓글">💬</button>
+                <button onclick="event.stopPropagation(); openCommentModal(this.dataset.cn, null, this.dataset.title)" data-cn="${escapeHtml(cn)}" data-title="${escapeHtml(project.company || '')} ${escapeHtml(project.shipName || '')}" class="text-slate-400 hover:text-blue-500 text-sm" title="댓글">💬</button>
             </div>
         </div>
     `;
@@ -647,6 +756,7 @@ function renderArchiveForMonth() {
 }
 
 function archiveChangeMonth(delta) {
+    if (_archiveYear === null || _archiveMonth === null) return; // #7 — 초기화 전 호출 방어
     let m = _archiveMonth + delta, y = _archiveYear;
     if (m < 1)  { m = 12; y--; }
     if (m > 12) { m = 1;  y++; }
@@ -850,6 +960,7 @@ async function loadComments() {
 }
 
 function renderComment(comment, isReply) {
+    if (!comment) return '';  // #8 — null/undefined 방어
     const userId = currentUser ? currentUser.user_id : '';
     const isOwner = comment.userId === userId;
     const indent = isReply ? 'ml-6 border-l-2 border-slate-200 pl-3' : '';
@@ -888,7 +999,7 @@ function formatCommentTime(isoStr) {
 
 function escapeHtml(text) {
     const div = document.createElement('div');
-    div.textContent = text;
+    div.textContent = String(text ?? '');
     return div.innerHTML;
 }
 
@@ -933,7 +1044,7 @@ async function submitComment() {
         if (result.success) {
             input.value = '';
             cancelReply();
-            loadComments();
+            try { await loadComments(); } catch(e) { console.warn('댓글 목록 갱신 실패:', e); } // #9
         } else {
             showCustomAlert('오류', result.message, 'error');
         }
@@ -1071,6 +1182,7 @@ function updateVacation(category, value) {
 
 async function loadWorkRecords() {
     try {
+        updateDateInput();
         const dateStr = formatDateForInput(currentDate);
         showLoading(true);
         
@@ -1079,6 +1191,7 @@ async function loadWorkRecords() {
 
         renderTable();
         isDirty = false;
+        _dateLoadedAt = new Date().toISOString(); // 로드 시각 기록
 
         // 휴가자 현황 로드
         try {
@@ -1102,13 +1215,33 @@ async function loadWorkRecords() {
     }
 }
 
+// ── G: 같은 계약번호 + 같은 장소 중복 입력 경고 ──────────────────────
+function _checkDuplicateCNLocation(records) {
+    const seen = new Map();
+    const warnings = [];
+    records.forEach((row, i) => {
+        const cn  = (row.contractNumber || '').trim().toUpperCase();
+        const loc = (row.location || '').trim();
+        if (!cn) return;                          // 계약번호 없으면 검사 제외
+        const key = `${cn}||${loc}`;
+        if (seen.has(key)) {
+            warnings.push(`${seen.get(key) + 1}행과 ${i + 1}행: 계약번호 '${cn}' · 장소 '${loc}' 중복`);
+        } else {
+            seen.set(key, i);
+        }
+    });
+    return warnings;
+}
+
 async function saveWorkRecords() {
+    if (_isSaving) return;  // 중복 저장 방지
+    _isSaving = true;
     try {
         if (!currentUser || !currentUser.full_name) {
             showCustomAlert('오류', '로그인 정보가 없습니다.', 'error');
             return;
         }
-        
+
         // 계약번호 형식 유효성 검사
         const cns = [...new Set(
             workRecords.map(r => (r.contract_number || '').trim().toUpperCase()).filter(cn => cn)
@@ -1121,13 +1254,23 @@ async function saveWorkRecords() {
             }
         }
 
+        // G: 같은 계약번호 + 같은 장소 중복 경고
+        const dupWarnings = _checkDuplicateCNLocation(workRecords);
+        if (dupWarnings.length > 0) {
+            const proceed = confirm(
+                '⚠️ 중복 입력 감지:\n' + dupWarnings.join('\n') +
+                '\n\n계속 저장하시겠습니까?'
+            );
+            if (!proceed) return;
+        }
+
         const dateStr = formatDateForInput(currentDate);
         showLoading(true, '저장 중...');
 
         const result = await eel.save_work_records(dateStr, workRecords, currentUser.full_name)();
-        
+
         showLoading(false);
-        
+
         if (result.success) {
             // 휴가자 현황 저장
             try {
@@ -1136,6 +1279,11 @@ async function saveWorkRecords() {
                 console.error('휴가자 현황 저장 오류:', e);
             }
             isDirty = false;
+            _dateLoadedAt = new Date().toISOString(); // 저장 성공 시 로드 시각 갱신
+            const _saveNow = new Date();
+            const _saveEl = document.getElementById('saveStatusText');
+            if (_saveEl) _saveEl.textContent =
+                `✓ ${String(_saveNow.getHours()).padStart(2,'0')}:${String(_saveNow.getMinutes()).padStart(2,'0')}`;
             showCustomAlert('성공', '저장되었습니다.', 'success');
             // 저장 후 재로드 제거 (이미 workRecords 배열에 저장됨)
         } else {
@@ -1145,7 +1293,68 @@ async function saveWorkRecords() {
         console.error('저장 오류:', error);
         showLoading(false);
         showCustomAlert('오류', '저장 중 오류가 발생했습니다.', 'error');
+    } finally {
+        _isSaving = false;  // 성공/실패 모두 플래그 해제
     }
+}
+
+async function forceSaveWorkRecords() {
+    if (_isSaving) return;
+    try {
+        const dateStr = formatDateForInput(currentDate);
+        const info = await eel.get_date_save_info(dateStr)();
+
+        if (info.has_records && _dateLoadedAt && info.updated_at > _dateLoadedAt) {
+            // 내가 로드한 이후 다른 사람이 저장함 → 덮어쓰기 확인
+            const updatedTime = info.updated_at
+                ? info.updated_at.replace('T', ' ').substring(0, 16)
+                : '';
+            const who = info.updated_by || '다른 사용자';
+            const ok = confirm(
+                `⚠️ 충돌 감지\n\n${who}님이 ${updatedTime}에 저장한 내용이 있습니다.\n현재 내용으로 덮어쓰시겠습니까?`
+            );
+            if (!ok) return;
+        }
+
+        await saveWorkRecords();
+    } catch (error) {
+        console.error('강제 저장 오류:', error);
+        showCustomAlert('오류', '저장 중 오류가 발생했습니다.', 'error');
+    }
+}
+
+async function _autoSaveWorkRecords() {
+    if (!isDirty || _isSaving) return;
+    if (!currentUser || !currentUser.full_name) return;
+    const dailyView = document.getElementById('dailyView');
+    if (!dailyView || dailyView.classList.contains('hidden')) return;
+
+    const dateStr = formatDateForInput(currentDate);
+    _isSaving = true;
+    try {
+        const result = await eel.save_work_records(dateStr, workRecords, currentUser.full_name)();
+        if (result.success) {
+            isDirty = false;
+            _dateLoadedAt = new Date().toISOString();
+            const now = new Date();
+            const el = document.getElementById('saveStatusText');
+            if (el) el.textContent = `✓ ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+            showToast('자동 저장되었습니다.');
+        }
+    } catch (e) {
+        console.error('자동 저장 오류:', e);
+    } finally {
+        _isSaving = false;
+    }
+}
+
+function startAutoSave() {
+    stopAutoSave();
+    _autoSaveTimer = setInterval(_autoSaveWorkRecords, 30000);
+}
+
+function stopAutoSave() {
+    if (_autoSaveTimer) { clearInterval(_autoSaveTimer); _autoSaveTimer = null; }
 }
 
 async function loadYesterdayRecords() {
@@ -1433,7 +1642,7 @@ async function autoExpandContractNumber(index, input) {
             }
         }
     } catch (e) {
-        // 자동완성은 선택적 기능 — 오류 무시
+        console.warn('계약번호 자동완성 오류 (무시):', e); // #16
     }
 }
 
@@ -1458,6 +1667,14 @@ function handleLeaderInput(index, input) {
 }
 
 function handleTeammatesInput(index, input) {
+    // 업체명과 괄호 사이 공백 자동 제거: '업체명 [' → '업체명[', '업체명 (' → '업체명('
+    const raw = input.value;
+    const normalized = raw.replace(/(\S)\s+([\[\(])/g, '$1$2');
+    if (normalized !== raw) {
+        const curPos = Math.max(0, (input.selectionStart || 0) - (raw.length - normalized.length));
+        input.value = normalized;
+        try { input.setSelectionRange(curPos, curPos); } catch(e) {}
+    }
     const displayValue = input.value;
     const storedValue = displayValue.replace(/\*(.*?)\*/g, '<i>$1</i>');
     updateRecord(index, 'teammates', storedValue);
@@ -1469,13 +1686,15 @@ function handleTeammatesInput(index, input) {
 // ============================================================================
 
 function setupKeyboardListeners() {
-    const leaderInputs = document.querySelectorAll('[id^="leader_"]');
-    const teammatesInputs = document.querySelectorAll('[id^="teammates_"]');
-    
-    [...leaderInputs, ...teammatesInputs].forEach(input => {
-        input.removeEventListener('keydown', handleItalicShortcut);
-        input.addEventListener('keydown', handleItalicShortcut);
+    // #14 — 이벤트 위임: querySelectorAll 루프 대신 테이블에 한 번만 위임 등록
+    const table = document.getElementById('workRecordsTable');
+    if (!table || table._keyListenerAttached) return;
+    table.addEventListener('keydown', e => {
+        if (e.target.matches('[id^="leader_"], [id^="teammates_"]')) {
+            handleItalicShortcut(e);
+        }
     });
+    table._keyListenerAttached = true;
 }
 
 function handleItalicShortcut(event) {
@@ -1564,7 +1783,7 @@ function showCustomAlert(title, message, type = 'success') {
     if (!alertEl) return;
     
     titleEl.textContent = title;
-    messageEl.textContent = message;
+    messageEl.innerHTML = escapeHtml(message).replace(/\n/g, '<br>');
     
     // 아이콘 설정
     if (type === 'success') {
@@ -1599,11 +1818,15 @@ function getContractNumber() {
 function changeContractPart(part, delta) {
     if (part === 'year') {
         const el = document.getElementById('contractYear');
-        el.value = String((parseInt(el.value) || 2025) + delta);
+        let yr = (parseInt(el.value) || new Date().getFullYear()) + delta;
+        if (yr < 2000) yr = 2000;
+        if (yr > 2099) yr = 2099;
+        el.value = String(yr);
     } else if (part === 'seq') {
         const el = document.getElementById('contractSeq');
         let val = (parseInt(el.value) || 1) + delta;
-        if (val < 1) val = 1;
+        if (val < 1)   val = 1;
+        if (val > 999) val = 999;
         el.value = String(val).padStart(3, '0');
     }
     searchByContract();
@@ -1669,6 +1892,10 @@ async function searchByShipName() {
         showCustomAlert('알림', '선명을 입력해주세요.', 'info');
         return;
     }
+    if (shipName.length > 100) {
+        showCustomAlert('입력 오류', '선명은 100자 이하로 입력해주세요.', 'warning');
+        return;
+    }
 
     try {
         showLoading(true, '조회 중...');
@@ -1681,6 +1908,193 @@ async function searchByShipName() {
         showLoading(false);
         showCustomAlert('오류', '조회 중 오류가 발생했습니다.', 'error');
     }
+}
+
+async function searchByCompany() {
+    const input = document.getElementById('searchCompanyInput');
+    const resultDiv = document.getElementById('companySearchResult');
+    if (!input || !resultDiv) return;
+
+    const companyName = input.value.trim();
+    if (!companyName) {
+        showCustomAlert('알림', '업체명을 입력해주세요.', 'info');
+        return;
+    }
+    if (companyName.length > 100) {
+        showCustomAlert('입력 오류', '업체명은 100자 이하로 입력해주세요.', 'warning');
+        return;
+    }
+
+    try {
+        showLoading(true, '조회 중...');
+        const records = await eel.search_records_by_company(companyName)();
+        showLoading(false);
+
+        if (!records || records.length === 0) {
+            resultDiv.innerHTML = `<p class="text-slate-500">업체 "${escapeHtml(companyName)}"에 대한 작업 내역이 없습니다.</p>`;
+            return;
+        }
+
+        // 전역 상태 저장
+        _companySearchRecords = records;
+        _companySearchName = companyName;
+
+        // 월 목록 추출
+        const monthSet = new Set(records.map(r => (r.date || '').substring(0, 7)).filter(k => k));
+        _companySearchMonths = [...monthSet].sort();
+
+        // 현재 달로 기본 선택, 없으면 가장 최근 달
+        const currentMonth = new Date().toISOString().substring(0, 7);
+        let idx = _companySearchMonths.indexOf(currentMonth);
+        if (idx === -1) {
+            // 현재 달 이전 중 가장 최근 달
+            const past = _companySearchMonths.filter(m => m <= currentMonth);
+            idx = past.length > 0 ? _companySearchMonths.indexOf(past[past.length - 1]) : _companySearchMonths.length - 1;
+        }
+        _companySearchMonthIdx = idx;
+
+        renderCompanyMonthView(resultDiv);
+    } catch (error) {
+        console.error('업체별 조회 오류:', error);
+        showLoading(false);
+        showCustomAlert('오류', '조회 중 오류가 발생했습니다.', 'error');
+    }
+}
+
+function moveCompanyMonth(dir) {
+    const newIdx = _companySearchMonthIdx + dir;
+    if (newIdx < 0 || newIdx >= _companySearchMonths.length) return;
+    _companySearchMonthIdx = newIdx;
+    const resultDiv = document.getElementById('companySearchResult');
+    if (resultDiv) renderCompanyMonthView(resultDiv);
+}
+
+function renderCompanyMonthView(container) {
+    if (!_companySearchMonths.length) {
+        container.innerHTML = `<p class="text-slate-500">작업 내역이 없습니다.</p>`;
+        return;
+    }
+
+    const monthKey = _companySearchMonths[_companySearchMonthIdx];
+    const [year, month] = monthKey.split('-');
+    const monthRecords = _companySearchRecords.filter(r => (r.date || '').startsWith(monthKey));
+
+    // 해당 업체 인원 집계 기반으로 공수 계산 (record.manpower 는 전체 작업 공수라 업체 분만 따로 계산)
+    function calcCompanyManpower(records) {
+        let total = 0;
+        records.forEach(record => {
+            const workers = extractCompanyWorkers(record.teammates || '', _companySearchName);
+            total += workers.length;
+        });
+        return total;
+    }
+
+    const monthManpower = calcCompanyManpower(monthRecords);
+    const totalManpower  = calcCompanyManpower(_companySearchRecords);
+    const canPrev = _companySearchMonthIdx > 0;
+    const canNext = _companySearchMonthIdx < _companySearchMonths.length - 1;
+
+    let html = `
+        <div class="mb-2 text-sm text-slate-600">
+            <span class="font-semibold">업체: ${escapeHtml(_companySearchName)}</span> |
+            전체 <span class="font-semibold text-blue-600">${_companySearchRecords.length}</span>건 /
+            <span class="font-semibold text-blue-600">${totalManpower}</span>공
+        </div>
+        <div class="flex items-center gap-3 mb-3">
+            <button onclick="moveCompanyMonth(-1)" ${canPrev ? '' : 'disabled'}
+                    class="px-3 py-1 rounded bg-slate-200 hover:bg-slate-300 font-bold disabled:opacity-30 disabled:cursor-not-allowed">◀</button>
+            <span class="font-bold text-slate-700 text-base">${year}년 ${parseInt(month)}월</span>
+            <button onclick="moveCompanyMonth(1)" ${canNext ? '' : 'disabled'}
+                    class="px-3 py-1 rounded bg-slate-200 hover:bg-slate-300 font-bold disabled:opacity-30 disabled:cursor-not-allowed">▶</button>
+            <span class="text-xs text-slate-500">${monthRecords.length}건, ${monthManpower}공 &nbsp;|&nbsp; ${_companySearchMonthIdx + 1} / ${_companySearchMonths.length}개월</span>
+        </div>`;
+
+    if (monthRecords.length === 0) {
+        html += `<p class="text-slate-400 text-sm">이 달에는 작업 내역이 없습니다.</p>`;
+    } else {
+        html += `
+        <div class="overflow-x-auto">
+        <table class="w-full border-collapse border text-sm">
+            <thead>
+                <tr class="bg-indigo-100">
+                    <th class="border p-2 text-center w-16">작업일</th>
+                    <th class="border p-2 text-center w-20">선사</th>
+                    <th class="border p-2 text-center w-24">선명</th>
+                    <th class="border p-2 text-center w-28">엔진모델</th>
+                    <th class="border p-2 text-center">작업내용</th>
+                    <th class="border p-2 text-center w-36">직원</th>
+                </tr>
+            </thead>
+            <tbody>`;
+
+        monthRecords.forEach(record => {
+            let dateDisplay = record.date || '';
+            if (dateDisplay) {
+                const d = new Date(dateDisplay + 'T00:00:00');
+                dateDisplay = `${d.getMonth() + 1}/${d.getDate()}`;
+            }
+            const workers = extractCompanyWorkers(record.teammates || '', _companySearchName);
+            const workersDisplay = workers.length > 0 ? workers.join(', ') : '-';
+
+            html += `
+                <tr class="hover:bg-blue-50">
+                    <td class="border p-2 text-center">${escapeHtml(dateDisplay)}</td>
+                    <td class="border p-2 text-center">${escapeHtml(record.company || '-')}</td>
+                    <td class="border p-2 text-center">${escapeHtml(record.ship_name || '-')}</td>
+                    <td class="border p-2 text-center">${escapeHtml(record.engine_model || '-')}</td>
+                    <td class="border p-2">${escapeHtml(record.work_content || '-')}</td>
+                    <td class="border p-2 text-center">${escapeHtml(workersDisplay)}</td>
+                </tr>`;
+        });
+
+        html += `
+            </tbody>
+        </table>
+        </div>`;
+
+        // 인원별 공수 소계
+        const personMap = {};
+        monthRecords.forEach(record => {
+            const workers = extractCompanyWorkers(record.teammates || '', _companySearchName);
+            workers.forEach(name => {
+                personMap[name] = (personMap[name] || 0) + 1;
+            });
+        });
+        const personEntries = Object.entries(personMap).sort((a, b) => b[1] - a[1]);
+        if (personEntries.length > 0) {
+            const personItems = personEntries
+                .map(([name, count]) => `<span class="inline-flex items-center gap-1 bg-slate-100 px-2 py-0.5 rounded text-xs"><span class="text-slate-700 font-medium">${escapeHtml(name)}</span><b class="text-blue-600">${count}공</b></span>`)
+                .join(' ');
+            html += `
+        <div class="mt-2 flex flex-wrap items-center gap-1">
+            <span class="bg-blue-100 text-blue-700 px-2 py-0.5 rounded font-semibold text-xs mr-1">인원별 소계</span>
+            ${personItems}
+        </div>`;
+        }
+    }
+
+    container.innerHTML = html;
+}
+
+function extractCompanyWorkers(teammates, companyName) {
+    // teammates 필드에서 특정 업체 소속 직원 이름만 추출
+    const workers = [];
+    const addWorkers = (co, namesStr) => {
+        if (co.trim().includes(companyName) || companyName.includes(co.trim())) {
+            namesStr.split(',').forEach(w => {
+                const name = w.replace(/\*/g, '').trim();
+                if (name) workers.push(name);
+            });
+        }
+    };
+    // 도급: 업체명(직원1, 직원2)
+    const contractRegex = /([^,\[\]()\n]+?)\(([^)]+)\)/g;
+    let m;
+    while ((m = contractRegex.exec(teammates)) !== null) addWorkers(m[1], m[2]);
+    // 일당: 업체명[직원1, 직원2]
+    const dailyRegex = /([^,\[\]()\n]+?)\[([^\]]+)\]/g;
+    while ((m = dailyRegex.exec(teammates)) !== null) addWorkers(m[1], m[2]);
+    return workers;
 }
 
 function calculateOutsourceManpower(records) {
@@ -1718,104 +2132,127 @@ function calculateOutsourceManpower(records) {
     return companyMap;
 }
 
-function toggleOutsourceDetail(company) {
-    const el = document.getElementById('outsource-detail-' + company);
-    if (el) {
-        el.classList.toggle('hidden');
-    }
+function toggleOutsourceDetail(el, company) {
+    const block = el.closest('.outsource-block');
+    if (!block) return;
+    const detail = block.querySelector('[data-outsource-detail="' + company + '"]');
+    if (detail) detail.classList.toggle('hidden');
 }
 
 function renderSearchResults(records, container, searchTerm, searchType) {
+    // 상태 저장 후 정렬 렌더러에 위임 (기본: 최신순)
+    _searchSortState.records   = records;
+    _searchSortState.container = container;
+    _searchSortState.term      = searchTerm;
+    _searchSortState.type      = searchType;
+    _searchSortState.key       = 'date';
+    _searchSortState.dir       = -1;
+    _renderSortedSearch();
+}
+
+function sortSearchBy(key) {
+    if (_searchSortState.key === key) {
+        _searchSortState.dir *= -1;
+    } else {
+        _searchSortState.key = key;
+        _searchSortState.dir = (key === 'manpower') ? -1 : 1;
+    }
+    _renderSortedSearch();
+}
+
+function _renderSortedSearch() {
+    const { records, container, term, type, key, dir } = _searchSortState;
+    if (!container) return;
+
     if (!records || records.length === 0) {
-        container.innerHTML = `<p class="text-slate-500">${searchType} "${searchTerm}"에 대한 작업 내역이 없습니다.</p>`;
+        container.innerHTML = `<p class="text-slate-500">${escapeHtml(type)} "${escapeHtml(term)}"에 대한 작업 내역이 없습니다.</p>`;
         return;
     }
+
+    // 정렬
+    const sorted = [...records].sort((a, b) => {
+        const av = a[key] ?? '';
+        const bv = b[key] ?? '';
+        if (key === 'manpower') return (parseFloat(av) - parseFloat(bv)) * dir;
+        return String(av).localeCompare(String(bv), 'ko') * dir;
+    });
+
+    // 정렬 표시 헬퍼
+    const si = (k) => key === k ? (dir === -1 ? ' ▼' : ' ▲') : '';
+    const thCls = 'border p-2 text-center cursor-pointer hover:bg-indigo-200 select-none';
 
     // 총 인원 합계
     const totalManpower = records.reduce((sum, r) => sum + (r.manpower || 0), 0);
 
-    // 외주 업체별 공수 집계 (인원별 상세 포함)
+    // 외주 업체별 공수 집계
     const outsourceMap = calculateOutsourceManpower(records);
     const outsourceEntries = Object.entries(outsourceMap);
 
     let outsourceHtml = '';
     if (outsourceEntries.length > 0) {
         const outsourceItems = outsourceEntries.map(([company, data]) =>
-            `<span class="font-semibold text-orange-600 cursor-pointer hover:underline" onclick="toggleOutsourceDetail('${company}')">${company}</span>: ${data.total}공`
+            `<span class="font-semibold text-orange-600 cursor-pointer hover:underline" onclick="toggleOutsourceDetail(this, '${escapeHtml(company)}')">${escapeHtml(company)}</span>: ${data.total}공`
         ).join(' &nbsp;|&nbsp; ');
-
         const detailSections = outsourceEntries.map(([company, data]) => {
             const personItems = Object.entries(data.persons)
                 .sort((a, b) => b[1] - a[1])
-                .map(([name, count]) => `<span class="text-slate-700">${name} <b class="text-orange-600">${count}공</b></span>`)
+                .map(([name, count]) => `<span class="text-slate-700">${escapeHtml(name)} <b class="text-orange-600">${count}공</b></span>`)
                 .join(', ');
-            return `<div id="outsource-detail-${company}" class="hidden ml-6 mb-1 text-xs text-slate-500">
-                └ <span class="font-semibold">${company}</span> 상세: ${personItems}
-            </div>`;
+            return `<div data-outsource-detail="${escapeHtml(company)}" class="hidden ml-6 mb-1 text-xs text-slate-500">└ <span class="font-semibold">${escapeHtml(company)}</span> 상세: ${personItems}</div>`;
         }).join('');
-
         outsourceHtml = `
-        <div class="mb-1 text-sm text-slate-600 flex items-center gap-2">
-            <span class="bg-orange-100 text-orange-700 px-2 py-0.5 rounded font-semibold text-xs">외주 공수</span>
-            ${outsourceItems}
-            <span class="text-xs text-slate-400">(클릭하면 상세)</span>
-        </div>
-        ${detailSections}`;
+        <div class="outsource-block mb-1 text-sm text-slate-600 flex flex-col gap-0.5">
+            <div class="flex items-center gap-2">
+                <span class="bg-orange-100 text-orange-700 px-2 py-0.5 rounded font-semibold text-xs">외주 공수</span>
+                ${outsourceItems}
+                <span class="text-xs text-slate-400">(클릭하면 상세)</span>
+            </div>
+            ${detailSections}
+        </div>`;
     }
 
     let html = `
         <div class="mb-1 text-sm text-slate-600">
-            <span class="font-semibold">${searchType}: ${searchTerm}</span> |
-            총 <span class="font-semibold text-blue-600">${records.length}</span>건 |
+            <span class="font-semibold">${escapeHtml(type)}: ${escapeHtml(term)}</span> |
+            총 <span class="font-semibold text-blue-600">${sorted.length}</span>건 |
             총 인원 <span class="font-semibold text-blue-600">${totalManpower.toFixed(1)}</span>공
         </div>
         ${outsourceHtml}
         <div class="overflow-x-auto">
-            <table class="w-full border-collapse border">
-                <thead>
-                    <tr class="bg-indigo-100">
-                        <th class="border p-2 text-center w-24">작업일</th>
-                        <th class="border p-2 text-center w-20">선사</th>
-                        <th class="border p-2 text-center w-20">선명</th>
-                        <th class="border p-2 text-center w-28">엔진모델</th>
-                        <th class="border p-2 text-center">작업내용</th>
-                        <th class="border p-2 text-center w-24">작업자</th>
-                        <th class="border p-2 text-center w-12">인원</th>
-                        <th class="border p-2 text-center">동반자</th>
-                    </tr>
-                </thead>
-                <tbody>`;
+        <table class="w-full border-collapse border">
+            <thead><tr class="bg-indigo-100">
+                <th class="${thCls} w-24" onclick="sortSearchBy('date')">작업일${si('date')}</th>
+                <th class="${thCls} w-20" onclick="sortSearchBy('company')">선사${si('company')}</th>
+                <th class="${thCls} w-20" onclick="sortSearchBy('ship_name')">선명${si('ship_name')}</th>
+                <th class="${thCls} w-28" onclick="sortSearchBy('engine_model')">엔진모델${si('engine_model')}</th>
+                <th class="${thCls}" onclick="sortSearchBy('work_content')">작업내용${si('work_content')}</th>
+                <th class="${thCls} w-24" onclick="sortSearchBy('leader')">작업자${si('leader')}</th>
+                <th class="${thCls} w-12" onclick="sortSearchBy('manpower')">인원${si('manpower')}</th>
+                <th class="${thCls}" onclick="sortSearchBy('teammates')">동반자${si('teammates')}</th>
+            </tr></thead>
+            <tbody>`;
 
-    records.forEach(record => {
-        // 날짜 포맷: YYYY-MM-DD → M/D
+    sorted.forEach(record => {
         let dateDisplay = record.date || '';
         if (dateDisplay) {
             const d = new Date(dateDisplay + 'T00:00:00');
             dateDisplay = `${d.getMonth() + 1}/${d.getDate()}`;
         }
-
-        // 기울임체 태그 제거 후 XSS 방어
-        const leader = escapeHtml((record.leader || '-').replace(/<i>/g, '').replace(/<\/i>/g, ''));
+        const leader    = escapeHtml((record.leader    || '-').replace(/<i>/g, '').replace(/<\/i>/g, ''));
         const teammates = escapeHtml((record.teammates || '-').replace(/<i>/g, '').replace(/<\/i>/g, ''));
-
-        html += `
-                    <tr class="hover:bg-blue-50">
-                        <td class="border p-2 text-center">${escapeHtml(dateDisplay)}</td>
-                        <td class="border p-2 text-center">${escapeHtml(record.company || '-')}</td>
-                        <td class="border p-2 text-center">${escapeHtml(record.ship_name || '-')}</td>
-                        <td class="border p-2 text-center">${escapeHtml(record.engine_model || '-')}</td>
-                        <td class="border p-2">${escapeHtml(record.work_content || '-')}</td>
-                        <td class="border p-2 text-center">${leader}</td>
-                        <td class="border p-2 text-center font-semibold text-blue-600">${record.manpower > 0 ? record.manpower : ''}</td>
-                        <td class="border p-2">${teammates}</td>
-                    </tr>`;
+        html += `<tr class="hover:bg-blue-50">
+            <td class="border p-2 text-center">${escapeHtml(dateDisplay)}</td>
+            <td class="border p-2 text-center">${escapeHtml(record.company || '-')}</td>
+            <td class="border p-2 text-center">${escapeHtml(record.ship_name || '-')}</td>
+            <td class="border p-2 text-center">${escapeHtml(record.engine_model || '-')}</td>
+            <td class="border p-2">${escapeHtml(record.work_content || '-')}</td>
+            <td class="border p-2 text-center">${leader}</td>
+            <td class="border p-2 text-center font-semibold text-blue-600">${record.manpower > 0 ? record.manpower : ''}</td>
+            <td class="border p-2">${teammates}</td>
+        </tr>`;
     });
 
-    html += `
-                </tbody>
-            </table>
-        </div>`;
-
+    html += '</tbody></table></div>';
     container.innerHTML = html;
 }
 
@@ -1823,15 +2260,116 @@ function renderSearchResults(records, container, searchTerm, searchType) {
 // 사용자 설정
 // ============================================================================
 
+// ============================================================================
+// 기본 화면 2티어 트리 선택기
+// ============================================================================
+
+const DEFAULT_VIEW_TREE = [
+    { value: 'dashboard', label: '대시보드', subs: [
+        { value: 'chart',  label: '간트 차트' },
+        { value: 'board',  label: '칸반 보드' },
+        { value: 'stats',  label: '통계' },
+    ]},
+    { value: 'daily', label: '일일 작업', subs: [] },
+    { value: 'report', label: '보고서', subs: [
+        { value: 'daily',   label: '일일 보고' },
+        { value: 'monthly', label: '월간 보고' },
+    ]},
+    { value: 'search', label: '조회', subs: [
+        { value: 'status',  label: '현황 조회' },
+        { value: 'work',    label: '작업별 조회' },
+        { value: 'company', label: '업체별 조회' },
+    ]},
+];
+
+// 선택된 기본화면 값 반환 ("view" 또는 "view:subtab")
+function getSelectedDefaultView() {
+    const t1 = document.querySelector('#defaultViewTier1 [data-selected="true"]');
+    const t2 = document.querySelector('#defaultViewTier2 [data-selected="true"]');
+    if (!t1) return 'dashboard';
+    return t2 ? `${t1.dataset.value}:${t2.dataset.value}` : t1.dataset.value;
+}
+
+// 2티어 트리 UI 렌더링
+function renderDefaultViewTree(currentValue) {
+    const tier1El = document.getElementById('defaultViewTier1');
+    const tier2El = document.getElementById('defaultViewTier2');
+    if (!tier1El || !tier2El) return;
+
+    const parts    = (currentValue || 'dashboard').split(':');
+    const selView  = parts[0];
+    const selSub   = parts[1] || null;
+
+    // 1티어 렌더링
+    tier1El.innerHTML = DEFAULT_VIEW_TREE.map(item => {
+        const active = item.value === selView;
+        const cls = active
+            ? 'px-3 py-2 text-sm font-semibold cursor-pointer bg-blue-600 text-white'
+            : 'px-3 py-2 text-sm cursor-pointer hover:bg-blue-50 text-slate-700';
+        return `<div class="${cls} border-b border-blue-100 last:border-b-0"
+                     data-value="${item.value}" data-selected="${active}"
+                     onclick="onDefaultViewTier1Click(this)">${item.label}</div>`;
+    }).join('');
+
+    // 2티어 렌더링
+    _renderDefaultViewTier2(selView, selSub);
+}
+
+function _renderDefaultViewTier2(view, selSub) {
+    const tier2El = document.getElementById('defaultViewTier2');
+    if (!tier2El) return;
+    const node = DEFAULT_VIEW_TREE.find(n => n.value === view);
+    if (!node || node.subs.length === 0) {
+        tier2El.innerHTML = '<div class="px-3 py-2 text-xs text-slate-400 italic">단일 페이지</div>';
+        return;
+    }
+    tier2El.innerHTML = node.subs.map((sub, idx) => {
+        const active = selSub ? sub.value === selSub : idx === 0;
+        const cls = active
+            ? 'px-3 py-2 text-sm font-semibold cursor-pointer bg-blue-600 text-white'
+            : 'px-3 py-2 text-sm cursor-pointer hover:bg-blue-50 text-slate-700';
+        return `<div class="${cls} border-b border-blue-100 last:border-b-0"
+                     data-value="${sub.value}" data-selected="${active}"
+                     onclick="onDefaultViewTier2Click(this)">${sub.label}</div>`;
+    }).join('');
+}
+
+function onDefaultViewTier1Click(el) {
+    // 1티어 선택 상태 갱신
+    document.querySelectorAll('#defaultViewTier1 [data-selected]').forEach(e => {
+        e.dataset.selected = 'false';
+        e.className = 'px-3 py-2 text-sm cursor-pointer hover:bg-blue-50 text-slate-700 border-b border-blue-100 last:border-b-0';
+    });
+    el.dataset.selected = 'true';
+    el.className = 'px-3 py-2 text-sm font-semibold cursor-pointer bg-blue-600 text-white border-b border-blue-100 last:border-b-0';
+    // 2티어 재렌더링 (기본 첫 번째 서브탭 선택)
+    _renderDefaultViewTier2(el.dataset.value, null);
+}
+
+function onDefaultViewTier2Click(el) {
+    document.querySelectorAll('#defaultViewTier2 [data-selected]').forEach(e => {
+        e.dataset.selected = 'false';
+        e.className = 'px-3 py-2 text-sm cursor-pointer hover:bg-blue-50 text-slate-700 border-b border-blue-100 last:border-b-0';
+    });
+    el.dataset.selected = 'true';
+    el.className = 'px-3 py-2 text-sm font-semibold cursor-pointer bg-blue-600 text-white border-b border-blue-100 last:border-b-0';
+}
+
+// ============================================================================
+
 function loadUserSettings() {
     // 현재 사용자의 기본 화면 설정 로드
-    const defaultView = currentUser.default_view || 'dashboard';
-    const selectEl = document.getElementById('defaultViewSelect');
-    if (selectEl) {
-        selectEl.value = defaultView;
-    }
+    const defaultView = localStorage.getItem('userDefaultView') || currentUser.default_view || 'dashboard';
+    renderDefaultViewTree(defaultView);
     // 텔레그램 연결 상태 로드
     loadTelegramStatus();
+    // 트레이 모드 토글 초기화
+    const trayToggle = document.getElementById('trayModeToggle');
+    const trayLabel  = document.getElementById('trayModeLabel');
+    if (trayToggle && currentUser) {
+        trayToggle.checked = !!currentUser.tray_mode;
+        if (trayLabel) trayLabel.textContent = currentUser.tray_mode ? '트레이로 최소화' : '앱 완전 종료';
+    }
 }
 
 // ============================================================================
@@ -1883,26 +2421,52 @@ async function generateTelegramCode() {
         if (result.success) {
             const linkDiv = document.getElementById('telegramLinkCode');
             linkDiv.classList.remove('hidden');
-            const deepLink = document.getElementById('telegramDeepLink');
-            if (result.deepLink) {
-                deepLink.href = result.deepLink;
-                deepLink.textContent = `텔레그램에서 연결하기 (코드: ${result.code})`;
-                // Eel 앱에서 target="_blank"는 새 앱 창을 열어버림 → Python으로 OS 기본 앱 실행
-                const _deepLinkUrl = result.deepLink;
-                deepLink.onclick = function(e) {
-                    e.preventDefault();
-                    eel.open_external_url(_deepLinkUrl)();
-                };
-            } else {
-                deepLink.href = '#';
-                deepLink.onclick = null;
-                deepLink.textContent = `코드: ${result.code} (봇에게 /start ${result.code} 전송)`;
+
+            const qrImg     = document.getElementById('telegramQrCode');
+            const botNameEl = document.getElementById('telegramBotNameDisplay');
+            const cmdEl     = document.getElementById('telegramStartCmd');
+            const deepLinkEl = document.getElementById('telegramDeepLink');
+
+            // 수동 입력용 코드 표시
+            if (cmdEl) cmdEl.textContent = `/start ${result.code}`;
+            if (botNameEl) botNameEl.textContent = result.botUsername ? `@${result.botUsername}` : '봇';
+
+            // QR 코드: webLink(https://)로 생성 → 모바일 스캔용
+            const qrTarget = result.webLink || (result.botUsername ? `https://t.me/${result.botUsername}?start=${result.code}` : '');
+            if (qrImg && qrTarget) {
+                qrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=112x112&data=${encodeURIComponent(qrTarget)}`;
+            } else if (qrImg) {
+                qrImg.src = '';
+            }
+
+            // 딥링크 버튼: deepLink(tg://)로 → PC Telegram Desktop 직접 실행
+            if (deepLinkEl) {
+                if (result.deepLink) {
+                    deepLinkEl.href = result.deepLink;
+                    deepLinkEl.textContent = '텔레그램 앱으로 열기';
+                    const _url = result.deepLink;
+                    deepLinkEl.onclick = function(e) { e.preventDefault(); eel.open_external_url(_url)(); };
+                } else {
+                    deepLinkEl.textContent = '';
+                    deepLinkEl.onclick = null;
+                }
             }
         } else {
             showCustomAlert('오류', result.message || '코드 생성 실패', 'error');
         }
     } catch (error) {
         console.error('텔레그램 코드 생성 오류:', error);
+    }
+}
+
+async function copyTelegramCode() {
+    const cmd = document.getElementById('telegramStartCmd');
+    if (!cmd || !cmd.textContent) return;
+    try {
+        await navigator.clipboard.writeText(cmd.textContent);
+        showCustomAlert('복사됨', '코드가 클립보드에 복사되었습니다.', 'success');
+    } catch (e) {
+        showCustomAlert('복사 실패', '직접 코드를 선택하여 복사해 주세요.', 'warning');
     }
 }
 
@@ -1924,38 +2488,827 @@ async function unlinkTelegram() {
 // ============================================================================
 
 document.addEventListener('keydown', function(e) {
-    if (e.key !== 'Escape') return;
-    const modals = [
-        { id: 'commentModal',     close: closeCommentModal },
-        { id: 'newProjectModal',  close: closeNewProjectModal },
-        { id: 'startProjectModal', close: closeStartProjectModal },
-    ];
-    for (const m of modals) {
-        const el = document.getElementById(m.id);
-        if (el && !el.classList.contains('hidden')) {
-            m.close();
+    // ── ESC: 열린 모달 닫기 ────────────────────────────────────────
+    if (e.key === 'Escape') {
+        const modals = [
+            { id: 'commentModal',      close: closeCommentModal },
+            { id: 'newProjectModal',   close: closeNewProjectModal },
+            { id: 'startProjectModal', close: closeStartProjectModal },
+        ];
+        for (const m of modals) {
+            const el = document.getElementById(m.id);
+            if (el && !el.classList.contains('hidden')) {
+                m.close();
+                break;
+            }
+        }
+        return;
+    }
+
+    // ── Ctrl+S: 일일 작업 저장 (입력 필드 포함 어디서든) ──────────
+    if (e.ctrlKey && !e.altKey && (e.key === 's' || e.key === 'S')) {
+        const dailyView = document.getElementById('dailyView');
+        if (dailyView && !dailyView.classList.contains('hidden')) {
+            e.preventDefault();
+            if (typeof forceSaveWorkRecords === 'function') forceSaveWorkRecords();
+        }
+        return;
+    }
+
+    // ── 입력 필드 내부에서는 이하 단축키 무시 ─────────────────────
+    if (e.target.matches('input, textarea, select, [contenteditable]')) return;
+
+    if (!e.ctrlKey || e.altKey || e.shiftKey) return;
+
+    switch (e.key) {
+        // 탭 전환
+        case '1': e.preventDefault(); showView('dashboard'); break;
+        case '2': e.preventDefault(); showView('daily');     break;
+        case '3': e.preventDefault(); showView('report');    break;
+        case '4': e.preventDefault(); showView('search');    break;
+        case '5': e.preventDefault(); showView('employee');  break;
+
+        // 날짜 이동 (일일 뷰에서만)
+        case 'ArrowLeft': {
+            const dv = document.getElementById('dailyView');
+            if (dv && !dv.classList.contains('hidden')) {
+                e.preventDefault();
+                changeDate(-1);
+            }
+            break;
+        }
+        case 'ArrowRight': {
+            const dv = document.getElementById('dailyView');
+            if (dv && !dv.classList.contains('hidden')) {
+                e.preventDefault();
+                changeDate(1);
+            }
+            break;
+        }
+
+        // 오늘 날짜 이동 (일일 뷰에서만)
+        case 't': case 'T': {
+            const dv = document.getElementById('dailyView');
+            if (dv && !dv.classList.contains('hidden')) {
+                e.preventDefault();
+                if (!checkUnsavedChanges()) break;
+                currentDate = new Date();
+                updateDateInput();
+                loadWorkRecords();
+            }
             break;
         }
     }
 });
 
 async function saveUserSettings() {
-    const selectEl = document.getElementById('defaultViewSelect');
-    if (!selectEl) return;
-    
-    const defaultView = selectEl.value;
-    
+    // 2티어 트리에서 선택된 값 읽기
+    const defaultView = getSelectedDefaultView();
+
     try {
         showLoading(true, '설정 저장 중...');
-        
+
         // localStorage에 저장
         currentUser.default_view = defaultView;
         localStorage.setItem('userDefaultView', defaultView);
-        
+
         showLoading(false);
         showCustomAlert('성공', '기본 화면이 설정되었습니다.', 'success');
     } catch (error) {
         showLoading(false);
         showCustomAlert('오류', '설정 저장에 실패했습니다: ' + error.message, 'error');
     }
+}
+
+// ============================================================================
+// 직원 관리 - 연차 관리
+// ============================================================================
+
+// 어드민 페이지 → 직원 관리 탭으로 전환 (mainApp 임시 사용)
+function showEmployeeFromAdmin() {
+    document.getElementById('adminApp').classList.add('hidden');
+    document.getElementById('mainApp').classList.remove('hidden');
+    const bar = document.getElementById('adminReturnBar');
+    if (bar) bar.classList.remove('hidden');
+    showView('employee');
+}
+
+// 직원 관리에서 어드민 페이지로 복귀
+function returnToAdminPanel() {
+    const bar = document.getElementById('adminReturnBar');
+    if (bar) bar.classList.add('hidden');
+    document.getElementById('mainApp').classList.add('hidden');
+    document.getElementById('adminApp').classList.remove('hidden');
+}
+
+function showEmployeeTab(tab) {
+    const tabMap = {
+        leave: document.getElementById('employeeLeaveTab'),
+        leaveReport: document.getElementById('employeeLeaveReportTab')
+    };
+    const btnMap = {
+        leave: document.getElementById('btnEmployeeLeave'),
+        leaveReport: document.getElementById('btnEmployeeLeaveReport')
+    };
+    // 모든 탭 패널 숨김
+    Object.values(tabMap).forEach(t => t && t.classList.add('hidden'));
+    // 버튼 스타일 업데이트
+    Object.keys(btnMap).forEach(key => {
+        const b = btnMap[key];
+        if (!b) return;
+        b.classList.remove('bg-blue-600', 'text-white', 'bg-slate-200',
+                           'bg-white', 'text-slate-600', 'border', 'border-slate-300', 'hover:bg-slate-50');
+        if (key === tab) {
+            b.classList.add('bg-blue-600', 'text-white');
+        } else {
+            b.classList.add('bg-white', 'text-slate-600', 'border', 'border-slate-300', 'hover:bg-slate-50');
+        }
+    });
+    if (tabMap[tab]) tabMap[tab].classList.remove('hidden');
+    if (tab === 'leaveReport') loadLeaveMonthlyReport();
+}
+
+// ============================================================================
+// 연차 월별 보고
+// ============================================================================
+
+async function loadLeaveMonthlyReport() {
+    const sel = document.getElementById('leaveReportYear');
+    if (!sel) return;
+    // 연도 셀렉터 초기화 (처음 호출 시)
+    if (!sel.options.length) {
+        const curYear = new Date().getFullYear();
+        for (let y = curYear; y >= curYear - 2; y--) {
+            const opt = document.createElement('option');
+            opt.value = y;
+            opt.textContent = y + '년';
+            sel.appendChild(opt);
+        }
+    }
+    const year = parseInt(sel.value) || new Date().getFullYear();
+    const container = document.getElementById('leaveReportTableContainer');
+    if (!container) return;
+    container.innerHTML = '<p class="text-slate-400 text-sm">불러오는 중...</p>';
+    try {
+        const result = await eel.get_all_leave_monthly_report(year)();
+        if (result && result.success) {
+            renderLeaveMonthlyReport(result.data, year);
+        } else {
+            container.innerHTML = '<p class="text-red-500 text-sm">데이터 조회 실패</p>';
+        }
+    } catch (e) {
+        container.innerHTML = '<p class="text-red-500 text-sm">오류: ' + escapeHtml(String(e)) + '</p>';
+    }
+}
+
+function renderLeaveMonthlyReport(data, year) {
+    const container = document.getElementById('leaveReportTableContainer');
+    if (!container) return;
+    if (!data || data.length === 0) {
+        container.innerHTML = '<p class="text-slate-400 text-sm">연차 데이터가 없습니다.</p>';
+        return;
+    }
+
+    const curYear = new Date().getFullYear();
+    const maxMonth = (year === curYear) ? new Date().getMonth() + 1 : 12;
+    const monthNames = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
+
+    let html = `<div id="leaveReportPrintArea">
+        <h3 class="text-lg font-bold text-center mb-3 hidden" id="leaveReportPrintTitle">${escapeHtml(String(year))}년 연차 현황</h3>
+        <table class="w-full border-collapse text-sm">
+            <thead>
+                <tr class="bg-blue-50">
+                    <th class="border border-gray-400 px-2 py-2 text-center whitespace-nowrap">순번</th>
+                    <th class="border border-gray-400 px-3 py-2 text-center whitespace-nowrap">이름</th>`;
+    for (let m = 1; m <= maxMonth; m++) {
+        html += `<th class="border border-gray-400 px-2 py-2 text-center whitespace-nowrap">${monthNames[m-1]}</th>`;
+    }
+    html += `<th class="border border-gray-400 px-2 py-2 text-center whitespace-nowrap">연차 생성월</th>
+                    <th class="border border-gray-400 px-2 py-2 text-center whitespace-nowrap">잔여 연차</th>
+                    <th class="border border-gray-400 px-4 py-2 text-center whitespace-nowrap">서명</th>
+                </tr>
+            </thead>
+            <tbody>`;
+
+    data.forEach((emp, idx) => {
+        html += `<tr class="${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'}">
+            <td class="border border-gray-400 px-2 py-2 text-center">${idx + 1}</td>
+            <td class="border border-gray-400 px-3 py-2 text-center font-medium">${escapeHtml(emp.name)}</td>`;
+        for (let m = 1; m <= maxMonth; m++) {
+            const used = emp.monthly[m];
+            html += `<td class="border border-gray-400 px-2 py-2 text-center">${used != null ? used : '-'}</td>`;
+        }
+        const remaining = emp.remaining;
+        const remColor = remaining < 0 ? 'text-red-600 font-bold' : remaining === 0 ? 'text-slate-500' : 'text-green-700 font-semibold';
+        html += `<td class="border border-gray-400 px-2 py-2 text-center">${emp.generation_month}월</td>
+            <td class="border border-gray-400 px-2 py-2 text-center ${remColor}">${remaining}</td>
+            <td class="border border-gray-400 px-4 py-2 text-center">&nbsp;</td>
+        </tr>`;
+    });
+
+    html += `</tbody></table></div>`;
+    container.innerHTML = html;
+}
+
+function printLeaveReport() {
+    // 인쇄 전 타이틀 임시 표시
+    const title = document.getElementById('leaveReportPrintTitle');
+    if (title) title.classList.remove('hidden');
+    window.print();
+    if (title) title.classList.add('hidden');
+}
+
+function showAddLeaveRowModal() {
+    const modal = document.getElementById('addLeaveRowModal');
+    const nameEl = document.getElementById('addLeaveRowName');
+    if (!modal) return;
+    if (nameEl) nameEl.value = '';
+    modal.classList.remove('hidden');
+    if (nameEl) nameEl.focus();
+}
+
+async function confirmAddLeaveRow() {
+    const nameEl = document.getElementById('addLeaveRowName');
+    const monthEl = document.getElementById('addLeaveRowMonth');
+    const name = nameEl ? nameEl.value.trim() : '';
+    const month = parseInt(monthEl ? monthEl.value : '1') || 1;
+    if (!name) { showToast('직원명을 입력해주세요.', 'error'); return; }
+    try {
+        const r = await eel.save_employee_annual_config(name, month, '')();
+        document.getElementById('addLeaveRowModal').classList.add('hidden');
+        if (r && r.success) {
+            showToast(escapeHtml(name) + ' 추가 완료');
+            loadLeaveMonthlyReport();
+        } else {
+            showToast('추가 실패', 'error');
+        }
+    } catch(e) {
+        showToast('오류: ' + String(e), 'error');
+    }
+}
+
+async function toggleLeaveReportEdit(userId, enabled) {
+    if (!currentUser) return;
+    try {
+        const r = await eel.set_leave_report_edit(userId, enabled, currentUser.user_id)();
+        if (r && r.success) {
+            if (typeof loadAllUsers === 'function') loadAllUsers();
+        } else {
+            showToast('권한 설정 실패: ' + escapeHtml(r?.message || ''), 'error');
+        }
+    } catch(e) {
+        showToast('오류: ' + String(e), 'error');
+    }
+}
+
+async function loadLeaveEmployeeList() {
+    try {
+        const names = await eel.get_employee_names_for_leave()();
+        const datalist = document.getElementById('leaveEmployeeList');
+        if (!datalist) return;
+        datalist.innerHTML = '';
+        (names || []).forEach(name => {
+            const opt = document.createElement('option');
+            opt.value = name;
+            datalist.appendChild(opt);
+        });
+    } catch (e) {
+        console.error('직원 목록 로드 실패:', e);
+    }
+}
+
+async function searchEmployeeLeave() {
+    const input = document.getElementById('leaveEmployeeInput');
+    const name = input ? input.value.trim() : '';
+    if (!name) {
+        showCustomAlert('알림', '직원명을 입력하세요.', 'warning');
+        return;
+    }
+    const resultDiv = document.getElementById('leaveResult');
+    if (resultDiv) resultDiv.innerHTML = '<p class="text-slate-400">조회 중...</p>';
+    try {
+        const info = await eel.get_employee_leave_info(name)();
+        renderLeaveResult(info, name);
+    } catch (e) {
+        if (resultDiv) resultDiv.innerHTML = '<p class="text-red-500">조회 실패: ' + e.message + '</p>';
+    }
+}
+
+function renderLeaveResult(info, name) {
+    const resultDiv = document.getElementById('leaveResult');
+    if (!resultDiv) return;
+
+    const cfg = info.config || {};
+    const grants = info.grants || [];
+    const usageThisYear = info.usage_this_year || [];
+    const allUsageCount = info.all_usage_count || 0;
+    const summary = info.summary || { total_granted: 0, total_used: 0, remaining: 0 };
+
+    const currentYear = new Date().getFullYear();
+
+    // ── 섹션 1: 잔여 연차 요약 ──
+    const remainingColor = summary.remaining < 0 ? 'text-red-600' : 'text-emerald-600';
+    let html = `
+    <div class="space-y-6">
+      <!-- 요약 박스 -->
+      <div class="grid grid-cols-3 gap-4">
+        <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 text-center">
+          <p class="text-sm text-slate-500 mb-1">총 부여</p>
+          <p class="text-3xl font-bold text-blue-600">${summary.total_granted.toFixed(1)}</p>
+        </div>
+        <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 text-center">
+          <p class="text-sm text-slate-500 mb-1">총 사용</p>
+          <p class="text-3xl font-bold text-amber-500">${summary.total_used.toFixed(1)}</p>
+        </div>
+        <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 text-center">
+          <p class="text-sm text-slate-500 mb-1">잔여</p>
+          <p class="text-3xl font-bold ${remainingColor}">${summary.remaining.toFixed(1)}</p>
+        </div>
+      </div>
+
+      <!-- 섹션 2: 연차 설정 (생성월) -->
+      <div class="bg-white border border-slate-200 rounded-xl p-5">
+        <h3 class="text-lg font-semibold text-slate-700 mb-4">⚙️ 연차 설정</h3>
+        <div class="flex gap-3 items-center flex-wrap">
+          <label class="text-sm text-slate-600 font-medium">연차 생성 월:</label>
+          <select id="leaveGenMonth" class="border border-slate-300 rounded-lg px-3 py-2 text-sm">
+            ${Array.from({length:12},(_,i)=>`<option value="${i+1}" ${cfg.generation_month===(i+1)?'selected':''}>${i+1}월</option>`).join('')}
+          </select>
+          <label class="text-sm text-slate-600 font-medium ml-2">메모:</label>
+          <input type="text" id="leaveConfigNote" value="${escapeHtml(cfg.note||'')}"
+                 class="border border-slate-300 rounded-lg px-3 py-2 text-sm w-48" placeholder="메모 (선택)">
+          <button onclick="saveLeaveConfig('${escapeJs(name)}')"
+                  class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700">저장</button>
+        </div>
+      </div>
+
+      <!-- 섹션 3: 연차 부여 이력 -->
+      <div class="bg-white border border-slate-200 rounded-xl p-5">
+        <h3 class="text-lg font-semibold text-slate-700 mb-4">📋 연차 부여 이력 (전체)</h3>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm border-collapse">
+            <thead>
+              <tr class="bg-slate-100">
+                <th class="px-3 py-2 text-left border border-slate-200">연도</th>
+                <th class="px-3 py-2 text-left border border-slate-200">월</th>
+                <th class="px-3 py-2 text-right border border-slate-200">일수</th>
+                <th class="px-3 py-2 text-left border border-slate-200">메모</th>
+                <th class="px-3 py-2 text-center border border-slate-200">삭제</th>
+              </tr>
+            </thead>
+            <tbody>`;
+
+    if (grants.length === 0) {
+        html += `<tr><td colspan="5" class="px-3 py-3 text-center text-slate-400">부여 이력이 없습니다.</td></tr>`;
+    } else {
+        grants.forEach(g => {
+            html += `
+              <tr class="hover:bg-slate-50">
+                <td class="px-3 py-2 border border-slate-100">${g.grant_year}년</td>
+                <td class="px-3 py-2 border border-slate-100">${g.grant_month}월</td>
+                <td class="px-3 py-2 border border-slate-100 text-right font-medium">${g.days}일</td>
+                <td class="px-3 py-2 border border-slate-100 text-slate-500">${escapeHtml(g.note||'')}</td>
+                <td class="px-3 py-2 border border-slate-100 text-center">
+                  <button onclick="deleteLeaveGrant(${g.id},'${escapeJs(name)}')"
+                          class="px-2 py-1 bg-red-100 text-red-600 rounded hover:bg-red-200 text-xs">삭제</button>
+                </td>
+              </tr>`;
+        });
+    }
+
+    html += `
+            </tbody>
+          </table>
+        </div>
+        <!-- 부여 추가 폼 -->
+        <div class="flex gap-2 mt-4 items-center flex-wrap">
+          <span class="text-sm font-medium text-slate-600">추가:</span>
+          <input type="number" id="grantYear" value="${currentYear}"
+                 class="border border-slate-300 rounded-lg px-2 py-1.5 text-sm w-20" placeholder="연도">
+          <select id="grantMonth" class="border border-slate-300 rounded-lg px-2 py-1.5 text-sm">
+            ${Array.from({length:12},(_,i)=>`<option value="${i+1}">${i+1}월</option>`).join('')}
+          </select>
+          <input type="number" id="grantDays" value="15" step="0.5" min="0.5"
+                 class="border border-slate-300 rounded-lg px-2 py-1.5 text-sm w-16" placeholder="일수">
+          <input type="text" id="grantNote"
+                 class="border border-slate-300 rounded-lg px-2 py-1.5 text-sm w-36" placeholder="메모 (선택)">
+          <button onclick="addLeaveGrant('${escapeJs(name)}')"
+                  class="px-4 py-1.5 bg-green-600 text-white rounded-lg text-sm font-semibold hover:bg-green-700">추가</button>
+        </div>
+      </div>
+
+      <!-- 섹션 4: 연차 사용 내역 (올해) -->
+      <div class="bg-white border border-slate-200 rounded-xl p-5">
+        <h3 class="text-lg font-semibold text-slate-700 mb-1">📅 연차 사용 내역 (${currentYear}년)</h3>
+        <p class="text-xs text-slate-400 mb-4">전체 사용 건수: ${allUsageCount}건 (이전 연도 포함)</p>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm border-collapse">
+            <thead>
+              <tr class="bg-slate-100">
+                <th class="px-3 py-2 text-left border border-slate-200">날짜</th>
+                <th class="px-3 py-2 text-center border border-slate-200">종류</th>
+                <th class="px-3 py-2 text-right border border-slate-200">차감</th>
+                <th class="px-3 py-2 text-left border border-slate-200">메모</th>
+                <th class="px-3 py-2 text-center border border-slate-200">삭제</th>
+              </tr>
+            </thead>
+            <tbody>`;
+
+    if (usageThisYear.length === 0) {
+        html += `<tr><td colspan="5" class="px-3 py-3 text-center text-slate-400">올해 사용 내역이 없습니다.</td></tr>`;
+    } else {
+        usageThisYear.forEach(u => {
+            const isAuto = u.created_by === 'auto_vacation';
+            const deductLabel = u.leave_type === '공가' ? '<span class="text-slate-400">-</span>' :
+                `<span class="font-medium text-amber-600">${u.days}</span>`;
+            const typeBadge = u.leave_type === '연차' ? 'bg-blue-100 text-blue-700' :
+                              u.leave_type === '반차' ? 'bg-purple-100 text-purple-700' :
+                              'bg-slate-100 text-slate-600';
+            const noteDisplay = isAuto
+                ? `<span class="text-slate-400 text-xs">일일작업현황</span>${u.note && u.note !== '일일작업현황 자동' ? ' ' + escapeHtml(u.note) : ''}`
+                : escapeHtml(u.note || '');
+            const deleteBtn = isAuto
+                ? `<span class="text-xs text-slate-300">자동</span>`
+                : `<button onclick="deleteLeaveUsage(${u.id},'${escapeJs(name)}')"
+                           class="px-2 py-1 bg-red-100 text-red-600 rounded hover:bg-red-200 text-xs">삭제</button>`;
+            html += `
+              <tr class="${isAuto ? 'bg-slate-50/60' : 'hover:bg-slate-50'}">
+                <td class="px-3 py-2 border border-slate-100">${u.use_date}</td>
+                <td class="px-3 py-2 border border-slate-100 text-center">
+                  <span class="px-2 py-0.5 rounded text-xs font-semibold ${typeBadge}">${u.leave_type}</span>
+                </td>
+                <td class="px-3 py-2 border border-slate-100 text-right">${deductLabel}</td>
+                <td class="px-3 py-2 border border-slate-100 text-slate-500">${noteDisplay}</td>
+                <td class="px-3 py-2 border border-slate-100 text-center">${deleteBtn}</td>
+              </tr>`;
+        });
+    }
+
+    html += `
+            </tbody>
+          </table>
+        </div>
+        <!-- 사용 내역 추가 폼 -->
+        <div class="flex gap-2 mt-4 items-center flex-wrap">
+          <span class="text-sm font-medium text-slate-600">추가:</span>
+          <input type="date" id="usageDate" value="${new Date().toISOString().slice(0,10)}"
+                 class="border border-slate-300 rounded-lg px-2 py-1.5 text-sm">
+          <select id="usageType" class="border border-slate-300 rounded-lg px-2 py-1.5 text-sm">
+            <option value="연차">연차 (1공)</option>
+            <option value="반차">반차 (0.5공)</option>
+            <option value="공가">공가 (차감없음)</option>
+          </select>
+          <input type="text" id="usageNote"
+                 class="border border-slate-300 rounded-lg px-2 py-1.5 text-sm w-36" placeholder="메모 (선택)">
+          <button onclick="addLeaveUsage('${escapeJs(name)}')"
+                  class="px-4 py-1.5 bg-green-600 text-white rounded-lg text-sm font-semibold hover:bg-green-700">추가</button>
+        </div>
+      </div>
+    </div>`;
+
+    resultDiv.innerHTML = html;
+}
+
+async function saveLeaveConfig(name) {
+    const genMonth = parseInt(document.getElementById('leaveGenMonth').value);
+    const note = document.getElementById('leaveConfigNote').value.trim();
+    try {
+        const result = await eel.save_employee_annual_config(name, genMonth, note)();
+        if (result && result.success) {
+            showCustomAlert('성공', '연차 설정이 저장되었습니다.', 'success');
+        } else {
+            showCustomAlert('오류', (result && result.error) || '저장 실패', 'error');
+        }
+    } catch (e) {
+        showCustomAlert('오류', '저장 중 오류: ' + e.message, 'error');
+    }
+}
+
+async function addLeaveGrant(name) {
+    const year  = parseInt(document.getElementById('grantYear').value);
+    const month = parseInt(document.getElementById('grantMonth').value);
+    const days  = parseFloat(document.getElementById('grantDays').value);
+    const note  = document.getElementById('grantNote').value.trim();
+    if (!year || !month || isNaN(days) || days <= 0) {
+        showCustomAlert('알림', '연도, 월, 일수를 올바르게 입력하세요.', 'warning');
+        return;
+    }
+    try {
+        const result = await eel.add_leave_grant(name, year, month, days, note)();
+        if (result && result.success) {
+            await searchEmployeeLeave();
+        } else {
+            showCustomAlert('오류', (result && result.error) || '추가 실패', 'error');
+        }
+    } catch (e) {
+        showCustomAlert('오류', '추가 중 오류: ' + e.message, 'error');
+    }
+}
+
+async function deleteLeaveGrant(id, employeeName) {
+    if (!confirm('이 부여 이력을 삭제하시겠습니까?')) return;
+    try {
+        const result = await eel.delete_leave_grant(id)();
+        if (result && result.success) {
+            document.getElementById('leaveEmployeeInput').value = employeeName;
+            await searchEmployeeLeave();
+        } else {
+            showCustomAlert('오류', (result && result.error) || '삭제 실패', 'error');
+        }
+    } catch (e) {
+        showCustomAlert('오류', '삭제 중 오류: ' + e.message, 'error');
+    }
+}
+
+async function addLeaveUsage(name) {
+    const useDate   = document.getElementById('usageDate').value;
+    const leaveType = document.getElementById('usageType').value;
+    const note      = document.getElementById('usageNote').value.trim();
+    if (!useDate) {
+        showCustomAlert('알림', '날짜를 입력하세요.', 'warning');
+        return;
+    }
+    try {
+        const result = await eel.add_leave_usage(name, useDate, leaveType, note)();
+        if (result && result.success) {
+            await searchEmployeeLeave();
+        } else {
+            showCustomAlert('오류', (result && result.error) || '추가 실패', 'error');
+        }
+    } catch (e) {
+        showCustomAlert('오류', '추가 중 오류: ' + e.message, 'error');
+    }
+}
+
+async function deleteLeaveUsage(id, employeeName) {
+    if (!confirm('이 사용 내역을 삭제하시겠습니까?')) return;
+    try {
+        const result = await eel.delete_leave_usage(id)();
+        if (result && result.success) {
+            document.getElementById('leaveEmployeeInput').value = employeeName;
+            await searchEmployeeLeave();
+        } else {
+            showCustomAlert('오류', (result && result.error) || '삭제 실패', 'error');
+        }
+    } catch (e) {
+        showCustomAlert('오류', '삭제 중 오류: ' + e.message, 'error');
+    }
+}
+
+// ============================================================================
+// 설정 하위 탭
+// ============================================================================
+
+function showSettingsTab(tab) {
+    const userTab = document.getElementById('userSettingsTab');
+    const logTab  = document.getElementById('activityLogTab');
+    const btnUser = document.getElementById('btnSettingsUser');
+    const btnLog  = document.getElementById('btnSettingsLog');
+
+    const activeClass   = 'px-6 py-2 rounded-lg bg-blue-600 text-white font-semibold';
+    const inactiveClass = 'px-6 py-2 rounded-lg bg-slate-200 font-semibold';
+
+    if (tab === 'activityLog') {
+        if (userTab) userTab.classList.add('hidden');
+        if (logTab)  logTab.classList.remove('hidden');
+        if (btnUser) btnUser.className = inactiveClass;
+        if (btnLog)  btnLog.className  = activeClass;
+        loadActivityLog(50);
+    } else {
+        if (logTab)  logTab.classList.add('hidden');
+        if (userTab) userTab.classList.remove('hidden');
+        if (btnLog)  btnLog.className  = inactiveClass;
+        if (btnUser) btnUser.className = activeClass;
+    }
+}
+
+// ============================================================================
+// 활동 로그
+// ============================================================================
+
+async function loadActivityLog(limit = 50, containerId = 'activityLogContent') {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    container.innerHTML = '<p class="text-slate-400">불러오는 중...</p>';
+    try {
+        const logs = await eel.get_activity_logs(limit)();
+        if (!logs || logs.length === 0) {
+            container.innerHTML = '<p class="text-slate-400">활동 로그가 없습니다.</p>';
+            return;
+        }
+        const actionLabel = { save: '저장', load: '조회', delete: '삭제', export: '내보내기', import: '가져오기' };
+        const actionColor = {
+            save:   'bg-blue-100 text-blue-700',
+            load:   'bg-slate-100 text-slate-600',
+            delete: 'bg-red-100 text-red-700',
+            export: 'bg-green-100 text-green-700',
+            import: 'bg-orange-100 text-orange-700'
+        };
+        let html = `<div class="overflow-x-auto">
+            <table class="w-full border-collapse border text-sm">
+                <thead><tr class="bg-slate-100">
+                    <th class="border p-2 text-center w-36">시각</th>
+                    <th class="border p-2 text-center w-24">사용자</th>
+                    <th class="border p-2 text-center w-20">작업</th>
+                    <th class="border p-2 text-center w-28">대상</th>
+                    <th class="border p-2 text-left">상세</th>
+                </tr></thead><tbody>`;
+        logs.forEach(log => {
+            const ts = log.timestamp ? log.timestamp.replace('T', ' ').substring(0, 16) : '';
+            const label = actionLabel[log.action] || log.action;
+            const colorClass = actionColor[log.action] || 'bg-slate-100 text-slate-600';
+            html += `<tr class="hover:bg-slate-50">
+                <td class="border p-2 text-center text-slate-500">${escapeHtml(ts)}</td>
+                <td class="border p-2 text-center font-medium">${escapeHtml(log.user || '')}</td>
+                <td class="border p-2 text-center"><span class="px-2 py-0.5 rounded text-xs font-semibold ${colorClass}">${escapeHtml(label)}</span></td>
+                <td class="border p-2 text-center text-slate-600">${escapeHtml(log.target || '')}</td>
+                <td class="border p-2 text-slate-600">${escapeHtml(log.details || '')}</td>
+            </tr>`;
+        });
+        html += `</tbody></table></div>
+            <p class="text-xs text-slate-400 mt-2 text-right">총 ${logs.length}건</p>`;
+        container.innerHTML = html;
+    } catch (e) {
+        console.error('활동 로그 로드 오류:', e);
+        container.innerHTML = '<p class="text-red-400">로그 로드 실패</p>';
+    }
+}
+
+// ============================================================================
+// J: 알림 센터
+// ============================================================================
+
+let _notifData = [];
+
+async function loadNotifications() {
+    _notifData = [];
+
+    // 1) 업데이트 확인 (캐시 사용)
+    try {
+        const upd = await eel.check_for_updates(false)();
+        if (upd && upd.update_available) {
+            _notifData.push({
+                icon:   '🆕',
+                title:  `v${upd.latest_version} 업데이트 있음`,
+                body:   upd.release_name || '',
+                action: () => { if (typeof showUpdateModal === 'function') showUpdateModal(); }
+            });
+        }
+    } catch (_) {}
+
+    // 2) 미승인 사용자 (관리자 전용)
+    if (currentUser && currentUser.role === 'admin') {
+        try {
+            const pending = await eel.admin_get_pending_requests()();
+            if (pending && pending.length > 0) {
+                _notifData.push({
+                    icon:   '👤',
+                    title:  `승인 대기 ${pending.length}명`,
+                    body:   pending.map(u => u.full_name).join(', '),
+                    action: () => { if (typeof showAdminApp === 'function') showAdminApp(); }
+                });
+            }
+        } catch (_) {}
+    }
+
+    _renderNotifBadge();
+}
+
+function _renderNotifBadge() {
+    const badge = document.getElementById('notifBadge');
+    if (!badge) return;
+    if (_notifData.length > 0) {
+        badge.textContent = _notifData.length;
+        badge.classList.remove('hidden');
+    } else {
+        badge.classList.add('hidden');
+    }
+}
+
+function toggleNotificationPanel() {
+    const panel = document.getElementById('notifPanel');
+    const list  = document.getElementById('notifList');
+    if (!panel) return;
+
+    if (panel.classList.contains('hidden')) {
+        // 패널 열기 — 목록 렌더링
+        list.innerHTML = _notifData.length === 0
+            ? '<p class="p-4 text-sm text-slate-400 text-center">새 알림이 없습니다</p>'
+            : _notifData.map((n, i) => `
+                <div class="p-3 hover:bg-slate-50 cursor-pointer" onclick="_notifClick(${i})">
+                    <div class="flex gap-2 items-start">
+                        <span class="text-xl">${n.icon}</span>
+                        <div>
+                            <div class="text-sm font-semibold text-slate-800">${escapeHtml(n.title)}</div>
+                            ${n.body ? `<div class="text-xs text-slate-500 mt-0.5">${escapeHtml(n.body)}</div>` : ''}
+                        </div>
+                    </div>
+                </div>`).join('');
+        panel.classList.remove('hidden');
+        // 패널 외부 클릭 시 닫기
+        setTimeout(() => document.addEventListener('click', _closeNotifPanel, { once: true }), 50);
+    } else {
+        panel.classList.add('hidden');
+    }
+}
+
+function _notifClick(i) {
+    document.getElementById('notifPanel')?.classList.add('hidden');
+    if (_notifData[i] && typeof _notifData[i].action === 'function') {
+        _notifData[i].action();
+    }
+}
+
+function _closeNotifPanel(e) {
+    const wrap = document.getElementById('notificationWrap');
+    if (wrap && !wrap.contains(e.target)) {
+        document.getElementById('notifPanel')?.classList.add('hidden');
+    }
+}
+
+// ============================================================================
+// E: 통계 대시보드
+// ============================================================================
+
+let _statsYear = new Date().getFullYear();
+let _manpowerChart = null;
+
+async function loadStatsData() {
+    const label = document.getElementById('statsYearLabel');
+    if (label) label.textContent = `${_statsYear}년`;
+
+    let data;
+    try {
+        data = await eel.get_analytics_data(_statsYear)();
+    } catch (e) {
+        console.error('통계 데이터 로드 오류:', e);
+        return;
+    }
+    if (!data || !data.success) return;
+
+    // ── 월별 공수 막대 차트 ──────────────────────────────────────────
+    const ctx = document.getElementById('manpowerChart');
+    if (ctx) {
+        if (_manpowerChart) { _manpowerChart.destroy(); _manpowerChart = null; }
+        _manpowerChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'],
+                datasets: [{
+                    label: '투입 공수',
+                    data: data.monthly,
+                    backgroundColor: 'rgba(59,130,246,0.6)',
+                    borderColor: 'rgba(59,130,246,0.9)',
+                    borderWidth: 1,
+                    borderRadius: 4
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: { legend: { display: false } },
+                scales: { y: { beginAtZero: true } }
+            }
+        });
+    }
+
+    // ── 회사별 상위 10 ────────────────────────────────────────────────
+    const compEl = document.getElementById('companyStatsList');
+    if (compEl) {
+        if (!data.companies || data.companies.length === 0) {
+            compEl.innerHTML = '<p class="text-sm text-slate-400 py-4 text-center">데이터 없음</p>';
+        } else {
+            const maxC = Math.max(...data.companies.map(c => c.total), 1);
+            compEl.innerHTML = data.companies.map(c => `
+                <div class="flex items-center gap-2 mb-2">
+                    <div class="text-xs w-24 truncate text-slate-600" title="${escapeHtml(c.name)}">${escapeHtml(c.name)}</div>
+                    <div class="flex-1 bg-slate-200 rounded-full h-3">
+                        <div class="bg-blue-500 h-3 rounded-full" style="width:${(c.total/maxC*100).toFixed(1)}%"></div>
+                    </div>
+                    <div class="text-xs w-10 text-right font-semibold text-slate-700">${c.total}</div>
+                </div>`).join('');
+        }
+    }
+
+    // ── 계약별 상위 10 ────────────────────────────────────────────────
+    const contEl = document.getElementById('contractStatsList');
+    if (contEl) {
+        if (!data.contracts || data.contracts.length === 0) {
+            contEl.innerHTML = '<p class="text-sm text-slate-400 py-4 text-center">데이터 없음</p>';
+        } else {
+            const maxR = Math.max(...data.contracts.map(r => r.total), 1);
+            contEl.innerHTML = data.contracts.map(r => `
+                <div class="flex items-center gap-2 mb-2">
+                    <div class="text-xs w-24 truncate text-slate-600" title="${escapeHtml(r.cn)}">${escapeHtml(r.cn)}</div>
+                    <div class="flex-1 bg-slate-200 rounded-full h-3">
+                        <div class="bg-emerald-500 h-3 rounded-full" style="width:${(r.total/maxR*100).toFixed(1)}%"></div>
+                    </div>
+                    <div class="text-xs w-10 text-right font-semibold text-slate-700">${r.total}</div>
+                </div>`).join('');
+        }
+    }
+}
+
+function statsChangeYear(delta) {
+    _statsYear += delta;
+    loadStatsData();
 }

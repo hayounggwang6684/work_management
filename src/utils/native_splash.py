@@ -6,6 +6,7 @@ native_splash.py — 네이티브 tkinter 스플래시 화면
 
 import os
 import sys
+import time
 import threading
 from pathlib import Path
 
@@ -50,6 +51,7 @@ class NativeSplash:
     """tkinter 기반 네이티브 스플래시 창 (웹 버전과 동일한 디자인)."""
 
     W, H = 580, 380
+    MIN_SHOW_SECS = 2.5   # 스플래시 최소 표시 시간(초) — 너무 빨리 닫히지 않도록
 
     # 배경 그래디언트
     BG_TOP = "#0f172a"   # 상단/하단 (매우 짙은 파란-검정)
@@ -96,6 +98,7 @@ class NativeSplash:
         t = threading.Thread(target=self._run, daemon=True)
         t.start()
         self._ready.wait(timeout=2.0)  # 최대 2초 대기
+        self._start_time = time.monotonic()  # 창이 뜬 직후 시간 기록
 
     def update(self, msg: str, pct: int = None):
         """
@@ -119,10 +122,14 @@ class NativeSplash:
         self._root.after(0, _do)
 
     def close(self):
-        """600ms 페이드아웃 후 destroy — 웹 closeSplash()와 동일한 타이밍."""
+        """최소 표시 시간 보장 후 600ms 페이드아웃 — 웹 closeSplash()와 동일한 타이밍."""
         if not self._root or self._closed:
             return
         self._closed = True
+
+        # 경과 시간이 MIN_SHOW_SECS 미만이면 나머지 시간만큼 지연 후 페이드 시작
+        elapsed  = time.monotonic() - getattr(self, '_start_time', time.monotonic())
+        delay_ms = max(0, int((self.MIN_SHOW_SECS - elapsed) * 1000))
 
         def _fade(alpha: float = 1.0):
             if alpha <= 0:
@@ -137,7 +144,7 @@ class NativeSplash:
             except Exception:
                 pass
 
-        self._root.after(0, _fade)
+        self._root.after(delay_ms, _fade)
 
     # ------------------------------------------------------------------
     # 내부 구현

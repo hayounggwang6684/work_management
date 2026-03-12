@@ -72,14 +72,35 @@ function showMainApp() {
         updateDateInput();
     }
     
-    // 사용자 설정에 따라 기본 화면 표시
+    // 사용자 설정에 따라 기본 화면 표시 (2티어 형식 "view:subtab" 지원)
     const savedDefaultView = localStorage.getItem('userDefaultView');
     const defaultView = savedDefaultView || currentUser.default_view || 'dashboard';
     currentUser.default_view = defaultView; // currentUser에도 저장
-    showView(defaultView);
+    applyDefaultView(defaultView);
 
     // 자동 로그인 만료 임박 알림
     _showAutoLoginExpiryBanner();
+}
+
+/**
+ * 기본 화면 적용 — "view:subtab" 형식을 파싱하여 1티어 + 2티어 탭을 모두 이동.
+ * @param {string} fullView  예: "search:status", "report:monthly", "daily"
+ */
+function applyDefaultView(fullView) {
+    if (!fullView) { showView('dashboard'); return; }
+    const [view, subtab] = fullView.split(':');
+    showView(view);  // 기본 서브탭으로 이동
+    if (subtab) {
+        // showView가 설정한 기본 서브탭을 지정된 서브탭으로 덮어씀
+        try {
+            const subFns = {
+                dashboard: typeof showDashboardTab !== 'undefined' ? showDashboardTab : null,
+                report:    typeof showReportTab    !== 'undefined' ? showReportTab    : null,
+                search:    typeof showSearchTab    !== 'undefined' ? showSearchTab    : null,
+            };
+            if (subFns[view]) subFns[view](subtab);
+        } catch(e) {}
+    }
 }
 
 function showAdminApp() {
