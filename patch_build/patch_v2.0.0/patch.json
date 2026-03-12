@@ -1,0 +1,22 @@
+{
+  "version": "2.0.0",
+  "description": "v2.0.0 패치",
+  "files": [
+    {
+      "source": "src/utils/native_splash.py",
+      "target": "src/utils/native_splash.py"
+    },
+    {
+      "source": "src/main.py",
+      "target": "src/main.py"
+    },
+    {
+      "source": "web/js/splash.js",
+      "target": "web/js/splash.js"
+    },
+    {
+      "source": "web/index.html",
+      "target": "web/index.html"
+    }
+  ]
+}
