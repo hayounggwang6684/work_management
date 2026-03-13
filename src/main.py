@@ -340,6 +340,12 @@ def main():
     
     finally:
         # os._exit() 경로(트레이 '종료' 메뉴)에서는 이 블록이 실행되지 않음 — 정상
+        # 백그라운드 스레드(클라우드 동기화, 텔레그램 알림) 완료 대기 (최대 5초)
+        try:
+            from src.web.api import wait_pending_threads
+            wait_pending_threads(timeout=5)
+        except Exception:
+            pass
         _do_full_cleanup()
 
 

@@ -1405,6 +1405,7 @@ async function loadYesterdayRecords() {
         workRecords = (result && result.records) || [];
 
         renderTable();
+        _applyWritePermissionUI();
         isDirty = true;
         showLoading(false);
 
@@ -1576,6 +1577,7 @@ function deleteRow(index) {
     workRecords.splice(index, 1);
     isDirty = true;
     renderTable(); // 자동으로 10행 미만이면 빈 행 추가됨
+    _applyWritePermissionUI();
 }
 
 function createTotalRow(totalManpower) {

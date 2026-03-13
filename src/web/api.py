@@ -18,6 +18,32 @@ from ..utils.telegram_notifier import telegram_notifier
 
 
 # ============================================================================
+# 백그라운드 스레드 추적 (앱 종료 전 graceful wait)
+# ============================================================================
+_pending_threads: list = []
+_pending_threads_lock = threading.Lock()
+
+
+def _start_tracked_thread(target, args=(), daemon: bool = True) -> threading.Thread:
+    """스레드 시작 + 전역 리스트에 등록 (완료된 스레드는 자동 정리)"""
+    t = threading.Thread(target=target, args=args, daemon=daemon)
+    with _pending_threads_lock:
+        _pending_threads[:] = [x for x in _pending_threads if x.is_alive()]
+        _pending_threads.append(t)
+    t.start()
+    return t
+
+
+def wait_pending_threads(timeout: float = 5.0) -> None:
+    """앱 종료 전 최대 timeout초 대기 (main.py finally 블록에서 호출)"""
+    with _pending_threads_lock:
+        threads = list(_pending_threads)
+    for t in threads:
+        t.join(timeout=timeout)
+    logger.info(f"백그라운드 스레드 대기 완료 ({len(threads)}건)")
+
+
+# ============================================================================
 # 연결 확인 (스플래시 화면용)
 # ============================================================================
 
@@ -461,8 +487,7 @@ def save_work_records(date: str, records: List[Dict[str, Any]], username: str) -
             _sync_fn = (cloud_sync.sync_to_cloud_notify
                         if cloud_sync.sync_mode == 'external'
                         else cloud_sync.sync_to_cloud)
-            t = threading.Thread(target=_sync_fn, daemon=True)
-            t.start()
+            _start_tracked_thread(target=_sync_fn)
 
         return {'success': success, 'message': '저장되었습니다.' if success else save_result.get('message', '저장 실패')}
     except Exception as e:
@@ -1860,11 +1885,10 @@ def set_project_status(contract_number: str, status: str) -> Dict[str, Any]:
             # 착공·준공 이벤트 텔레그램 알림 (비동기)
             if status in ('착수', '준공'):
                 ship_name = telegram_notifier._get_ship_name(contract_number, None)
-                threading.Thread(
+                _start_tracked_thread(
                     target=telegram_notifier.send_project_event,
-                    args=(contract_number, status, ship_name),
-                    daemon=True
-                ).start()
+                    args=(contract_number, status, ship_name)
+                )
             return {'success': True, 'message': '상태가 변경되었습니다.'}
         return {'success': False, 'message': '상태 변경 실패'}
     except Exception as e:
