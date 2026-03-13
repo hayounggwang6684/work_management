@@ -54,9 +54,9 @@ class WorkRecordService:
         
         return result
     
-    def save_records_for_date(self, date: str, records_data: List[Dict[str, Any]], username: str) -> bool:
-        """
-        특정 날짜의 작업 레코드 저장
+    def save_records_for_date(self, date: str, records_data: List[Dict[str, Any]], username: str) -> dict:
+        """특정 날짜의 작업 레코드 저장.
+        반환: {'success': True} 또는 {'success': False, 'message': str}
         """
         try:
             # 딕셔너리를 WorkRecord 객체로 변환
@@ -74,90 +74,95 @@ class WorkRecordService:
                     leader=data.get('leader', ''),
                     teammates=data.get('teammates', '')
                 )
-                
+
                 # 인원 자동 계산
                 record.manpower = calculate_record_manpower(record.leader, record.teammates)
                 records.append(record)
-            
+
             # DB에 저장
             success = self.db.save_work_records(date, records, username)
-            
+
             if success:
                 logger.info(f"작업 레코드 저장 성공: {date}, 사용자: {username}")
-            
-            return success
-            
+                return {'success': True}
+            else:
+                return {'success': False, 'message': 'DB 저장 실패'}
+
         except Exception as e:
             logger.error(f"작업 레코드 저장 오류: {e}")
-            return False
+            return {'success': False, 'message': str(e)}
     
-    def get_yesterday_records(self, current_date: str) -> List[Dict[str, Any]]:
-        """어제 작업 레코드 불러오기 (빈 레코드 제외)"""
+    def _get_last_working_day(self, current_date: str) -> str:
+        """주어진 날짜 이전의 마지막 평일(주말·공휴일 제외) 반환.
+        월요일이면 금요일, 연휴 다음날이면 연휴 시작 전 마지막 평일."""
+        import json
+        from pathlib import Path
+
+        # 공휴일 목록 로드 (config/holidays.json)
+        holidays: set = set()
         try:
-            # 날짜 파싱
-            date_obj = datetime.strptime(current_date, '%Y-%m-%d')
-            yesterday = date_obj - timedelta(days=1)
-            yesterday_str = yesterday.strftime('%Y-%m-%d')
-            
-            # 어제 레코드 가져오기
-            yesterday_records = self.get_records_for_date(yesterday_str)
-            
-            # 빈 레코드 제외 (데이터가 있는 레코드만)
+            holidays_path = Path(__file__).parent.parent.parent / "config" / "holidays.json"
+            with open(holidays_path, 'r', encoding='utf-8') as f:
+                holidays = set(json.load(f).keys())
+        except Exception as e:
+            logger.warning(f"공휴일 데이터 로드 실패 (무시): {e}")
+
+        date_obj = datetime.strptime(current_date, '%Y-%m-%d')
+        candidate = date_obj - timedelta(days=1)
+
+        # 최대 60일 전까지 탐색 (긴 연휴도 커버)
+        for _ in range(60):
+            candidate_str = candidate.strftime('%Y-%m-%d')
+            # 평일(월~금, weekday 0~4)이고 공휴일 아니면 → 마지막 근무일
+            if candidate.weekday() < 5 and candidate_str not in holidays:
+                return candidate_str
+            candidate -= timedelta(days=1)
+
+        # fallback: 그냥 어제
+        return (date_obj - timedelta(days=1)).strftime('%Y-%m-%d')
+
+    def get_yesterday_records(self, current_date: str):
+        """마지막 평일 작업 레코드 불러오기 (주말·공휴일 건너뜀).
+        반환: (records: List[Dict], loaded_date: str)"""
+        def _make_empty(n):
+            return {
+                'recordNumber': n, 'contractNumber': '', 'company': '',
+                'shipName': '', 'engineModel': '', 'workContent': '',
+                'location': '', 'leader': '', 'teammates': '', 'manpower': 0
+            }
+
+        try:
+            target_date = self._get_last_working_day(current_date)
+            target_records = self.get_records_for_date(target_date)
+
+            # 빈 레코드 제외 (실제 데이터가 있는 것만)
             active_records = [
-                r for r in yesterday_records
-                if (r.get('contractNumber') or 
-                    r.get('company') or 
-                    r.get('shipName') or 
-                    r.get('engineModel') or
-                    r.get('workContent') or 
-                    r.get('location') or 
-                    r.get('leader') or 
-                    r.get('teammates'))
+                r for r in target_records
+                if (r.get('contractNumber') or r.get('company') or
+                    r.get('shipName')        or r.get('engineModel') or
+                    r.get('workContent')     or r.get('location') or
+                    r.get('leader')          or r.get('teammates'))
             ]
-            
+
             # record_number 재설정 (1부터 순차적으로)
             for i, record in enumerate(active_records):
                 record['recordNumber'] = i + 1
-            
+
             # 10개 미만이면 빈 레코드로 채우기
             while len(active_records) < 10:
-                empty_record = {
-                    'recordNumber': len(active_records) + 1,
-                    'contractNumber': '',
-                    'company': '',
-                    'shipName': '',
-                    'engineModel': '',
-                    'workContent': '',
-                    'location': '',
-                    'leader': '',
-                    'teammates': '',
-                    'manpower': 0
-                }
-                active_records.append(empty_record)
-            
-            logger.info(f"어제 작업 불러오기 성공: {len([r for r in active_records if r.get('contractNumber')])}개의 유효 레코드")
-            
-            return active_records
-            
+                active_records.append(_make_empty(len(active_records) + 1))
+
+            valid_count = len([r for r in active_records if r.get('company') or r.get('shipName')])
+            logger.info(f"마지막 평일 작업 불러오기 성공: {target_date}, 유효 {valid_count}건")
+
+            return active_records, target_date
+
         except Exception as e:
-            logger.error(f"어제 작업 불러오기 오류: {e}")
-            # 빈 레코드 10개 반환
-            result = []
-            for i in range(10):
-                empty_record = {
-                    'recordNumber': i + 1,
-                    'contractNumber': '',
-                    'company': '',
-                    'shipName': '',
-                    'engineModel': '',
-                    'workContent': '',
-                    'location': '',
-                    'leader': '',
-                    'teammates': '',
-                    'manpower': 0
-                }
-                result.append(empty_record)
-            return result
+            logger.error(f"마지막 평일 작업 불러오기 오류: {e}")
+            fallback_date = (
+                datetime.strptime(current_date, '%Y-%m-%d') - timedelta(days=1)
+            ).strftime('%Y-%m-%d')
+            return [_make_empty(i + 1) for i in range(10)], fallback_date
     
     def generate_report(self, date: str, username: str) -> Dict[str, Any]:
         """작업 현황 보고서 생성"""

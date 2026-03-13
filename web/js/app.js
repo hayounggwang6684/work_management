@@ -238,7 +238,7 @@ async function initSearchTabDefaults() {
     try {
         const latest = await eel.get_latest_contract_number()();
         if (latest) {
-            const match = latest.match(/^SH-(\d{4})-(\d{3})-T$/i);
+            const match = latest.match(/^SH-(\d{4})-(\d{3,})/i);
             if (match) {
                 const yearEl = document.getElementById('contractYear');
                 const seqEl  = document.getElementById('contractSeq');
