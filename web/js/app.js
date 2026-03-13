@@ -1190,6 +1190,7 @@ async function loadWorkRecords() {
         workRecords = records || [];
 
         renderTable();
+        _applyWritePermissionUI();
         isDirty = false;
         _dateLoadedAt = new Date().toISOString(); // 로드 시각 기록
 
@@ -1330,6 +1331,18 @@ async function _autoSaveWorkRecords() {
     if (!dailyView || dailyView.classList.contains('hidden')) return;
 
     const dateStr = formatDateForInput(currentDate);
+
+    // 충돌 감지 — 서버의 최신 저장 시각과 비교
+    try {
+        const info = await eel.get_date_save_info(dateStr)();
+        if (info && info.has_records && _dateLoadedAt && info.updated_at > _dateLoadedAt) {
+            showToast('⚠️ 충돌 감지 — 자동 저장 건너뜀. 직접 저장해 주세요.', 'warning');
+            return;
+        }
+    } catch (e) {
+        console.warn('자동 저장 충돌 확인 실패:', e);
+    }
+
     _isSaving = true;
     try {
         const result = await eel.save_work_records(dateStr, workRecords, currentUser.full_name)();
@@ -1355,6 +1368,32 @@ function startAutoSave() {
 
 function stopAutoSave() {
     if (_autoSaveTimer) { clearInterval(_autoSaveTimer); _autoSaveTimer = null; }
+}
+
+// ── 쓰기 권한에 따른 UI 적용 ─────────────────────────────────────────
+function _applyWritePermissionUI() {
+    const canWrite = !!(currentUser && currentUser.can_write);
+    const readOnly = !canWrite;
+
+    // 입력 필드 읽기 전용 처리
+    document.querySelectorAll('#recordsBody input, #recordsBody textarea').forEach(el => {
+        el.readOnly = readOnly;
+        el.style.cursor = readOnly ? 'default' : '';
+    });
+
+    // 저장 버튼 표시/숨김 (헤더 + 일일뷰 하단 모두 처리)
+    document.querySelectorAll('#btnForceSave, #btnForceSave2').forEach(btn => {
+        btn.classList.toggle('hidden', readOnly);
+    });
+
+    // 읽기 전용 배지 표시/숨김
+    const badge = document.getElementById('readOnlyBadge');
+    if (badge) badge.classList.toggle('hidden', !readOnly);
+
+    // 자동 저장 제어
+    if (readOnly) {
+        stopAutoSave();
+    }
 }
 
 async function loadYesterdayRecords() {
@@ -2761,6 +2800,20 @@ async function toggleLeaveReportEdit(userId, enabled) {
     }
 }
 
+async function toggleWritePermission(userId, enabled) {
+    if (!currentUser) return;
+    try {
+        const r = await eel.admin_set_write_permission(userId, enabled, currentUser.user_id)();
+        if (r && r.success) {
+            if (typeof loadAllUsers === 'function') loadAllUsers();
+        } else {
+            showToast('쓰기 권한 설정 실패: ' + escapeHtml(r?.message || ''), 'error');
+        }
+    } catch(e) {
+        showToast('오류: ' + String(e), 'error');
+    }
+}
+
 async function loadLeaveEmployeeList() {
     try {
         const names = await eel.get_employee_names_for_leave()();
@@ -3246,7 +3299,7 @@ async function loadStatsData() {
     }
     if (!data || !data.success) return;
 
-    // ── 월별 공수 막대 차트 ──────────────────────────────────────────
+    // ── 월별 공수 누적 막대 차트 (본공 / 외주) ──────────────────────
     const ctx = document.getElementById('manpowerChart');
     if (ctx) {
         if (_manpowerChart) { _manpowerChart.destroy(); _manpowerChart = null; }
@@ -3254,21 +3307,53 @@ async function loadStatsData() {
             type: 'bar',
             data: {
                 labels: ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'],
-                datasets: [{
-                    label: '투입 공수',
-                    data: data.monthly,
-                    backgroundColor: 'rgba(59,130,246,0.6)',
-                    borderColor: 'rgba(59,130,246,0.9)',
-                    borderWidth: 1,
-                    borderRadius: 4
-                }]
+                datasets: [
+                    {
+                        label: '본공',
+                        data: data.inHouseMonthly || data.monthly,
+                        backgroundColor: 'rgba(59,130,246,0.75)',
+                        borderRadius: 3,
+                        stack: 'total'
+                    },
+                    {
+                        label: '외주',
+                        data: data.outsourcedMonthly || [],
+                        backgroundColor: 'rgba(234,88,12,0.75)',
+                        borderRadius: 3,
+                        stack: 'total'
+                    }
+                ]
             },
             options: {
                 responsive: true,
-                plugins: { legend: { display: false } },
-                scales: { y: { beginAtZero: true } }
+                plugins: {
+                    legend: { display: true, position: 'top' },
+                    tooltip: {
+                        callbacks: {
+                            footer: (items) => {
+                                const total = items.reduce((s, i) => s + i.parsed.y, 0);
+                                return `전체: ${total.toFixed(1)}공`;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: { stacked: true },
+                    y: { stacked: true, beginAtZero: true }
+                }
             }
         });
+    }
+
+    // ── 공수 요약 (본공 / 외주 / 전체) ────────────────────────────────
+    const totalLabel   = document.getElementById('totalManpowerLabel');
+    const inHouseLabel = document.getElementById('inHouseLabel');
+    const outLabel     = document.getElementById('outsourcedLabel');
+    if (totalLabel && data.inHouseTotal !== undefined) {
+        totalLabel.textContent   = ((data.inHouseTotal || 0) + (data.outsourcedTotal || 0)).toFixed(1);
+        inHouseLabel.textContent = (data.inHouseTotal || 0).toFixed(1);
+        outLabel.textContent     = (data.outsourcedTotal || 0).toFixed(1);
+        document.getElementById('manpowerSummary')?.classList.remove('hidden');
     }
 
     // ── 회사별 상위 10 ────────────────────────────────────────────────

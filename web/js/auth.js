@@ -494,6 +494,10 @@ async function loadAllUsers() {
                                         class="px-3 py-1 text-sm rounded ${user.leave_report_edit ? 'bg-green-100 text-green-700 border border-green-300 hover:bg-green-200' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}">
                                     월보편집${user.leave_report_edit ? '✓' : ''}
                                 </button>
+                                <button onclick="toggleWritePermission('${escapeHtml(user.user_id)}', ${!user.can_write})"
+                                        class="px-3 py-1 text-sm rounded ${user.can_write ? 'bg-blue-100 text-blue-700 border border-blue-300 hover:bg-blue-200' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}">
+                                    쓰기${user.can_write ? '✓' : ''}
+                                </button>
                             ` : ''}
                         </div>
                     ` : ''}

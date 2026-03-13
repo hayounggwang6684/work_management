@@ -5,7 +5,7 @@ import threading
 from datetime import datetime
 from typing import List, Dict, Any
 from ..business.work_record_service import work_record_service
-from ..business.calculations import separate_workers
+from ..business.calculations import separate_workers, split_manpower_by_type
 from ..database.db_manager import db
 from ..database.auth_manager import auth_manager
 from ..sync.cloud_sync import cloud_sync
@@ -52,6 +52,11 @@ def open_external_url(url: str) -> bool:
 def authenticate(user_id: str, password: str) -> Dict[str, Any]:
     """사용자 인증"""
     try:
+        # #11 — 입력 길이 제한
+        if not user_id or not password:
+            return {'success': False, 'message': '아이디와 비밀번호를 입력해주세요.'}
+        if len(user_id) > 30 or len(password) > 200:
+            return {'success': False, 'message': '입력값이 너무 깁니다.'}
         result = auth_manager.authenticate(user_id, password)
         
         if result is None:
@@ -72,7 +77,10 @@ def authenticate(user_id: str, password: str) -> Dict[str, Any]:
             'user': {
                 'user_id': result['user_id'],
                 'full_name': result['full_name'],
-                'role': result['role']
+                'role': result['role'],
+                'tray_mode': bool(result.get('tray_mode', 0)),
+                'leave_report_edit': bool(result.get('leave_report_edit', 0)),
+                'can_write': bool(result.get('can_write', 0))
             }
         }
     except Exception as e:
@@ -99,7 +107,8 @@ def auto_login(token: str) -> Dict[str, Any]:
     try:
         user = auth_manager.validate_remember_token(token)
         if user:
-            return {'success': True, 'user': user}
+            days_remaining = auth_manager.get_token_days_remaining(token)
+            return {'success': True, 'user': user, 'days_remaining': days_remaining}
         return {'success': False, 'message': '토큰이 만료되었거나 유효하지 않습니다.'}
     except Exception as e:
         logger.error(f"자동 로그인 오류: {e}")
@@ -120,6 +129,11 @@ def clear_remember_token(token: str) -> Dict[str, Any]:
 def register_user(user_id: str, password: str, full_name: str) -> Dict[str, Any]:
     """사용자 등록 요청"""
     try:
+        # #11 — 입력 길이 제한
+        if len(user_id) > 30 or len(password) > 200 or len(full_name) > 50:
+            return {'success': False, 'message': '입력값이 허용 길이를 초과했습니다.'}
+        if len(password) < 4:
+            return {'success': False, 'message': '비밀번호는 4자 이상이어야 합니다.'}
         success = auth_manager.register_request(user_id, password, full_name)
         
         if success:
@@ -313,6 +327,9 @@ def admin_update_local_db_path(new_path: str, admin_id: str) -> Dict[str, Any]:
 def admin_update_cloud_path(new_path: str, admin_id: str) -> Dict[str, Any]:
     """클라우드 경로 변경 (관리자)"""
     try:
+        user = auth_manager.get_user(admin_id)
+        if not user or user.get('role') != 'admin':
+            return {'success': False, 'message': '관리자 권한이 필요합니다.'}
         logger.info(f"클라우드 경로 변경 요청: {new_path} by {admin_id}")
         result = settings_manager.update_cloud_path(new_path)
         if result.get('success'):
@@ -340,6 +357,9 @@ def admin_update_cloud_path(new_path: str, admin_id: str) -> Dict[str, Any]:
 def admin_update_backup_path(new_path: str, admin_id: str) -> Dict[str, Any]:
     """백업 경로 변경 (관리자)"""
     try:
+        user = auth_manager.get_user(admin_id)
+        if not user or user.get('role') != 'admin':
+            return {'success': False, 'message': '관리자 권한이 필요합니다.'}
         logger.info(f"백업 경로 변경 요청: {new_path} by {admin_id}")
         return settings_manager.update_backup_path(new_path)
     except Exception as e:
@@ -351,6 +371,9 @@ def admin_update_backup_path(new_path: str, admin_id: str) -> Dict[str, Any]:
 def admin_create_backup(admin_id: str) -> Dict[str, Any]:
     """수동 백업 생성 (관리자)"""
     try:
+        user = auth_manager.get_user(admin_id)
+        if not user or user.get('role') != 'admin':
+            return {'success': False, 'message': '관리자 권한이 필요합니다.'}
         logger.info(f"수동 백업 생성 요청 by {admin_id}")
         return settings_manager.create_backup()
     except Exception as e:
@@ -396,18 +419,39 @@ def load_work_records(date: str) -> List[Dict[str, Any]]:
     """작업 레코드 로드"""
     try:
         logger.info(f"작업 레코드 로드 요청: {date}")
+        if not date or len(date) != 10:  # #11/#15 — 날짜 형식 기본 검증
+            logger.warning(f"잘못된 날짜 형식: {date!r}")
+            return []
+        try:
+            datetime.strptime(date, '%Y-%m-%d')
+        except ValueError:
+            logger.warning(f"유효하지 않은 날짜: {date!r}")
+            return []
         records = work_record_service.get_records_for_date(date)
         return records
     except Exception as e:
         logger.error(f"작업 레코드 로드 오류: {e}")
-        return []
+        return []  # #15 — JS 호환 유지 (빈 배열=오류/데이터없음 모두 동일 처리)
 
 
 @eel.expose
 def save_work_records(date: str, records: List[Dict[str, Any]], username: str) -> Dict[str, Any]:
     """작업 레코드 저장"""
     try:
+        # ── 쓰기 권한 검증 (admin 역할 또는 can_write=1 인 사용자만 저장 가능)
+        if not username:
+            return {'success': False, 'message': '로그인 정보가 없습니다.'}
+        if not auth_manager.get_can_write_by_fullname(username):
+            logger.warning(f"쓰기 권한 없는 저장 시도: {username}")
+            return {'success': False, 'message': '쓰기 권한이 없습니다. 관리자에게 문의하세요.'}
+
         logger.info(f"작업 레코드 저장 요청: {date}, 사용자: {username}")
+        if not date or len(date) != 10:
+            return {'success': False, 'message': '잘못된 날짜 형식'}
+        try:
+            datetime.strptime(date, '%Y-%m-%d')
+        except ValueError:
+            return {'success': False, 'message': '유효하지 않은 날짜'}
         save_result = work_record_service.save_records_for_date(date, records, username)
         success = save_result.get('success', False)
 
@@ -424,6 +468,30 @@ def save_work_records(date: str, records: List[Dict[str, Any]], username: str) -
     except Exception as e:
         logger.error(f"작업 레코드 저장 오류: {e}")
         return {'success': False, 'message': f'오류: {str(e)}'}
+
+
+@eel.expose
+def get_date_save_info(date: str) -> Dict[str, Any]:
+    """날짜별 마지막 저장 정보 조회 (JS 충돌 감지용)"""
+    try:
+        with db.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                'SELECT updated_at, updated_by FROM work_records '
+                'WHERE date = ? ORDER BY updated_at DESC LIMIT 1',
+                (date,)
+            )
+            row = cursor.fetchone()
+            if row:
+                return {
+                    'has_records': True,
+                    'updated_at': row['updated_at'] or '',
+                    'updated_by': row['updated_by'] or ''
+                }
+            return {'has_records': False, 'updated_at': '', 'updated_by': ''}
+    except Exception as e:
+        logger.error(f"날짜 저장 정보 조회 실패: {e}")
+        return {'has_records': False, 'updated_at': '', 'updated_by': ''}
 
 
 @eel.expose
@@ -516,12 +584,14 @@ def get_project_start_date_by_contract(contract_number: str) -> str:
             start_date_str = result[0][0]  # YYYY-MM-DD 형식
             count = result[0][1] if len(result[0]) > 1 else 0
             logger.info(f"찾은 데이터: 시작일={start_date_str}, 건수={count}")
-            
-            start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
-            # M/D 형식으로 반환
-            result_str = f"{start_date.month}/{start_date.day}"
-            logger.info(f"반환값: {result_str}")
-            return result_str
+            try:  # #6 — strptime 예외 처리
+                start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
+                result_str = f"{start_date.month}/{start_date.day}"
+                logger.info(f"반환값: {result_str}")
+                return result_str
+            except ValueError:
+                logger.warning(f"날짜 형식 오류 (계약번호 기준): {start_date_str!r}")
+                return ''
         
         logger.warning(f"계약번호 {contract_number}에 대한 데이터를 찾을 수 없음")
         return ''
@@ -551,9 +621,12 @@ def get_project_start_date(ship_name: str) -> str:
         if result and result[0][0]:
             from datetime import datetime
             start_date_str = result[0][0]  # YYYY-MM-DD 형식
-            start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
-            # M/D 형식으로 반환
-            return f"{start_date.month}/{start_date.day}"
+            try:  # #6 — strptime 예외 처리
+                start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
+                return f"{start_date.month}/{start_date.day}"
+            except ValueError:
+                logger.warning(f"날짜 형식 오류 (선박 기준): {start_date_str!r}")
+                return ''
         return ''
     except Exception as e:
         logger.error(f"공사 시작일 조회 오류: {e}")
@@ -565,6 +638,8 @@ def get_project_start_dates_batch(contract_numbers: list, ship_names: list) -> d
     """여러 계약번호/선박명의 공사 시작일을 한 번에 조회 (일일보고 N+1 방지)"""
     result = {}
     try:
+        contract_numbers = contract_numbers[:500] if contract_numbers else []
+        ship_names = ship_names[:500] if ship_names else []
         if contract_numbers:
             placeholders = ','.join('?' * len(contract_numbers))
             rows = db.execute_query(
@@ -575,8 +650,11 @@ def get_project_start_dates_batch(contract_numbers: list, ship_names: list) -> d
             )
             for cn, min_date in (rows or []):
                 if min_date:
-                    d = datetime.strptime(min_date, '%Y-%m-%d')
-                    result[cn] = f"{d.month}/{d.day}"
+                    try:  # #6 — strptime 예외 처리
+                        d = datetime.strptime(min_date, '%Y-%m-%d')
+                        result[cn] = f"{d.month}/{d.day}"
+                    except ValueError:
+                        logger.warning(f"날짜 형식 오류 (배치-계약): {min_date!r}")
 
         if ship_names:
             placeholders = ','.join('?' * len(ship_names))
@@ -589,8 +667,11 @@ def get_project_start_dates_batch(contract_numbers: list, ship_names: list) -> d
             )
             for sn, min_date in (rows or []):
                 if min_date and sn not in result:
-                    d = datetime.strptime(min_date, '%Y-%m-%d')
-                    result[sn] = f"{d.month}/{d.day}"
+                    try:  # #6 — strptime 예외 처리
+                        d = datetime.strptime(min_date, '%Y-%m-%d')
+                        result[sn] = f"{d.month}/{d.day}"
+                    except ValueError:
+                        logger.warning(f"날짜 형식 오류 (배치-선박): {min_date!r}")
     except Exception as e:
         logger.error(f"배치 시작일 조회 오류: {e}")
     return result
@@ -727,6 +808,94 @@ def save_vacation_data(date: str, data: Dict, username: str) -> Dict[str, Any]:
         return {'success': False}
 
 
+# ============================================================================
+# 직원 연차 관리 API
+# ============================================================================
+
+@eel.expose
+def get_employee_leave_info(employee_name: str) -> Dict[str, Any]:
+    """직원 연차 전체 정보 조회"""
+    try:
+        if not employee_name or not employee_name.strip():
+            return {}
+        return db.get_employee_leave_info(employee_name.strip())
+    except Exception as e:
+        logger.error(f"직원 연차 정보 조회 오류: {e}")
+        return {}
+
+
+@eel.expose
+def save_employee_annual_config(employee_name: str, generation_month: int, note: str) -> Dict[str, Any]:
+    """직원 연차 설정 저장"""
+    try:
+        success = db.save_employee_annual_config(employee_name.strip(), int(generation_month), note or '')
+        return {'success': success}
+    except Exception as e:
+        logger.error(f"직원 연차 설정 저장 오류: {e}")
+        return {'success': False, 'message': str(e)}
+
+
+@eel.expose
+def add_leave_grant(employee_name: str, grant_year: int, grant_month: int,
+                    days: float, note: str) -> Dict[str, Any]:
+    """연차 부여 이력 추가"""
+    try:
+        new_id = db.add_leave_grant(employee_name.strip(), int(grant_year), int(grant_month),
+                                    float(days), note or '')
+        if new_id >= 0:
+            return {'success': True, 'id': new_id}
+        return {'success': False, 'message': '추가 실패'}
+    except Exception as e:
+        logger.error(f"연차 부여 이력 추가 오류: {e}")
+        return {'success': False, 'message': str(e)}
+
+
+@eel.expose
+def delete_leave_grant(grant_id: int) -> Dict[str, Any]:
+    """연차 부여 이력 삭제"""
+    try:
+        success = db.delete_leave_grant(int(grant_id))
+        return {'success': success}
+    except Exception as e:
+        logger.error(f"연차 부여 이력 삭제 오류: {e}")
+        return {'success': False, 'message': str(e)}
+
+
+@eel.expose
+def add_leave_usage(employee_name: str, use_date: str, leave_type: str, note: str) -> Dict[str, Any]:
+    """연차 사용 내역 추가"""
+    try:
+        if leave_type not in ('연차', '반차', '공가'):
+            return {'success': False, 'message': '유효하지 않은 휴가 종류입니다.'}
+        new_id = db.add_leave_usage(employee_name.strip(), use_date, leave_type, note or '')
+        if new_id >= 0:
+            return {'success': True, 'id': new_id}
+        return {'success': False, 'message': '추가 실패'}
+    except Exception as e:
+        logger.error(f"연차 사용 내역 추가 오류: {e}")
+        return {'success': False, 'message': str(e)}
+
+
+@eel.expose
+def delete_leave_usage(usage_id: int) -> Dict[str, Any]:
+    """연차 사용 내역 삭제"""
+    try:
+        success = db.delete_leave_usage(int(usage_id))
+        return {'success': success}
+    except Exception as e:
+        logger.error(f"연차 사용 내역 삭제 오류: {e}")
+        return {'success': False, 'message': str(e)}
+
+
+@eel.expose
+def get_employee_names_for_leave() -> List[str]:
+    """연차 관리용 직원 이름 목록"""
+    try:
+        return db.get_employee_names_for_leave()
+    except Exception as e:
+        logger.error(f"직원 이름 목록 조회 오류: {e}")
+        return []
+
 
 @eel.expose
 def search_records_by_ship(ship_name: str) -> List[Dict[str, Any]]:
@@ -739,14 +908,15 @@ def search_records_by_ship(ship_name: str) -> List[Dict[str, Any]]:
             SELECT date, company, ship_name, engine_model, work_content,
                    leader, manpower, teammates
             FROM work_records
-            WHERE ship_name = ?
+            WHERE ship_name LIKE ?
             AND ship_name IS NOT NULL
             AND ship_name != ''
             ORDER BY date, record_number
         '''
 
-        logger.info(f"선명 검색: {ship_name}")
-        results = db.execute_query(query, (ship_name.strip().upper(),))
+        name = ship_name.strip().upper()
+        logger.info(f"선명 검색: {name}")
+        results = db.execute_query(query, (f'%{name}%',))
         logger.info(f"검색 결과: {len(results) if results else 0}건")
 
         records = []
@@ -765,6 +935,77 @@ def search_records_by_ship(ship_name: str) -> List[Dict[str, Any]]:
         return records
     except Exception as e:
         logger.error(f"선명 검색 오류: {e}")
+        return []
+
+
+@eel.expose
+def search_records_by_company(company_name: str) -> List[Dict[str, Any]]:
+    """외주 업체명으로 작업 내역 조회"""
+    try:
+        if not company_name or company_name.strip() == '':
+            return []
+
+        name = company_name.strip()
+        query = '''
+            SELECT date, company, ship_name, engine_model, work_content,
+                   leader, manpower, teammates
+            FROM work_records
+            WHERE (teammates LIKE ? OR teammates LIKE ?)
+            AND work_content IS NOT NULL
+            AND work_content != ''
+            ORDER BY date, record_number
+        '''
+        params = (f'%{name}(%', f'%{name}[%')
+
+        logger.info(f"업체명 검색: {name}")
+        results = db.execute_query(query, params)
+        logger.info(f"검색 결과: {len(results) if results else 0}건")
+
+        records = []
+        for row in results:
+            records.append({
+                'date': row[0] or '',
+                'company': row[1] or '',
+                'ship_name': row[2] or '',
+                'engine_model': row[3] or '',
+                'work_content': row[4] or '',
+                'leader': row[5] or '',
+                'manpower': float(row[6]) if row[6] else 0.0,
+                'teammates': row[7] or ''
+            })
+
+        return records
+    except Exception as e:
+        logger.error(f"업체명 검색 오류: {e}")
+        return []
+
+
+@eel.expose
+def get_outsource_company_names() -> List[str]:
+    """외주 업체명 목록 조회 (드롭다운 자동완성용)"""
+    try:
+        import re
+        query = '''
+            SELECT teammates FROM work_records
+            WHERE teammates IS NOT NULL AND teammates != ''
+        '''
+        results = db.execute_query(query, ())
+        companies = set()
+        for row in results:
+            teammates = row[0] or ''
+            # 도급: 업체명(직원)
+            for m in re.finditer(r'([^,\[\]()\n]+?)\(', teammates):
+                co = m.group(1).replace('*', '').strip()
+                if co:
+                    companies.add(co)
+            # 일당: 업체명[직원]
+            for m in re.finditer(r'([^,\[\]()\n]+?)\[', teammates):
+                co = m.group(1).replace('*', '').strip()
+                if co:
+                    companies.add(co)
+        return sorted(list(companies))
+    except Exception as e:
+        logger.error(f"업체명 목록 조회 오류: {e}")
         return []
 
 
@@ -858,7 +1099,7 @@ def load_monthly_report_grouped(year: int, month: int) -> List[Dict[str, Any]]:
             SELECT
                 wr.company,
                 wr.ship_name,
-                wr.location,
+                GROUP_CONCAT(DISTINCT wr.location) AS location,
                 wr.engine_model,
                 wr.work_content,
                 wr.leader,
@@ -957,6 +1198,155 @@ def load_monthly_report_grouped(year: int, month: int) -> List[Dict[str, Any]]:
     except Exception as e:
         logger.error(f"월간 보고서 그룹핑 오류: {e}")
         return []
+
+
+@eel.expose
+def get_analytics_data(year: int) -> Dict[str, Any]:
+    """E: 연간 통계 — 월별 공수 합계, 회사별 상위 10, 계약별 상위 10"""
+    try:
+        year_str = str(year)
+
+        # 1) 월별 공수 합계
+        monthly_rows = db.execute_query(
+            "SELECT strftime('%m', date) as m, ROUND(SUM(manpower), 1) as total "
+            "FROM work_records "
+            "WHERE strftime('%Y', date) = ? "
+            "GROUP BY m ORDER BY m",
+            (year_str,)
+        )
+        monthly_map = {int(m): float(v) for m, v in (monthly_rows or [])}
+        monthly_data = [monthly_map.get(i, 0.0) for i in range(1, 13)]
+
+        # 2) 본공/외주 월별 분리 (Python 후처리)
+        all_rows = db.execute_query(
+            "SELECT strftime('%m', date) as m, leader, teammates "
+            "FROM work_records WHERE strftime('%Y', date) = ?",
+            (year_str,)
+        )
+        monthly_inhouse    = [0.0] * 12
+        monthly_outsourced = [0.0] * 12
+        for row in (all_rows or []):
+            idx = int(row[0]) - 1
+            ih, out = split_manpower_by_type(row[1] or '', row[2] or '')
+            monthly_inhouse[idx]    += ih
+            monthly_outsourced[idx] += out
+        monthly_inhouse    = [round(v, 1) for v in monthly_inhouse]
+        monthly_outsourced = [round(v, 1) for v in monthly_outsourced]
+
+        # 3) 회사별 상위 10
+        company_rows = db.execute_query(
+            "SELECT company, ROUND(SUM(manpower), 1) as total "
+            "FROM work_records "
+            "WHERE strftime('%Y', date) = ? AND company != '' AND company IS NOT NULL "
+            "GROUP BY company ORDER BY total DESC LIMIT 10",
+            (year_str,)
+        )
+
+        # 4) 계약별 상위 10
+        contract_rows = db.execute_query(
+            "SELECT contract_number, company, ROUND(SUM(manpower), 1) as total "
+            "FROM work_records "
+            "WHERE strftime('%Y', date) = ? AND contract_number != '' AND contract_number IS NOT NULL "
+            "GROUP BY contract_number ORDER BY total DESC LIMIT 10",
+            (year_str,)
+        )
+
+        return {
+            'success':           True,
+            'year':              year,
+            'monthly':           monthly_data,
+            'inHouseMonthly':    monthly_inhouse,
+            'outsourcedMonthly': monthly_outsourced,
+            'inHouseTotal':      round(sum(monthly_inhouse), 1),
+            'outsourcedTotal':   round(sum(monthly_outsourced), 1),
+            'companies': [{'name': r[0], 'total': float(r[1])} for r in (company_rows or [])],
+            'contracts': [{'cn': r[0], 'company': r[1], 'total': float(r[2])} for r in (contract_rows or [])]
+        }
+    except Exception as e:
+        logger.error(f"통계 데이터 조회 오류: {e}")
+        return {'success': False}
+
+
+# =============================================================================
+# v1.8.6 — 사용자 현황 / 오류 리포트
+# =============================================================================
+
+@eel.expose
+def update_client_version(user_id: str, version: str) -> dict:
+    """로그인 후 클라이언트가 자신의 버전을 서버에 등록"""
+    try:
+        auth_manager.update_user_version(user_id, version)
+        return {'success': True}
+    except Exception as e:
+        logger.error(f"클라이언트 버전 등록 실패: {e}")
+        return {'success': False}
+
+
+@eel.expose
+def report_error(user_id: str, error_type: str, error_message: str, stack_trace: str = '') -> dict:
+    """JS/Python 오류를 DB에 저장"""
+    try:
+        user_name = ''
+        try:
+            user = auth_manager.get_user(user_id)
+            if user:
+                user_name = user.get('full_name', '')
+        except Exception:
+            pass
+        app_version = config.get('update.current_version', '')
+        db.add_error_report(user_id, user_name, app_version, error_type, error_message, stack_trace)
+        return {'success': True}
+    except Exception as e:
+        logger.error(f"오류 리포트 저장 실패: {e}")
+        return {'success': False}
+
+
+@eel.expose
+def admin_get_user_status() -> list:
+    """전체 사용자 + 버전 + 마지막 접속 (관리자 전용)"""
+    try:
+        rows = db.execute_query(
+            "SELECT user_id, full_name, role, status, client_version, last_seen "
+            "FROM auth_users ORDER BY CASE WHEN last_seen IS NULL THEN 1 ELSE 0 END, last_seen DESC",
+            ()
+        )
+        if not rows:
+            return []
+        return [
+            {
+                'user_id': r[0],
+                'full_name': r[1],
+                'role': r[2],
+                'status': r[3],
+                'client_version': r[4],
+                'last_seen': r[5],
+            }
+            for r in rows
+        ]
+    except Exception as e:
+        logger.error(f"사용자 현황 조회 실패: {e}")
+        return []
+
+
+@eel.expose
+def admin_get_error_reports(limit: int = 50) -> list:
+    """미해결 오류 리포트 목록 (관리자 전용)"""
+    try:
+        return db.get_error_reports(limit)
+    except Exception as e:
+        logger.error(f"오류 리포트 조회 실패: {e}")
+        return []
+
+
+@eel.expose
+def admin_mark_error_read(error_id: int) -> dict:
+    """오류 리포트를 읽음 처리"""
+    try:
+        ok = db.mark_error_report_read(error_id)
+        return {'success': ok}
+    except Exception as e:
+        logger.error(f"오류 리포트 읽음 처리 실패: {e}")
+        return {'success': False}
 
 
 @eel.expose
@@ -1092,13 +1482,17 @@ def export_daily_report(date: str) -> Dict[str, Any]:
             cell.fill = PatternFill(start_color='B4C7E7', end_color='B4C7E7', fill_type='solid')
         
         # 데이터
+        # #1 — N+1 쿼리 방지: 선박명 배치 pre-fetch
+        _batch_ships = list({r.get('ship_name', '') for r in valid_records if r.get('ship_name', '')})
+        _project_dates = get_project_start_dates_batch([], _batch_ships) if _batch_ships else {}
+
         for row_idx, record in enumerate(valid_records, start=4):
             ship_name = record.get('ship_name', '')
             engine_model = record.get('engine_model', '')
             work_content = record.get('work_content', '')
-            
+
             # 공사기간: 시작일 ~ 진행중
-            start_date = get_project_start_date(ship_name) if ship_name else ''
+            start_date = _project_dates.get(ship_name, '') if ship_name else ''
             project_period = f"{start_date} ~ 진행중" if start_date else '진행중'
             
             # 작업내용: 엔진모델 + 작업내용
@@ -1356,10 +1750,10 @@ def get_app_info() -> Dict[str, Any]:
 
 
 @eel.expose
-def get_activity_logs(limit: int = 50) -> List[Dict[str, Any]]:
-    """활동 로그 조회"""
+def get_activity_logs(limit: int = 100, user_filter: str = '') -> List[Dict[str, Any]]:
+    """활동 로그 조회 (관리자)"""
     try:
-        logs = db.get_activity_logs(limit=limit)
+        logs = db.get_activity_logs(limit=limit, user=user_filter or None)
         return [log.to_dict() for log in logs]
     except Exception as e:
         logger.error(f"활동 로그 조회 오류: {e}")
@@ -1398,7 +1792,7 @@ def get_gantt_data(year: int, month: int) -> List[Dict[str, Any]]:
         # N+1 방지: 모든 계약번호의 해당 월 작업일을 단일 쿼리로 조회
         work_dates_map = {}
         if rows:
-            all_cns = [row[0] for row in rows if row[0]]
+            all_cns = [row[0] for row in rows if row[0]][:500]
             if all_cns:
                 placeholders = ','.join('?' * len(all_cns))
                 date_rows_batch = db.execute_query(
@@ -1463,7 +1857,15 @@ def set_project_status(contract_number: str, status: str) -> Dict[str, Any]:
         username = ''
         success = db.set_project_status(contract_number, status, username)
         if success:
-            return {'success': True, 'message': f'상태가 변경되었습니다.'}
+            # 착공·준공 이벤트 텔레그램 알림 (비동기)
+            if status in ('착수', '준공'):
+                ship_name = telegram_notifier._get_ship_name(contract_number, None)
+                threading.Thread(
+                    target=telegram_notifier.send_project_event,
+                    args=(contract_number, status, ship_name),
+                    daemon=True
+                ).start()
+            return {'success': True, 'message': '상태가 변경되었습니다.'}
         return {'success': False, 'message': '상태 변경 실패'}
     except Exception as e:
         logger.error(f"프로젝트 상태 변경 오류: {e}")
@@ -2034,6 +2436,34 @@ def get_holidays() -> Dict[str, str]:
         return {}
 
 
+@eel.expose
+def refresh_holidays(service_key: str, admin_id: str = '') -> Dict[str, Any]:
+    """공공데이터포털 API로 공휴일 갱신 (관리자)"""
+    try:
+        if not service_key or not service_key.strip():
+            return {'success': False, 'message': '서비스키를 입력하세요.'}
+
+        sk = service_key.strip()
+        logger.info(f"공휴일 API 갱신 요청 by {admin_id or 'unknown'}")
+
+        from ..utils.holiday_fetcher import update_holidays_file
+        result = update_holidays_file(sk)
+
+        # 서비스키 settings.json 저장
+        config.set('holidays.data_go_kr_key', sk)
+        config.save()
+
+        counts = result.get('fetched_counts', {})
+        summary = ', '.join(f"{y}년 {c}건" for y, c in sorted(counts.items()))
+        msg = f"갱신 완료: {summary}"
+        logger.info(msg)
+        return {'success': True, 'message': msg}
+
+    except Exception as e:
+        logger.error(f"공휴일 갱신 오류: {e}")
+        return {'success': False, 'message': f'오류: {str(e)}'}
+
+
 # ============================================================================
 # 텔레그램 알림 설정
 # ============================================================================
@@ -2045,12 +2475,16 @@ def generate_telegram_link_code(user_id: str) -> Dict[str, Any]:
         code = auth_manager.generate_link_code(user_id)
         if code:
             bot_username = telegram_notifier.get_bot_username()
-            deep_link = f'https://t.me/{bot_username}?start={code}' if bot_username else ''
+            # tg:// → PC Telegram Desktop 직접 실행 (os.startfile에 적합)
+            deep_link = f'tg://resolve?domain={bot_username}&start={code}' if bot_username else ''
+            # https:// → QR 코드(모바일 스캔)용
+            web_link  = f'https://t.me/{bot_username}?start={code}' if bot_username else ''
             return {
                 'success': True,
                 'code': code,
                 'botUsername': bot_username,
-                'deepLink': deep_link
+                'deepLink': deep_link,
+                'webLink': web_link
             }
         return {'success': False, 'message': '코드 생성 실패'}
     except Exception as e:
@@ -2077,6 +2511,80 @@ def get_telegram_status(user_id: str) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"텔레그램 상태 조회 오류: {e}")
         return {'linked': False}
+
+
+@eel.expose
+def get_user_tray_mode(user_id: str) -> Dict[str, Any]:
+    """사용자 트레이 모드 설정 조회"""
+    try:
+        return {'success': True, 'tray_mode': auth_manager.get_tray_mode(user_id)}
+    except Exception as e:
+        logger.error(f"트레이 설정 조회 오류: {e}")
+        return {'success': False}
+
+
+@eel.expose
+def save_user_tray_mode(user_id: str, enabled: bool) -> Dict[str, Any]:
+    """사용자 트레이 모드 설정 저장 + Python 전역 동기화"""
+    try:
+        auth_manager.update_tray_mode(user_id, bool(enabled))
+        # Python main 모듈의 전역 변수 동기화
+        try:
+            import src.main as _main_mod
+            _main_mod._tray_preference = bool(enabled)
+        except Exception:
+            pass
+        return {'success': True}
+    except Exception as e:
+        logger.error(f"트레이 설정 저장 오류: {e}")
+        return {'success': False, 'message': str(e)}
+
+
+@eel.expose
+def get_all_leave_monthly_report(year: int) -> Dict[str, Any]:
+    """모든 직원의 연차 월별 현황 조회 (연차 월별 보고 탭)"""
+    try:
+        data = db.get_all_leave_monthly_report(int(year))
+        return {'success': True, 'data': data}
+    except Exception as e:
+        logger.error(f"연차 월별 보고 조회 오류: {e}")
+        return {'success': False, 'message': str(e)}
+
+
+@eel.expose
+def set_leave_report_edit(user_id: str, enabled: bool, admin_id: str) -> Dict[str, Any]:
+    """연차 월별 보고 편집 권한 설정 (관리자 전용)"""
+    try:
+        with auth_manager.get_connection() as conn:
+            row = conn.execute(
+                'SELECT role FROM auth_users WHERE user_id = ?', (admin_id,)
+            ).fetchone()
+        if not row or row['role'] != 'admin':
+            return {'success': False, 'message': '관리자 권한 필요'}
+        auth_manager.set_leave_report_edit(user_id, bool(enabled))
+        return {'success': True}
+    except Exception as e:
+        logger.error(f"leave_report_edit 설정 오류: {e}")
+        return {'success': False, 'message': str(e)}
+
+
+@eel.expose
+def admin_set_write_permission(user_id: str, enabled: bool, admin_id: str) -> Dict[str, Any]:
+    """일일 작업 쓰기 권한 부여/해제 (관리자 전용)"""
+    try:
+        with auth_manager.get_connection() as conn:
+            row = conn.execute(
+                'SELECT role FROM auth_users WHERE user_id = ?', (admin_id,)
+            ).fetchone()
+        if not row or row['role'] != 'admin':
+            return {'success': False, 'message': '관리자 권한 필요'}
+        auth_manager.set_can_write(user_id, bool(enabled))
+        action = '쓰기 권한 부여' if enabled else '쓰기 권한 해제'
+        add_activity_log(admin_id, 'set_write_permission', f'{user_id} → {action}')
+        return {'success': True}
+    except Exception as e:
+        logger.error(f"쓰기 권한 설정 오류: {e}")
+        return {'success': False, 'message': str(e)}
 
 
 @eel.expose

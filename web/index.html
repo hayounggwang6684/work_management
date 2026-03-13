@@ -217,8 +217,9 @@
                             <button onclick="loadYesterdayRecords()"
                                     class="px-4 py-2 bg-cyan-600 text-white rounded-lg ml-2">어제 작업</button>
                         </div>
-                        <button onclick="saveWorkRecords()" 
+                        <button onclick="forceSaveWorkRecords()" id="btnForceSave2"
                                 class="px-6 py-2 bg-green-600 text-white rounded-lg font-semibold">저장</button>
+                        <span id="readOnlyBadge" class="hidden px-3 py-1 bg-slate-200 text-slate-600 text-sm rounded-lg">👁️ 읽기 전용</span>
                     </div>
                     <div class="overflow-x-auto">
                         <table class="w-full border-collapse">
@@ -576,6 +577,11 @@
                         <!-- 월별 투입 공수 차트 -->
                         <div class="bg-slate-50 rounded-lg p-4 mb-4">
                             <h3 class="font-semibold mb-3 text-slate-700">월별 투입 공수</h3>
+                            <div id="manpowerSummary" class="hidden flex gap-4 text-sm mb-3 text-slate-700">
+                                전체 <b id="totalManpowerLabel">-</b>공 /
+                                <span class="text-blue-600">본공 <b id="inHouseLabel">-</b>공</span> /
+                                <span class="text-orange-500">외주 <b id="outsourcedLabel">-</b>공</span>
+                            </div>
                             <canvas id="manpowerChart" height="80"></canvas>
                         </div>
                         <!-- 2컬럼: 회사별 / 계약별 -->

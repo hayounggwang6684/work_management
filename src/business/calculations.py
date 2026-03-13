@@ -148,6 +148,50 @@ def calculate_total_manpower(records: list) -> float:
     return total
 
 
+def split_manpower_by_type(leader: str, teammates: str) -> Tuple[float, float]:
+    """
+    본공 / 외주 공수 분리 계산 (통계용)
+
+    분류 기준:
+    - leader (직영 팀장 1.0 / 협력업체 팀장 *이름* 0.5) → 본공
+    - teammates 이름 (직영 1.0 / 반직영 *이름* 0.5) → 본공
+    - teammates 업체명(이름들) (도급) → 외주 1.0 고정
+    - teammates 업체명[이름들] (일당) → 외주, 인원별 계산
+
+    Returns:
+        (in_house_manpower, outsourced_manpower)
+    """
+    # 팀장 → 본공 (calculate_leader_manpower 재사용)
+    in_house = calculate_leader_manpower(leader)
+    outsourced = 0.0
+
+    if not teammates or not teammates.strip():
+        return round(in_house, 4), 0.0
+
+    text = teammates.strip()
+    matched_ranges: List[Tuple[int, int]] = []
+
+    # 도급: 업체명(이름들) → 외주 1.0 고정
+    for match in re.compile(r'([^()\[\],]+)\(([^)]+)\)').finditer(text):
+        outsourced += 1.0
+        matched_ranges.append((match.start(), match.end()))
+
+    # 일당: 업체명[이름들] → 외주, 인원별 계산 (이탤릭 0.5, else 1.0)
+    for match in re.compile(r'([^()\[\],]+)\[([^\]]+)\]').finditer(text):
+        for _, is_italic in extract_names(match.group(2)):
+            outsourced += 0.5 if is_italic else 1.0
+        matched_ranges.append((match.start(), match.end()))
+
+    # 나머지(본사 직원) → 본공, 이탤릭 0.5, else 1.0
+    remaining = text
+    for start, end in sorted(matched_ranges, reverse=True):
+        remaining = remaining[:start] + remaining[end:]
+    for _, is_italic in extract_names(remaining):
+        in_house += 0.5 if is_italic else 1.0
+
+    return round(in_house, 4), round(outsourced, 4)
+
+
 def separate_workers(leader: str, teammates: str) -> tuple:
     """
     본사 직원 / 외주 인력 분리

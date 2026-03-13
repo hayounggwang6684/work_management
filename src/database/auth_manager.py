@@ -109,6 +109,13 @@ class AuthManager:
                 cursor.execute('ALTER TABLE auth_users ADD COLUMN leave_report_edit INTEGER DEFAULT 0')
             except sqlite3.OperationalError:
                 pass  # 이미 존재
+            # 일일 작업 쓰기 권한 컬럼 추가 (0=읽기 전용(기본), 1=저장 가능)
+            try:
+                cursor.execute('ALTER TABLE auth_users ADD COLUMN can_write INTEGER DEFAULT 0')
+                # admin 계정은 항상 쓰기 권한 자동 부여
+                cursor.execute("UPDATE auth_users SET can_write = 1 WHERE role = 'admin'")
+            except sqlite3.OperationalError:
+                pass  # 이미 존재
 
             # 텔레그램 연결 코드 테이블
             cursor.execute('''
@@ -293,18 +300,27 @@ class AuthManager:
                 try:
                     cursor.execute('''
                         SELECT id, user_id, full_name, role, status, created_at, last_login,
-                               leave_report_edit
+                               leave_report_edit, can_write
                         FROM auth_users
                         ORDER BY created_at DESC
                     ''')
                 except sqlite3.OperationalError:
-                    # leave_report_edit 컬럼 아직 없는 경우 (업그레이드 과도기)
-                    cursor.execute('''
-                        SELECT id, user_id, full_name, role, status, created_at, last_login,
-                               0 AS leave_report_edit
-                        FROM auth_users
-                        ORDER BY created_at DESC
-                    ''')
+                    # can_write 컬럼 아직 없는 경우 (업그레이드 과도기)
+                    try:
+                        cursor.execute('''
+                            SELECT id, user_id, full_name, role, status, created_at, last_login,
+                                   leave_report_edit, 0 AS can_write
+                            FROM auth_users
+                            ORDER BY created_at DESC
+                        ''')
+                    except sqlite3.OperationalError:
+                        # leave_report_edit 컬럼도 없는 경우 (구버전)
+                        cursor.execute('''
+                            SELECT id, user_id, full_name, role, status, created_at, last_login,
+                                   0 AS leave_report_edit, 0 AS can_write
+                            FROM auth_users
+                            ORDER BY created_at DESC
+                        ''')
                 rows = cursor.fetchall()
                 return [dict(row) for row in rows]
         except Exception as e:
@@ -362,6 +378,38 @@ class AuthManager:
             return True
         except Exception as e:
             logger.error(f"leave_report_edit 설정 실패: {e}")
+            return False
+
+    def set_can_write(self, user_id: str, enabled: bool) -> bool:
+        """일일 작업 쓰기 권한 설정 (관리자가 사용자에게 부여/해제)"""
+        try:
+            with self.get_connection() as conn:
+                conn.execute(
+                    'UPDATE auth_users SET can_write = ? WHERE user_id = ?',
+                    (1 if enabled else 0, user_id)
+                )
+            return True
+        except Exception as e:
+            logger.error(f"can_write 설정 실패: {e}")
+            return False
+
+    def get_can_write_by_fullname(self, full_name: str) -> bool:
+        """full_name 기준 쓰기 권한 조회 (save_work_records 권한 검증용)"""
+        try:
+            with self.get_connection() as conn:
+                row = conn.execute(
+                    "SELECT can_write, role FROM auth_users "
+                    "WHERE full_name = ? AND status = 'active'",
+                    (full_name,)
+                ).fetchone()
+            if not row:
+                return False
+            # admin 역할은 항상 쓰기 허용
+            if row['role'] == 'admin':
+                return True
+            return bool(row['can_write'])
+        except Exception as e:
+            logger.error(f"can_write 조회 실패: {e}")
             return False
 
     def get_pending_requests(self) -> List[Dict[str, Any]]:
@@ -731,7 +779,7 @@ class AuthManager:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
-                    'SELECT user_id, full_name, role, status, tray_mode, leave_report_edit FROM auth_users WHERE user_id = ?',
+                    'SELECT user_id, full_name, role, status, tray_mode, leave_report_edit, can_write FROM auth_users WHERE user_id = ?',
                     (user_id,)
                 )
                 row = cursor.fetchone()
@@ -740,11 +788,17 @@ class AuthManager:
                 uid, full_name, role, status = row['user_id'], row['full_name'], row['role'], row['status']
                 tray_mode = bool(row['tray_mode']) if row['tray_mode'] else False
                 leave_report_edit = bool(row['leave_report_edit']) if row['leave_report_edit'] else False
+                # admin은 can_write 컬럼 무관하게 항상 쓰기 허용
+                try:
+                    can_write = bool(row['can_write']) if row['can_write'] else (role == 'admin')
+                except Exception:
+                    can_write = (role == 'admin')
                 if status not in ('active', 'approved'):
                     return None
             logger.info(f"자동 로그인 토큰 검증 성공: {uid}")
             return {'user_id': uid, 'full_name': full_name, 'role': role,
-                    'tray_mode': tray_mode, 'leave_report_edit': leave_report_edit}
+                    'tray_mode': tray_mode, 'leave_report_edit': leave_report_edit,
+                    'can_write': can_write}
         except Exception as e:
             logger.error(f"Remember token 검증 실패: {e}")
             return None
