@@ -412,7 +412,7 @@ async function loadActivityLogTab() {
 
 async function loadPendingUsers() {
     try {
-        const requests = await eel.admin_get_pending_requests()();
+        const requests = await eel.admin_get_pending_requests(currentUser?.user_id || '')();
         const container = document.getElementById('pendingUsers');
         
         if (requests.length === 0) {
@@ -446,7 +446,7 @@ async function loadPendingUsers() {
 
 async function loadAllUsers() {
     try {
-        const users = await eel.admin_get_all_users()();
+        const users = await eel.admin_get_all_users(currentUser?.user_id || '')();
         const container = document.getElementById('allUsers');
         
         container.innerHTML = users.map(user => {
@@ -719,7 +719,7 @@ async function markErrorRead(errorId) {
 
 async function loadAdminSettings() {
     try {
-        const result = await eel.admin_get_paths()();
+        const result = await eel.admin_get_paths(currentUser?.user_id || '')();
 
         if (result.success) {
             const paths = result.paths;

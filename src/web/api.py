@@ -182,9 +182,12 @@ def register_user(user_id: str, password: str, full_name: str) -> Dict[str, Any]
 # ============================================================================
 
 @eel.expose
-def admin_get_all_users() -> List[Dict[str, Any]]:
+def admin_get_all_users(admin_id: str = '') -> List[Dict[str, Any]]:
     """모든 사용자 조회 (관리자)"""
     try:
+        user = auth_manager.get_user(admin_id) if admin_id else None
+        if not user or user.get('role') != 'admin':
+            return []
         users = auth_manager.get_all_users()
         return users
     except Exception as e:
@@ -193,9 +196,12 @@ def admin_get_all_users() -> List[Dict[str, Any]]:
 
 
 @eel.expose
-def admin_get_pending_requests() -> List[Dict[str, Any]]:
+def admin_get_pending_requests(admin_id: str = '') -> List[Dict[str, Any]]:
     """승인 대기 요청 조회 (관리자)"""
     try:
+        user = auth_manager.get_user(admin_id) if admin_id else None
+        if not user or user.get('role') != 'admin':
+            return []
         requests = auth_manager.get_pending_requests()
         return requests
     except Exception as e:
@@ -214,7 +220,7 @@ def admin_approve_user(user_id: str, admin_id: str) -> Dict[str, Any]:
         }
     except Exception as e:
         logger.error(f"사용자 승인 오류: {e}")
-        return {'success': False, 'message': f'오류: {str(e)}'}
+        return {'success': False, 'message': '요청 처리 중 오류가 발생했습니다.'}
 
 
 @eel.expose
@@ -228,7 +234,7 @@ def admin_reject_user(user_id: str, admin_id: str, note: str = '') -> Dict[str, 
         }
     except Exception as e:
         logger.error(f"사용자 거부 오류: {e}")
-        return {'success': False, 'message': f'오류: {str(e)}'}
+        return {'success': False, 'message': '요청 처리 중 오류가 발생했습니다.'}
 
 
 @eel.expose
@@ -242,7 +248,7 @@ def admin_delete_user(user_id: str, admin_id: str) -> Dict[str, Any]:
         }
     except Exception as e:
         logger.error(f"사용자 퇴사 처리 오류: {e}")
-        return {'success': False, 'message': f'오류: {str(e)}'}
+        return {'success': False, 'message': '요청 처리 중 오류가 발생했습니다.'}
 
 
 @eel.expose
@@ -256,7 +262,7 @@ def admin_update_user_status(user_id: str, status: str, admin_id: str) -> Dict[s
         }
     except Exception as e:
         logger.error(f"사용자 상태 변경 오류: {e}")
-        return {'success': False, 'message': f'오류: {str(e)}'}
+        return {'success': False, 'message': '요청 처리 중 오류가 발생했습니다.'}
 
 
 @eel.expose
@@ -311,9 +317,12 @@ def select_folder_path() -> Dict[str, Any]:
 
 
 @eel.expose
-def admin_get_paths() -> Dict[str, Any]:
+def admin_get_paths(admin_id: str = '') -> Dict[str, Any]:
     """경로 조회 (관리자)"""
     try:
+        user = auth_manager.get_user(admin_id) if admin_id else None
+        if not user or user.get('role') != 'admin':
+            return {'success': False, 'paths': {}}
         settings = settings_manager.get_current_settings()
         return {
             'success': True,
@@ -329,9 +338,12 @@ def admin_get_paths() -> Dict[str, Any]:
 
 
 @eel.expose
-def admin_get_settings() -> Dict[str, Any]:
+def admin_get_settings(admin_id: str = '') -> Dict[str, Any]:
     """설정 조회 (관리자)"""
     try:
+        user = auth_manager.get_user(admin_id) if admin_id else None
+        if not user or user.get('role') != 'admin':
+            return {}
         return settings_manager.get_current_settings()
     except Exception as e:
         logger.error(f"설정 조회 오류: {e}")
@@ -346,7 +358,7 @@ def admin_update_local_db_path(new_path: str, admin_id: str) -> Dict[str, Any]:
         return settings_manager.update_local_db_path(new_path)
     except Exception as e:
         logger.error(f"경로 변경 오류: {e}")
-        return {'success': False, 'message': f'오류: {str(e)}'}
+        return {'success': False, 'message': '요청 처리 중 오류가 발생했습니다.'}
 
 
 @eel.expose
@@ -376,7 +388,7 @@ def admin_update_cloud_path(new_path: str, admin_id: str) -> Dict[str, Any]:
         return result
     except Exception as e:
         logger.error(f"경로 변경 오류: {e}")
-        return {'success': False, 'message': f'오류: {str(e)}'}
+        return {'success': False, 'message': '요청 처리 중 오류가 발생했습니다.'}
 
 
 @eel.expose
@@ -390,7 +402,7 @@ def admin_update_backup_path(new_path: str, admin_id: str) -> Dict[str, Any]:
         return settings_manager.update_backup_path(new_path)
     except Exception as e:
         logger.error(f"경로 변경 오류: {e}")
-        return {'success': False, 'message': f'오류: {str(e)}'}
+        return {'success': False, 'message': '요청 처리 중 오류가 발생했습니다.'}
 
 
 @eel.expose
@@ -404,7 +416,7 @@ def admin_create_backup(admin_id: str) -> Dict[str, Any]:
         return settings_manager.create_backup()
     except Exception as e:
         logger.error(f"백업 생성 오류: {e}")
-        return {'success': False, 'message': f'오류: {str(e)}'}
+        return {'success': False, 'message': '요청 처리 중 오류가 발생했습니다.'}
 
 
 # ============================================================================
@@ -492,7 +504,7 @@ def save_work_records(date: str, records: List[Dict[str, Any]], username: str) -
         return {'success': success, 'message': '저장되었습니다.' if success else save_result.get('message', '저장 실패')}
     except Exception as e:
         logger.error(f"작업 레코드 저장 오류: {e}")
-        return {'success': False, 'message': f'오류: {str(e)}'}
+        return {'success': False, 'message': '요청 처리 중 오류가 발생했습니다.'}
 
 
 @eel.expose
@@ -542,7 +554,7 @@ def clear_all_records(admin_id: str = '') -> Dict[str, Any]:
             return {'success': False, 'message': '삭제 실패'}
     except Exception as e:
         logger.error(f"전체 레코드 삭제 오류: {e}")
-        return {'success': False, 'message': f'오류: {str(e)}'}
+        return {'success': False, 'message': '요청 처리 중 오류가 발생했습니다.'}
 
 
 @eel.expose
@@ -1458,7 +1470,7 @@ def export_to_excel(date: str) -> Dict[str, Any]:
         }
     except Exception as e:
         logger.error(f"Excel 내보내기 오류: {e}")
-        return {'success': False, 'message': f'오류: {str(e)}'}
+        return {'success': False, 'message': '요청 처리 중 오류가 발생했습니다.'}
 
 
 @eel.expose
@@ -1685,7 +1697,7 @@ def sync_to_cloud() -> Dict[str, Any]:
         }
     except Exception as e:
         logger.error(f"클라우드 동기화 오류: {e}")
-        return {'success': False, 'message': f'오류: {str(e)}'}
+        return {'success': False, 'message': '요청 처리 중 오류가 발생했습니다.'}
 
 
 @eel.expose
@@ -1702,7 +1714,7 @@ def sync_from_cloud() -> Dict[str, Any]:
         }
     except Exception as e:
         logger.error(f"클라우드 동기화 오류: {e}")
-        return {'success': False, 'message': f'오류: {str(e)}'}
+        return {'success': False, 'message': '요청 처리 중 오류가 발생했습니다.'}
 
 
 @eel.expose
@@ -1741,7 +1753,7 @@ def connect_to_cloud_external(cloud_path: str) -> Dict[str, Any]:
         return result
     except Exception as e:
         logger.error(f"외부 PC 클라우드 연결 오류: {e}")
-        return {'success': False, 'message': f'오류: {str(e)}'}
+        return {'success': False, 'message': '요청 처리 중 오류가 발생했습니다.'}
 
 
 @eel.expose
@@ -1755,7 +1767,7 @@ def disconnect_from_cloud() -> Dict[str, Any]:
         return cloud_sync.disconnect_external()
     except Exception as e:
         logger.error(f"외부 PC 클라우드 연결 해제 오류: {e}")
-        return {'success': False, 'message': f'오류: {str(e)}'}
+        return {'success': False, 'message': '요청 처리 중 오류가 발생했습니다.'}
 
 
 # ============================================================================
@@ -2179,6 +2191,10 @@ def delete_project_comment(comment_id: int, user_id: str) -> Dict[str, Any]:
 def import_excel_data(base64_data: str, username: str = 'admin') -> Dict[str, Any]:
     """엑셀 파일 데이터를 DB로 일괄 업로드"""
     try:
+        user = auth_manager.get_user(username) if username else None
+        if not user or user.get('role') != 'admin':
+            return {'success': False, 'message': '관리자 권한 필요'}
+
         import base64
         import io
         from openpyxl import load_workbook
@@ -2464,6 +2480,10 @@ def get_holidays() -> Dict[str, str]:
 def refresh_holidays(service_key: str, admin_id: str = '') -> Dict[str, Any]:
     """공공데이터포털 API로 공휴일 갱신 (관리자)"""
     try:
+        user = auth_manager.get_user(admin_id) if admin_id else None
+        if not user or user.get('role') != 'admin':
+            return {'success': False, 'message': '관리자 권한 필요'}
+
         if not service_key or not service_key.strip():
             return {'success': False, 'message': '서비스키를 입력하세요.'}
 
@@ -2485,7 +2505,7 @@ def refresh_holidays(service_key: str, admin_id: str = '') -> Dict[str, Any]:
 
     except Exception as e:
         logger.error(f"공휴일 갱신 오류: {e}")
-        return {'success': False, 'message': f'오류: {str(e)}'}
+        return {'success': False, 'message': '요청 처리 중 오류가 발생했습니다.'}
 
 
 # ============================================================================
@@ -2604,11 +2624,11 @@ def admin_set_write_permission(user_id: str, enabled: bool, admin_id: str) -> Di
             return {'success': False, 'message': '관리자 권한 필요'}
         auth_manager.set_can_write(user_id, bool(enabled))
         action = '쓰기 권한 부여' if enabled else '쓰기 권한 해제'
-        add_activity_log(admin_id, 'set_write_permission', f'{user_id} → {action}')
+        db.add_activity_log(admin_id, 'set_write_permission', f'{user_id} → {action}')
         return {'success': True}
     except Exception as e:
         logger.error(f"쓰기 권한 설정 오류: {e}")
-        return {'success': False, 'message': str(e)}
+        return {'success': False, 'message': '쓰기 권한 설정 중 오류가 발생했습니다.'}
 
 
 @eel.expose

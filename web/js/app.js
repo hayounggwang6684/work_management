@@ -338,7 +338,7 @@ async function saveAndRefreshHolidays() {
     if (statusEl) statusEl.textContent = '🔄 갱신 중... (최대 1분 소요)';
     try {
         const result = await eelWithTimeout(
-            eel.refresh_holidays(key, currentUser?.userId || '')(),
+            eel.refresh_holidays(key, currentUser?.user_id || '')(),
             70000  // 12개월 × 3년 = 최대 36회 HTTP 요청 여유
         );
         if (result && result.success) {
@@ -356,7 +356,7 @@ async function saveAndRefreshHolidays() {
 
 async function loadHolidayKeyStatus() {
     try {
-        const settings = await eel.admin_get_settings()();
+        const settings = await eel.admin_get_settings(currentUser?.user_id || '')();
         const key = settings?.holidays?.data_go_kr_key || '';
         const input = document.getElementById('holidayApiKey');
         if (input && key) {
@@ -791,9 +791,16 @@ async function changeKanbanStatus(contractNumber, newStatus) {
     }
 }
 
-function showToast(msg) {
+function showToast(msg, type = 'default') {
     const t = document.createElement('div');
-    t.className = 'fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-sm px-4 py-2 rounded-lg shadow-lg z-50';
+    const colorMap = {
+        'error':   'bg-red-600',
+        'warning': 'bg-yellow-500',
+        'success': 'bg-green-600',
+        'default': 'bg-slate-800'
+    };
+    const color = colorMap[type] || colorMap['default'];
+    t.className = `fixed bottom-6 left-1/2 -translate-x-1/2 ${color} text-white text-sm px-4 py-2 rounded-lg shadow-lg z-50`;
     t.textContent = msg;
     document.body.appendChild(t);
     setTimeout(() => t.remove(), 2500);
@@ -1211,7 +1218,7 @@ async function loadWorkRecords() {
         showLoading(false);
     } catch (error) {
         console.error('데이터 로드 오류:', error);
-        alert('데이터 로드 중 오류가 발생했습니다.');
+        showCustomAlert('오류', '데이터 로드 중 오류가 발생했습니다.', 'error');
         showLoading(false);
     }
 }
@@ -1420,10 +1427,10 @@ async function loadYesterdayRecords() {
             const dd = d.getDate();
             msg = `${mm}/${dd}(${wd}) 작업을 불러왔습니다.`;
         }
-        alert(msg);
+        showCustomAlert('알림', msg, 'info');
     } catch (error) {
         console.error('어제 작업 로드 오류:', error);
-        alert('이전 작업 로드 중 오류가 발생했습니다.');
+        showCustomAlert('오류', '이전 작업 로드 중 오류가 발생했습니다.', 'error');
         showLoading(false);
     }
 }
@@ -1784,15 +1791,15 @@ async function exportToExcel() {
         const result = await eel.export_to_excel(dateStr)();
         
         if (result.success) {
-            alert('Excel 파일이 저장되었습니다.\n위치: ' + result.path);
+            showCustomAlert('저장 완료', 'Excel 파일이 저장되었습니다.\n위치: ' + result.path, 'success');
         } else {
-            alert('Excel 내보내기 실패: ' + result.message);
+            showCustomAlert('오류', 'Excel 내보내기 실패: ' + result.message, 'error');
         }
-        
+
         showLoading(false);
     } catch (error) {
         console.error('Excel 내보내기 오류:', error);
-        alert('Excel 내보내기 중 오류가 발생했습니다.');
+        showCustomAlert('오류', 'Excel 내보내기 중 오류가 발생했습니다.', 'error');
         showLoading(false);
     }
 }
@@ -3214,7 +3221,7 @@ async function loadNotifications() {
     // 2) 미승인 사용자 (관리자 전용)
     if (currentUser && currentUser.role === 'admin') {
         try {
-            const pending = await eel.admin_get_pending_requests()();
+            const pending = await eel.admin_get_pending_requests(currentUser?.user_id || '')();
             if (pending && pending.length > 0) {
                 _notifData.push({
                     icon:   '👤',

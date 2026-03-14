@@ -49,14 +49,14 @@ async function checkForUpdatesManual() {
             updateInfo = result;
             showUpdateModal();
         } else if (result.error) {
-            alert('업데이트 확인 실패: ' + result.error);
+            showCustomAlert('업데이트 확인 실패', result.error, 'error');
         } else {
-            alert('최신 버전을 사용 중입니다.');
+            showCustomAlert('알림', '최신 버전을 사용 중입니다.', 'info');
         }
     } catch (error) {
         showLoading(false);
         console.error('수동 업데이트 확인 오류:', error);
-        alert('업데이트 확인 중 오류가 발생했습니다.');
+        showCustomAlert('오류', '업데이트 확인 중 오류가 발생했습니다.', 'error');
     }
 }
 
@@ -116,16 +116,20 @@ function showUpdateModal() {
     closeUpdateNotification();
     
     if (!updateInfo) {
-        alert('업데이트 정보가 없습니다.');
+        showCustomAlert('알림', '업데이트 정보가 없습니다.', 'info');
         return;
     }
-    
+
     // 모달 표시
-    document.getElementById('updateModal').classList.remove('hidden');
-    
+    const modal = document.getElementById('updateModal');
+    if (!modal) return;
+    modal.classList.remove('hidden');
+
     // 정보 표시
-    document.getElementById('currentVersion').textContent = updateInfo.current_version;
-    document.getElementById('latestVersion').textContent = updateInfo.latest_version;
+    const curVerEl = document.getElementById('currentVersion');
+    const latVerEl = document.getElementById('latestVersion');
+    if (curVerEl) curVerEl.textContent = updateInfo.current_version;
+    if (latVerEl) latVerEl.textContent = updateInfo.latest_version;
     
     // 릴리즈 노트 표시 (Markdown을 간단한 HTML로 변환)
     const releaseNotes = updateInfo.release_notes || '릴리즈 노트가 없습니다.';
@@ -133,7 +137,7 @@ function showUpdateModal() {
 }
 
 function closeUpdateModal() {
-    document.getElementById('updateModal').classList.add('hidden');
+    document.getElementById('updateModal')?.classList.add('hidden');
     
     // 다운로드 진행률 초기화
     document.getElementById('downloadProgress').classList.add('hidden');
@@ -147,7 +151,7 @@ function closeUpdateModal() {
 
 async function startUpdate() {
     if (!updateInfo) {
-        alert('업데이트 정보가 없습니다.');
+        showCustomAlert('알림', '업데이트 정보가 없습니다.', 'info');
         return;
     }
 
@@ -167,19 +171,18 @@ async function startUpdate() {
         updateDownloadProgress(100);
 
         if (result.success) {
-            if (result.needs_restart) {
-                alert(result.message + '\n\n프로그램을 재시작해주세요.');
-            } else {
-                alert(result.message);
-            }
+            const msg = result.needs_restart
+                ? result.message + '\n\n프로그램을 재시작해주세요.'
+                : result.message;
+            showCustomAlert('업데이트 완료', msg, 'success');
             closeUpdateModal();
         } else {
-            alert('패치 적용 실패: ' + result.message);
+            showCustomAlert('패치 적용 실패', result.message, 'error');
             resetUpdateButtons();
         }
     } catch (error) {
         console.error('패치 적용 오류:', error);
-        alert('패치 적용 중 오류가 발생했습니다.');
+        showCustomAlert('오류', '패치 적용 중 오류가 발생했습니다.', 'error');
         resetUpdateButtons();
     }
 }

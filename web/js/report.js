@@ -1,12 +1,3 @@
-// ========================================
-// XSS 방어용 HTML 이스케이프 헬퍼
-// ========================================
-
-function escapeHtmlReport(text) {
-    const div = document.createElement('div');
-    div.textContent = String(text ?? '');
-    return div.innerHTML;
-}
 
 // ========================================
 // 본사/외주 분리 함수
@@ -89,7 +80,7 @@ function showReportTab(tab) {
         
         // 일일 보고 로드 - 날짜 기본값 설정
         const reportDate = document.getElementById('reportDate');
-        if (!reportDate.value) {
+        if (reportDate && !reportDate.value) {
             // 오늘 날짜로 설정
             const today = new Date();
             const year = today.getFullYear();
@@ -167,7 +158,7 @@ document.addEventListener('DOMContentLoaded', function() {
 async function loadDailyReport() {
     const reportDate = document.getElementById('reportDate').value;
     if (!reportDate) {
-        alert('날짜를 선택해주세요.');
+        showCustomAlert('알림', '날짜를 선택해주세요.', 'info');
         return;
     }
 
@@ -200,36 +191,23 @@ async function loadDailyReport() {
             return;
         }
         
-        // 계약번호 또는 선박별 시작일 가져오기 (병렬 처리)
-        const projectDates = {};
-        await Promise.all(validRecords.map(async (record) => {
-            const contractNumber = record.contract_number || record.contractNumber || '';
-            const shipName = record.ship_name || record.shipName || '';
-            const key = contractNumber || shipName; // 계약번호 우선, 없으면 선박명
-            
-            console.log(`레코드: 계약번호=${contractNumber}, 선박명=${shipName}, key=${key}`);
-            
-            if (key && !projectDates[key]) {
-                let startDate = '';
-                if (contractNumber) {
-                    // 계약번호가 있으면 계약번호 기준
-                    startDate = await eel.get_project_start_date_by_contract(contractNumber)();
-                    console.log(`계약번호 ${contractNumber} 시작일: ${startDate}`);
-                }
-                if (!startDate && shipName) {
-                    // 계약번호로 찾지 못했으면 선박명 기준
-                    startDate = await eel.get_project_start_date(shipName)();
-                    console.log(`선박명 ${shipName} 시작일: ${startDate}`);
-                }
-                projectDates[key] = startDate || '';
-            }
-        }));
-        
-        console.log('projectDates:', projectDates);
-        
-        // 보고일 (현재 선택한 날짜)
-        const reportMonth = dateObj.getMonth() + 1;
-        const reportDay = dateObj.getDate();
+        // 계약번호/선박명 수집 후 단일 배치 조회 (N+1 방지, Set으로 O(n) 중복 제거)
+        const batchCnsSet = new Set();
+        const batchSnsSet = new Set();
+        validRecords.forEach(record => {
+            const cn = (record.contract_number || record.contractNumber || '').trim();
+            const sn = (record.ship_name || record.shipName || '').trim();
+            if (cn) batchCnsSet.add(cn);
+            else if (sn) batchSnsSet.add(sn);
+        });
+        const projectDates = await eel.get_project_start_dates_batch(
+            Array.from(batchCnsSet),
+            Array.from(batchSnsSet)
+        )() || {};
+
+        // 보고일 (현재 선택한 날짜) — 제로패딩 적용 (03/05 형식)
+        const reportMonth = String(dateObj.getMonth() + 1).padStart(2, '0');
+        const reportDay   = String(dateObj.getDate()).padStart(2, '0');
         const reportDateStr = `${reportMonth}/${reportDay}`;
         
         validRecords.forEach((record, index) => {
@@ -241,11 +219,13 @@ async function loadDailyReport() {
             const engineModel = record.engine_model || record.engineModel || '';
             const workContent = record.work_content || record.workContent || '';
             
-            // 공사기간: "시작일 ~ 보고일" 형식
+            // 공사기간: "시작일 ~ 보고일" 형식 (오늘 날짜면 "진행중" 표시)
             const contractNumber = record.contract_number || record.contractNumber || '';
             const key = contractNumber || shipName;
             const startDate = projectDates[key];
-            const projectPeriod = startDate ? `${startDate} ~ ${reportDateStr}` : reportDateStr;
+            const todayStr = new Date().toISOString().split('T')[0]; // "YYYY-MM-DD"
+            const endDisplay = (reportDate === todayStr) ? '진행중' : reportDateStr;
+            const projectPeriod = startDate ? `${startDate} ~ ${endDisplay}` : endDisplay;
             
             // 작업내용: "엔진모델 + 작업내용"
             let fullWorkContent = '';
@@ -261,21 +241,21 @@ async function loadDailyReport() {
             
             const row = document.createElement('tr');
             row.innerHTML = `
-                <td class="border border-gray-900 p-2 text-center">${index + 1}</td>
-                <td class="border border-gray-900 p-2 text-center">${escapeHtmlReport(record.company || '-')}</td>
-                <td class="border border-gray-900 p-2 text-center">${escapeHtmlReport(shipName)}</td>
-                <td class="border border-gray-900 p-2 text-center">${escapeHtmlReport(projectPeriod)}</td>
-                <td class="border border-gray-900 p-2 text-center">${escapeHtmlReport(record.location || '-')}</td>
-                <td class="border border-gray-900 p-2 text-left">${escapeHtmlReport(fullWorkContent)}</td>
-                <td class="border border-gray-900 p-2 text-center">${escapeHtmlReport(inHouse)}</td>
-                <td class="border border-gray-900 p-2 text-center">${escapeHtmlReport(outsourced)}</td>
+                <td class="border border-gray-900 p-2 text-center whitespace-nowrap">${index + 1}</td>
+                <td class="border border-gray-900 p-2 text-center break-keep">${escapeHtml(record.company || '-')}</td>
+                <td class="border border-gray-900 p-2 text-center whitespace-nowrap">${escapeHtml(shipName)}</td>
+                <td class="border border-gray-900 p-2 text-center whitespace-nowrap">${escapeHtml(projectPeriod)}</td>
+                <td class="border border-gray-900 p-2 text-center whitespace-nowrap">${escapeHtml(record.location || '-')}</td>
+                <td class="border border-gray-900 p-2 text-left break-keep">${escapeHtml(fullWorkContent)}</td>
+                <td class="border border-gray-900 p-2 text-center break-keep">${escapeHtml(inHouse)}</td>
+                <td class="border border-gray-900 p-2 text-center break-keep">${escapeHtml(outsourced)}</td>
             `;
             tbody.appendChild(row);
         });
         
     } catch (error) {
         console.error('일일 보고 로드 실패:', error);
-        alert('데이터를 불러오는데 실패했습니다.');
+        showCustomAlert('오류', '데이터를 불러오는데 실패했습니다.', 'error');
     }
 }
 
@@ -341,7 +321,6 @@ async function loadMonthlyReport() {
         showLoading(true, '월간 보고 로드 중...');
         
         const [year, month] = reportMonth.split('-');
-        console.log(`월간 보고 로드: ${year}년 ${month}월`);
 
         // 월간 보고 제목 업데이트
         const monthlyTitleEl = document.getElementById('monthlyReportTitle');
@@ -349,13 +328,7 @@ async function loadMonthlyReport() {
             monthlyTitleEl.textContent = `${parseInt(month)}월 월간 작업 현황`;
         }
 
-        // 디버깅: 데이터 확인
-        const debugData = await eel.debug_check_data(parseInt(year), parseInt(month))();
-        console.log('디버깅 데이터:', debugData);
-        
         const monthlyData = await eel.load_monthly_report_grouped(parseInt(year), parseInt(month))();
-        console.log('월간 보고 데이터:', monthlyData);
-        console.log('데이터 개수:', monthlyData ? monthlyData.length : 0);
         
         showLoading(false);
         
@@ -385,15 +358,15 @@ async function loadMonthlyReport() {
 
             const row = document.createElement('tr');
             row.innerHTML = `
-                <td class="border border-gray-900 p-2 text-center">${index + 1}</td>
-                <td class="border border-gray-900 p-2 text-center">${escapeHtmlReport(ship.company || '-')}</td>
-                <td class="border border-gray-900 p-2 text-center">${escapeHtmlReport(ship.ship_name || ship.shipName || '-')}</td>
-                <td class="border border-gray-900 p-2 text-center">${escapeHtmlReport(ship.project_period || '-')}</td>
-                <td class="border border-gray-900 p-2 text-center">${escapeHtmlReport(ship.location || '-')}</td>
-                <td class="border border-gray-900 p-2 text-left">${escapeHtmlReport(ship.work_content || ship.workContent || '-')}</td>
-                <td class="border border-gray-900 p-2 text-center">${escapeHtmlReport(inHouseDisplay)}</td>
-                <td class="border border-gray-900 p-2 text-center">${escapeHtmlReport(outsourced)}</td>
-                <td class="border border-gray-900 p-2 text-center">${ship.total_manpower.toFixed(1)}</td>
+                <td class="border border-gray-900 p-2 text-center whitespace-nowrap">${index + 1}</td>
+                <td class="border border-gray-900 p-2 text-center break-keep">${escapeHtml(ship.company || '-')}</td>
+                <td class="border border-gray-900 p-2 text-center whitespace-nowrap">${escapeHtml(ship.ship_name || ship.shipName || '-')}</td>
+                <td class="border border-gray-900 p-2 text-center whitespace-nowrap">${escapeHtml(ship.project_period || '-')}</td>
+                <td class="border border-gray-900 p-2 text-center whitespace-nowrap">${escapeHtml(ship.location || '-')}</td>
+                <td class="border border-gray-900 p-2 text-left break-keep">${escapeHtml(ship.work_content || ship.workContent || '-')}</td>
+                <td class="border border-gray-900 p-2 text-center break-keep">${escapeHtml(inHouseDisplay)}</td>
+                <td class="border border-gray-900 p-2 text-center break-keep">${escapeHtml(outsourced)}</td>
+                <td class="border border-gray-900 p-2 text-center whitespace-nowrap">${ship.total_manpower.toFixed(1)}</td>
             `;
             tbody.appendChild(row);
         });
