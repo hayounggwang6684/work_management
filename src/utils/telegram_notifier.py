@@ -15,7 +15,7 @@ class TelegramNotifier:
     def __init__(self):
         self.bot_token = config.get('telegram.bot_token', '')
         self.enabled = config.get('telegram.enabled', False)
-        self.polling_interval = config.get('telegram.polling_interval', 2)
+        self.polling_interval = max(0.5, min(config.get('telegram.polling_interval', 2), 60))
 
         self._last_update_id = 0
         self._polling_thread: Optional[threading.Thread] = None
@@ -32,8 +32,10 @@ class TelegramNotifier:
             logger.info("텔레그램 비활성화 또는 토큰 미설정, 폴링 건너뜀")
             return
 
-        # 봇 정보 가져오기 (username 캐시)
-        self._fetch_bot_info()
+        # 봇 정보 가져오기 — 토큰 유효성 확인 포함
+        if not self._fetch_bot_info():
+            logger.warning("텔레그램 봇 초기화 실패 (토큰 오류 또는 네트워크 차단). 폴링을 시작하지 않습니다.")
+            return
 
         # 오래된 데이터 정리
         try:
@@ -77,28 +79,35 @@ class TelegramNotifier:
             logger.warning(f"봇 username 조회 실패 (토큰 존재: {bool(self.bot_token)})")
         return self._bot_username
 
-    def _fetch_bot_info(self):
-        """getMe API로 봇 정보 가져오기"""
+    def _fetch_bot_info(self) -> bool:
+        """getMe API로 봇 정보 가져오기. 성공이면 True 반환"""
         if not self.bot_token:
             logger.warning("봇 토큰이 비어있어 getMe 호출 건너뜀")
-            return
+            return False
 
         try:
             url = f"https://api.telegram.org/bot{self.bot_token}/getMe"
-            logger.info(f"getMe API 호출 중... (토큰 길이: {len(self.bot_token)})")
             resp = requests.get(url, timeout=10)
-            logger.info(f"getMe 응답: status={resp.status_code}")
+            if resp.status_code == 401:
+                logger.error(
+                    "텔레그램 봇 토큰 인증 실패 (401 Unauthorized). "
+                    "BotFather(@BotFather)에게 /token 명령으로 토큰을 재발급받은 후 "
+                    "앱 설정 > 텔레그램에서 새 토큰을 저장하세요."
+                )
+                return False
             if resp.status_code == 200:
                 data = resp.json()
                 if data.get('ok'):
                     self._bot_username = data['result'].get('username', '')
                     logger.info(f"텔레그램 봇: @{self._bot_username}")
+                    return True
                 else:
                     logger.error(f"getMe API 실패: {data}")
             else:
                 logger.error(f"getMe HTTP 오류: {resp.status_code} - {resp.text[:200]}")
         except Exception as e:
             logger.error(f"봇 정보 가져오기 실패: {e}")
+        return False
 
     # =========================================================================
     # 폴링 루프
@@ -134,6 +143,10 @@ class TelegramNotifier:
             logger.warning(f"getUpdates 요청 실패: {e}")
             return
 
+        if resp.status_code == 401:
+            logger.error("텔레그램 토큰 인증 실패 (401). 폴링 중단. BotFather에서 토큰을 재발급하세요.")
+            self._running = False
+            return
         if resp.status_code != 200:
             return
 
@@ -324,19 +337,101 @@ class TelegramNotifier:
             url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
             payload = {
                 'chat_id': chat_id,
-                'text': text,
-                'parse_mode': 'HTML'
+                'text': text
+                # parse_mode 제거: 사용자명·댓글 등 임의 텍스트에 <>&가 포함될 경우
+                # HTML 파싱 오류로 silent failure 발생하므로 plain text 사용
             }
             resp = requests.post(url, json=payload, timeout=10)
             if resp.status_code == 200:
                 data = resp.json()
                 if data.get('ok'):
                     return data.get('result', {}).get('message_id')
+                else:
+                    logger.error(f"텔레그램 메시지 전송 실패 (ok=False): {data.get('description', '')}")
             else:
-                logger.error(f"텔레그램 메시지 전송 실패: {resp.status_code}")
+                logger.error(f"텔레그램 메시지 전송 실패: {resp.status_code} - {resp.text[:200]}")
         except Exception as e:
             logger.error(f"텔레그램 메시지 전송 오류: {e}")
         return None
+
+    def send_daily_summary(self, date: str):
+        """당일 작업 현황 요약을 연결된 모든 사용자에게 발송"""
+        if not self.enabled or not self.bot_token:
+            return
+
+        from ..database.auth_manager import auth_manager
+        from ..database.db_manager import db
+
+        linked_users = auth_manager.get_all_linked_chat_ids()
+        if not linked_users:
+            logger.info("일일 요약: 연결된 사용자 없음, 발송 건너뜀")
+            return
+
+        try:
+            records = db.load_work_records(date)
+        except Exception as e:
+            logger.error(f"일일 요약 레코드 로드 오류: {e}")
+            return
+
+        # 비어있지 않은 행만 선박/계약번호 기준 그룹핑
+        projects = {}
+        for r in (records or []):
+            cn = (r.get('contractNumber') or r.get('contract_number') or '').strip()
+            ship = (r.get('shipName') or r.get('ship_name') or '').strip()
+            key = cn or ship
+            if not key:
+                continue
+            if key not in projects:
+                projects[key] = {'ship': ship, 'cn': cn, 'works': []}
+            content = (r.get('workContent') or r.get('work_content') or '').strip()
+            engine = (r.get('engineModel') or r.get('engine_model') or '').strip()
+            desc = ' '.join(filter(None, [engine, content]))
+            if desc and desc not in projects[key]['works']:
+                projects[key]['works'].append(desc)
+
+        if not projects:
+            text = (f"📋 금일 작업 현황 ({date})\n"
+                    f"━━━━━━━━━━━━━━\n작업 내역이 없습니다.")
+        else:
+            lines = [f"📋 금일 작업 현황 ({date})", "━━━━━━━━━━━━━━"]
+            for key, p in projects.items():
+                title = p['ship'] or p['cn']
+                cn_str = f" ({p['cn']})" if p['cn'] and p['cn'] != title else ''
+                lines.append(f"🚢 {title}{cn_str}")
+                if p['works']:
+                    lines.append(f"   {' / '.join(p['works'][:3])}")
+            lines += ["━━━━━━━━━━━━━━", f"총 {len(projects)}건 작업"]
+            text = '\n'.join(lines)
+
+        for user in linked_users:
+            self._send_message(int(user['telegram_chat_id']), text)
+        logger.info(f"일일 요약 발송 완료 ({len(linked_users)}명, {len(projects)}건)")
+
+    def send_project_event(self, contract_number: str, status: str, ship_name: str = ''):
+        """착공 또는 준공 이벤트를 연결된 모든 사용자에게 알림"""
+        if not self.enabled or not self.bot_token:
+            return
+
+        from ..database.auth_manager import auth_manager
+
+        linked_users = auth_manager.get_all_linked_chat_ids()
+        if not linked_users:
+            return
+
+        is_start = status in ('착수', '착공')
+        icon = '🔨' if is_start else '🏁'
+        label = '착공' if is_start else '준공'
+        text = (
+            f"{icon} {label} 알림\n"
+            f"━━━━━━━━━━━━━━\n"
+            f"📌 선박: {ship_name or '(미지정)'}\n"
+            f"📋 계약번호: {contract_number or '(없음)'}\n"
+            f"이 프로젝트가 {label} 처리되었습니다."
+        )
+
+        for user in linked_users:
+            self._send_message(int(user['telegram_chat_id']), text)
+        logger.info(f"{label} 알림 발송 완료: {contract_number} ({len(linked_users)}명)")
 
     def _get_ship_name(self, contract_number: str, board_project_id: int) -> str:
         """프로젝트의 선박명 조회"""
