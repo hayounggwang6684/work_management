@@ -277,17 +277,22 @@ def main():
             logger.info("외부 PC 변경 알림 감지 → 클라우드 DB 반영 후 시작")
             cloud_sync.sync_from_cloud()
             cloud_sync.delete_notification()
-            # 클라우드 DB 덮어쓰기 후 관리자 계정 재보장
+            # 클라우드 DB 덮어쓰기 후 마이그레이션 재실행 + 관리자 계정 재보장
+            # (클라우드 DB가 이전 버전일 경우 신규 컬럼 누락 대비)
             from src.database.auth_manager import auth_manager as _am
-            _am.ensure_admin_account()
+            from src.database.db_manager import db as _db
+            _am._init_auth_tables()
+            _db._init_database()
         else:
             logger.info("변경 알림 없음 → 로컬 DB 그대로 사용 [company]")
     elif _sync_mode == 'external' and cloud_sync.enabled:
         logger.info("외부 PC 시작 → 클라우드 DB 자동 pull")
         cloud_sync.sync_from_cloud()
-        # 클라우드 DB 덮어쓰기 후 관리자 계정 재보장
+        # 클라우드 DB 덮어쓰기 후 마이그레이션 재실행 + 관리자 계정 재보장
         from src.database.auth_manager import auth_manager as _am
-        _am.ensure_admin_account()
+        from src.database.db_manager import db as _db
+        _am._init_auth_tables()
+        _db._init_database()
 
     # 브라우저 모드 결정 (Chrome → Edge → 기본 브라우저 순으로 시도)
     browser_mode = _detect_browser_mode()

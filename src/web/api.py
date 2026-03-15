@@ -2622,7 +2622,9 @@ def admin_set_write_permission(user_id: str, enabled: bool, admin_id: str) -> Di
             ).fetchone()
         if not row or row['role'] != 'admin':
             return {'success': False, 'message': '관리자 권한 필요'}
-        auth_manager.set_can_write(user_id, bool(enabled))
+        ok = auth_manager.set_can_write(user_id, bool(enabled))
+        if not ok:
+            return {'success': False, 'message': 'DB 업데이트 실패 — 앱을 재시작하면 자동 수정됩니다.'}
         action = '쓰기 권한 부여' if enabled else '쓰기 권한 해제'
         db.add_activity_log(admin_id, 'set_write_permission', f'{user_id} → {action}')
         return {'success': True}
