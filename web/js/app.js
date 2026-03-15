@@ -2797,29 +2797,39 @@ async function confirmAddLeaveRow() {
 
 async function toggleLeaveReportEdit(userId, enabled) {
     if (!currentUser) return;
+    const btn = document.querySelector(`button[onclick*="toggleLeaveReportEdit('${userId}'"]`);
+    if (btn) { btn.disabled = true; btn.textContent = '처리중...'; }
     try {
         const r = await eel.set_leave_report_edit(userId, enabled, currentUser.user_id)();
         if (r && r.success) {
+            showToast(enabled ? '월보편집 권한이 부여되었습니다.' : '월보편집 권한이 해제되었습니다.', 'success');
             if (typeof loadAllUsers === 'function') loadAllUsers();
         } else {
             showToast('권한 설정 실패: ' + escapeHtml(r?.message || ''), 'error');
+            if (btn) { btn.disabled = false; btn.textContent = '월보편집'; }
         }
     } catch(e) {
         showToast('오류: ' + String(e), 'error');
+        if (btn) { btn.disabled = false; btn.textContent = '월보편집'; }
     }
 }
 
 async function toggleWritePermission(userId, enabled) {
     if (!currentUser) return;
+    const btn = document.querySelector(`button[onclick*="toggleWritePermission('${userId}'"]`);
+    if (btn) { btn.disabled = true; btn.textContent = '처리중...'; }
     try {
         const r = await eel.admin_set_write_permission(userId, enabled, currentUser.user_id)();
         if (r && r.success) {
+            showToast(enabled ? '쓰기 권한이 부여되었습니다.' : '쓰기 권한이 해제되었습니다.', 'success');
             if (typeof loadAllUsers === 'function') loadAllUsers();
         } else {
             showToast('쓰기 권한 설정 실패: ' + escapeHtml(r?.message || ''), 'error');
+            if (btn) { btn.disabled = false; btn.textContent = '쓰기'; }
         }
     } catch(e) {
         showToast('오류: ' + String(e), 'error');
+        if (btn) { btn.disabled = false; btn.textContent = '쓰기'; }
     }
 }
 
