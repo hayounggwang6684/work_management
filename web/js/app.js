@@ -227,6 +227,7 @@ async function loadCompanyNameList() {
         datalist.innerHTML = names.map(n => `<option value="${escapeHtml(n)}">`).join('');
     } catch(e) {
         console.warn('업체명 목록 로드 실패:', e);
+        showToast('업체명 목록을 불러오지 못했습니다.', 'warning');
     }
 }
 
@@ -1019,7 +1020,7 @@ function setReplyTo(commentId, userName) {
     document.getElementById('commentReplyToId').value = commentId;
     document.getElementById('replyToName').textContent = userName;
     document.getElementById('replyIndicator').classList.remove('hidden');
-    document.getElementById('commentInput').focus();
+    document.getElementById('commentInput')?.focus();
 }
 
 function cancelReply() {
@@ -2435,7 +2436,7 @@ async function loadTelegramStatus() {
         const notLinkedDiv = document.getElementById('telegramNotLinked');
         const linkCodeDiv = document.getElementById('telegramLinkCode');
 
-        if (!botStatus.enabled) {
+        if (!botStatus || !botStatus.enabled) {
             botDisabledDiv.classList.remove('hidden');
             linkedDiv.classList.add('hidden');
             notLinkedDiv.classList.add('hidden');
@@ -2809,8 +2810,14 @@ async function toggleLeaveReportEdit(userId, enabled) {
             if (btn) { btn.disabled = false; btn.textContent = '월보편집'; }
         }
     } catch(e) {
-        showToast('오류: ' + String(e), 'error');
+        showToast('오류가 발생했습니다.', 'error');
         if (btn) { btn.disabled = false; btn.textContent = '월보편집'; }
+    } finally {
+        // loadAllUsers 완료 후 버튼이 재렌더링되지 않았을 때 대비
+        if (btn && btn.isConnected && btn.disabled) {
+            btn.disabled = false;
+            btn.textContent = '월보편집';
+        }
     }
 }
 
@@ -2828,8 +2835,14 @@ async function toggleWritePermission(userId, enabled) {
             if (btn) { btn.disabled = false; btn.textContent = '쓰기'; }
         }
     } catch(e) {
-        showToast('오류: ' + String(e), 'error');
+        showToast('오류가 발생했습니다.', 'error');
         if (btn) { btn.disabled = false; btn.textContent = '쓰기'; }
+    } finally {
+        // loadAllUsers 완료 후 버튼이 재렌더링되지 않았을 때 대비
+        if (btn && btn.isConnected && btn.disabled) {
+            btn.disabled = false;
+            btn.textContent = '쓰기';
+        }
     }
 }
 

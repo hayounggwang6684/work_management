@@ -111,7 +111,7 @@ def authenticate(user_id: str, password: str) -> Dict[str, Any]:
         }
     except Exception as e:
         logger.error(f"인증 오류: {e}")
-        return {'success': False, 'message': f'인증 중 오류가 발생했습니다: {str(e)}'}
+        return {'success': False, 'message': '인증 중 오류가 발생했습니다.'}
 
 
 @eel.expose
@@ -124,7 +124,7 @@ def create_remember_token(user_id: str) -> Dict[str, Any]:
         return {'success': False, 'message': '토큰 생성 실패'}
     except Exception as e:
         logger.error(f"Remember token 생성 오류: {e}")
-        return {'success': False, 'message': str(e)}
+        return {'success': False, 'message': '요청 처리 중 오류가 발생했습니다.'}
 
 
 @eel.expose
@@ -138,7 +138,7 @@ def auto_login(token: str) -> Dict[str, Any]:
         return {'success': False, 'message': '토큰이 만료되었거나 유효하지 않습니다.'}
     except Exception as e:
         logger.error(f"자동 로그인 오류: {e}")
-        return {'success': False, 'message': str(e)}
+        return {'success': False, 'message': '요청 처리 중 오류가 발생했습니다.'}
 
 
 @eel.expose
@@ -174,7 +174,7 @@ def register_user(user_id: str, password: str, full_name: str) -> Dict[str, Any]
             }
     except Exception as e:
         logger.error(f"등록 요청 오류: {e}")
-        return {'success': False, 'message': f'등록 요청 중 오류가 발생했습니다: {str(e)}'}
+        return {'success': False, 'message': '등록 요청 중 오류가 발생했습니다.'}
 
 
 # ============================================================================
@@ -313,7 +313,7 @@ def select_folder_path() -> Dict[str, Any]:
 
     except Exception as e:
         logger.error(f"폴더 선택 오류: {e}")
-        return {'success': False, 'error': str(e)}
+        return {'success': False, 'error': '요청 처리 중 오류가 발생했습니다.'}
 
 
 @eel.expose
@@ -869,7 +869,7 @@ def save_employee_annual_config(employee_name: str, generation_month: int, note:
         return {'success': success}
     except Exception as e:
         logger.error(f"직원 연차 설정 저장 오류: {e}")
-        return {'success': False, 'message': str(e)}
+        return {'success': False, 'message': '요청 처리 중 오류가 발생했습니다.'}
 
 
 @eel.expose
@@ -884,7 +884,7 @@ def add_leave_grant(employee_name: str, grant_year: int, grant_month: int,
         return {'success': False, 'message': '추가 실패'}
     except Exception as e:
         logger.error(f"연차 부여 이력 추가 오류: {e}")
-        return {'success': False, 'message': str(e)}
+        return {'success': False, 'message': '요청 처리 중 오류가 발생했습니다.'}
 
 
 @eel.expose
@@ -895,7 +895,7 @@ def delete_leave_grant(grant_id: int) -> Dict[str, Any]:
         return {'success': success}
     except Exception as e:
         logger.error(f"연차 부여 이력 삭제 오류: {e}")
-        return {'success': False, 'message': str(e)}
+        return {'success': False, 'message': '요청 처리 중 오류가 발생했습니다.'}
 
 
 @eel.expose
@@ -910,7 +910,7 @@ def add_leave_usage(employee_name: str, use_date: str, leave_type: str, note: st
         return {'success': False, 'message': '추가 실패'}
     except Exception as e:
         logger.error(f"연차 사용 내역 추가 오류: {e}")
-        return {'success': False, 'message': str(e)}
+        return {'success': False, 'message': '요청 처리 중 오류가 발생했습니다.'}
 
 
 @eel.expose
@@ -921,7 +921,7 @@ def delete_leave_usage(usage_id: int) -> Dict[str, Any]:
         return {'success': success}
     except Exception as e:
         logger.error(f"연차 사용 내역 삭제 오류: {e}")
-        return {'success': False, 'message': str(e)}
+        return {'success': False, 'message': '요청 처리 중 오류가 발생했습니다.'}
 
 
 @eel.expose
@@ -1339,9 +1339,12 @@ def report_error(user_id: str, error_type: str, error_message: str, stack_trace:
 
 
 @eel.expose
-def admin_get_user_status() -> list:
+def admin_get_user_status(admin_id: str = '') -> list:
     """전체 사용자 + 버전 + 마지막 접속 (관리자 전용)"""
     try:
+        user = auth_manager.get_user(admin_id) if admin_id else None
+        if not user or user.get('role') != 'admin':
+            return []
         rows = db.execute_query(
             "SELECT user_id, full_name, role, status, client_version, last_seen "
             "FROM auth_users ORDER BY CASE WHEN last_seen IS NULL THEN 1 ELSE 0 END, last_seen DESC",
@@ -1366,9 +1369,12 @@ def admin_get_user_status() -> list:
 
 
 @eel.expose
-def admin_get_error_reports(limit: int = 50) -> list:
+def admin_get_error_reports(limit: int = 50, admin_id: str = '') -> list:
     """미해결 오류 리포트 목록 (관리자 전용)"""
     try:
+        user = auth_manager.get_user(admin_id) if admin_id else None
+        if not user or user.get('role') != 'admin':
+            return []
         return db.get_error_reports(limit)
     except Exception as e:
         logger.error(f"오류 리포트 조회 실패: {e}")
@@ -1376,13 +1382,62 @@ def admin_get_error_reports(limit: int = 50) -> list:
 
 
 @eel.expose
-def admin_mark_error_read(error_id: int) -> dict:
-    """오류 리포트를 읽음 처리"""
+def admin_mark_error_read(error_id: int, admin_id: str = '') -> dict:
+    """오류 리포트를 읽음 처리 (관리자 전용)"""
     try:
+        user = auth_manager.get_user(admin_id) if admin_id else None
+        if not user or user.get('role') != 'admin':
+            return {'success': False}
         ok = db.mark_error_report_read(error_id)
         return {'success': ok}
     except Exception as e:
         logger.error(f"오류 리포트 읽음 처리 실패: {e}")
+        return {'success': False}
+
+
+@eel.expose
+def admin_get_realtime_summary(admin_id: str = '') -> Dict[str, Any]:
+    """관리자 실시간 현황 요약: 현재 접속, 오늘 작업률, 미결 오류 (관리자 전용)"""
+    try:
+        user = auth_manager.get_user(admin_id) if admin_id else None
+        if not user or user.get('role') != 'admin':
+            return {'success': False}
+
+        from datetime import datetime, timedelta
+        now = datetime.now()
+        five_min_ago = (now - timedelta(minutes=5)).isoformat()
+        today = now.strftime('%Y-%m-%d')
+
+        # 현재 활성 사용자 (5분 내 last_seen)
+        active_rows = db.execute_query(
+            "SELECT COUNT(*) FROM auth_users WHERE last_seen >= ? AND status = 'active'",
+            (five_min_ago,)
+        )
+        active_count = active_rows[0][0] if active_rows else 0
+
+        # 오늘 작업 입력 건수 (비어있지 않은 레코드)
+        today_rows = db.execute_query(
+            "SELECT COUNT(*) FROM work_records WHERE date = ? AND (contract_number != '' OR work_content != '')",
+            (today,)
+        )
+        today_filled = today_rows[0][0] if today_rows else 0
+
+        # 미결 오류 리포트 수
+        error_rows = db.execute_query(
+            "SELECT COUNT(*) FROM error_reports WHERE is_read = 0",
+            ()
+        )
+        error_count = error_rows[0][0] if error_rows else 0
+
+        return {
+            'success': True,
+            'activeUsers': active_count,
+            'todayFilledRecords': today_filled,
+            'unresolvedErrors': error_count,
+            'timestamp': now.strftime('%H:%M:%S')
+        }
+    except Exception as e:
+        logger.error(f"실시간 요약 조회 오류: {e}")
         return {'success': False}
 
 
@@ -1592,7 +1647,7 @@ def export_daily_report(date: str) -> Dict[str, Any]:
         }
     except Exception as e:
         logger.error(f"일일 보고서 내보내기 오류: {e}")
-        return {'success': False, 'message': str(e)}
+        return {'success': False, 'message': '요청 처리 중 오류가 발생했습니다.'}
 
 
 @eel.expose
@@ -1676,7 +1731,7 @@ def export_monthly_report(year: int, month: int) -> Dict[str, Any]:
         }
     except Exception as e:
         logger.error(f"월간 보고서 내보내기 오류: {e}")
-        return {'success': False, 'message': str(e)}
+        return {'success': False, 'message': '요청 처리 중 오류가 발생했습니다.'}
 
 
 # ============================================================================
@@ -1905,7 +1960,7 @@ def set_project_status(contract_number: str, status: str) -> Dict[str, Any]:
         return {'success': False, 'message': '상태 변경 실패'}
     except Exception as e:
         logger.error(f"프로젝트 상태 변경 오류: {e}")
-        return {'success': False, 'message': str(e)}
+        return {'success': False, 'message': '요청 처리 중 오류가 발생했습니다.'}
 
 
 @eel.expose
@@ -1919,7 +1974,7 @@ def create_board_project(data: Dict) -> Dict[str, Any]:
         return {'success': False, 'message': '프로젝트 등록 실패'}
     except Exception as e:
         logger.error(f"보드 프로젝트 생성 오류: {e}")
-        return {'success': False, 'message': str(e)}
+        return {'success': False, 'message': '요청 처리 중 오류가 발생했습니다.'}
 
 
 @eel.expose
@@ -1933,7 +1988,7 @@ def update_board_project(project_id: int, data: Dict) -> Dict[str, Any]:
         return {'success': False, 'message': '프로젝트 수정 실패'}
     except Exception as e:
         logger.error(f"보드 프로젝트 수정 오류: {e}")
-        return {'success': False, 'message': str(e)}
+        return {'success': False, 'message': '요청 처리 중 오류가 발생했습니다.'}
 
 
 @eel.expose
@@ -1946,7 +2001,7 @@ def delete_board_project(project_id: int) -> Dict[str, Any]:
         return {'success': False, 'message': '프로젝트 삭제 실패'}
     except Exception as e:
         logger.error(f"보드 프로젝트 삭제 오류: {e}")
-        return {'success': False, 'message': str(e)}
+        return {'success': False, 'message': '요청 처리 중 오류가 발생했습니다.'}
 
 
 @eel.expose
@@ -2136,7 +2191,7 @@ def add_project_comment_with_user(contract_number, content, user_id, user_name, 
         return {'success': False, 'message': '댓글 등록 실패'}
     except Exception as e:
         logger.error(f"댓글 추가 오류: {e}")
-        return {'success': False, 'message': str(e)}
+        return {'success': False, 'message': '요청 처리 중 오류가 발생했습니다.'}
 
 
 @eel.expose
@@ -2180,7 +2235,7 @@ def delete_project_comment(comment_id: int, user_id: str) -> Dict[str, Any]:
         return {'success': False, 'message': '삭제 권한이 없거나 댓글을 찾을 수 없습니다.'}
     except Exception as e:
         logger.error(f"댓글 삭제 오류: {e}")
-        return {'success': False, 'message': str(e)}
+        return {'success': False, 'message': '요청 처리 중 오류가 발생했습니다.'}
 
 
 # ============================================================================
@@ -2368,7 +2423,7 @@ def import_excel_data(base64_data: str, username: str = 'admin') -> Dict[str, An
         logger.error(traceback.format_exc())
         return {
             'success': False,
-            'message': f'엑셀 불러오기 실패: {str(e)}'
+            'message': '엑셀 불러오기 실패 — 파일 형식을 확인하세요.'
         }
 
 
@@ -2417,7 +2472,7 @@ def check_for_updates(force: bool = False) -> Dict[str, Any]:
         logger.error(f"업데이트 확인 오류: {e}")
         return {
             'update_available': False,
-            'error': str(e)
+            'error': '요청 처리 중 오류가 발생했습니다.'
         }
 
 
@@ -2431,7 +2486,7 @@ def download_and_apply_patches() -> Dict[str, Any]:
         logger.error(f"패치 적용 오류: {e}")
         return {
             'success': False,
-            'message': str(e)
+            'message': '요청 처리 중 오류가 발생했습니다.'
         }
 
 
@@ -2454,7 +2509,7 @@ def get_release_notes_for_version(version_tag: str) -> Dict[str, Any]:
         logger.error(f"릴리즈 노트 조회 오류: {e}")
         return {
             'success': False,
-            'error': str(e)
+            'error': '요청 처리 중 오류가 발생했습니다.'
         }
 
 
@@ -2533,7 +2588,7 @@ def generate_telegram_link_code(user_id: str) -> Dict[str, Any]:
         return {'success': False, 'message': '코드 생성 실패'}
     except Exception as e:
         logger.error(f"텔레그램 코드 생성 오류: {e}")
-        return {'success': False, 'message': str(e)}
+        return {'success': False, 'message': '요청 처리 중 오류가 발생했습니다.'}
 
 
 @eel.expose
@@ -2544,7 +2599,7 @@ def unlink_telegram(user_id: str) -> Dict[str, Any]:
         return {'success': success}
     except Exception as e:
         logger.error(f"텔레그램 연결 해제 오류: {e}")
-        return {'success': False, 'message': str(e)}
+        return {'success': False, 'message': '요청 처리 중 오류가 발생했습니다.'}
 
 
 @eel.expose
@@ -2581,7 +2636,7 @@ def save_user_tray_mode(user_id: str, enabled: bool) -> Dict[str, Any]:
         return {'success': True}
     except Exception as e:
         logger.error(f"트레이 설정 저장 오류: {e}")
-        return {'success': False, 'message': str(e)}
+        return {'success': False, 'message': '요청 처리 중 오류가 발생했습니다.'}
 
 
 @eel.expose
@@ -2592,7 +2647,7 @@ def get_all_leave_monthly_report(year: int) -> Dict[str, Any]:
         return {'success': True, 'data': data}
     except Exception as e:
         logger.error(f"연차 월별 보고 조회 오류: {e}")
-        return {'success': False, 'message': str(e)}
+        return {'success': False, 'message': '요청 처리 중 오류가 발생했습니다.'}
 
 
 @eel.expose
@@ -2605,11 +2660,13 @@ def set_leave_report_edit(user_id: str, enabled: bool, admin_id: str) -> Dict[st
             ).fetchone()
         if not row or row['role'] != 'admin':
             return {'success': False, 'message': '관리자 권한 필요'}
-        auth_manager.set_leave_report_edit(user_id, bool(enabled))
+        ok = auth_manager.set_leave_report_edit(user_id, bool(enabled))
+        if not ok:
+            return {'success': False, 'message': 'DB 업데이트 실패 — 앱을 재시작하면 자동 수정됩니다.'}
         return {'success': True}
     except Exception as e:
         logger.error(f"leave_report_edit 설정 오류: {e}")
-        return {'success': False, 'message': str(e)}
+        return {'success': False, 'message': '요청 처리 중 오류가 발생했습니다.'}
 
 
 @eel.expose
@@ -2695,4 +2752,4 @@ def admin_save_telegram_settings(bot_token: str, enabled: bool, admin_id: str) -
         return {'success': True, 'message': '텔레그램 설정이 저장되었습니다.'}
     except Exception as e:
         logger.error(f"텔레그램 설정 저장 오류: {e}")
-        return {'success': False, 'message': str(e)}
+        return {'success': False, 'message': '요청 처리 중 오류가 발생했습니다.'}

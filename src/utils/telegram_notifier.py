@@ -180,6 +180,9 @@ class TelegramNotifier:
             # /start 코드 → 계정 연결
             if text.startswith('/start'):
                 self._handle_link(message)
+            # /link → 연동 안내
+            elif text.lower().startswith('/link'):
+                self._handle_link_command(message)
             # 답장 → 댓글 등록
             elif message.get('reply_to_message'):
                 self._handle_reply(message)
@@ -187,6 +190,34 @@ class TelegramNotifier:
     # =========================================================================
     # 링크 처리
     # =========================================================================
+
+    def _handle_link_command(self, message: Dict):
+        """/link 명령 처리 — 텔레그램 계정 연동 안내"""
+        from ..database.auth_manager import auth_manager
+
+        chat_id = message['chat']['id']
+        try:
+            existing_user = auth_manager.get_user_by_chat_id(chat_id)
+            if existing_user:
+                name = existing_user.get('full_name', '')
+                self._send_message(
+                    chat_id,
+                    f"✅ 이미 연동되어 있습니다!\n"
+                    f"계정: {name}\n\n"
+                    f"연동을 해제하려면 앱 > 설정 > 텔레그램 연동 > 연결 해제를 이용하세요."
+                )
+            else:
+                self._send_message(
+                    chat_id,
+                    "🔗 금일작업현황 앱 계정 연동 방법:\n\n"
+                    "1️⃣ 앱을 열고 우측 상단 ⚙️ 설정으로 이동\n"
+                    "2️⃣ '텔레그램 연결하기' 버튼을 누르면 6자리 코드가 생성됩니다\n"
+                    "3️⃣ 아래 형식으로 이 채팅에 보내주세요:\n\n"
+                    "   /start ABC123\n\n"
+                    "⏱ 코드는 30분간 유효합니다."
+                )
+        except Exception as e:
+            logger.error(f"/link 명령 처리 오류: {e}")
 
     def _handle_link(self, message: Dict):
         """'/start 코드' 메시지 처리 → 계정 연결"""

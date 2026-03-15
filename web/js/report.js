@@ -311,11 +311,12 @@ async function captureReport(elementId) {
 // ========================================
 
 async function loadMonthlyReport() {
-    const reportMonth = document.getElementById('reportMonth').value;
-    if (!reportMonth) {
+    const reportMonthEl = document.getElementById('reportMonth');
+    if (!reportMonthEl || !reportMonthEl.value) {
         showCustomAlert('오류', '월을 선택해주세요.', 'error');
         return;
     }
+    const reportMonth = reportMonthEl.value;
 
     try {
         showLoading(true, '월간 보고 로드 중...');

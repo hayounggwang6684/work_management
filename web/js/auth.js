@@ -327,7 +327,7 @@ function _showAutoLoginExpiryBanner() {
     banner.id = 'autoLoginExpiryBanner';
     banner.className = `fixed bottom-4 right-4 z-40 border rounded-lg px-4 py-3 text-sm shadow-md flex items-center gap-3 max-w-sm ${color}`;
     banner.innerHTML = `
-        <span>⚠️ ${msg}</span>
+        <span>⚠️ ${escapeHtml(msg)}</span>
         <button onclick="document.getElementById('autoLoginExpiryBanner').remove()"
                 class="ml-1 font-bold opacity-60 hover:opacity-100 flex-shrink-0">✕</button>`;
     document.body.appendChild(banner);
@@ -650,8 +650,21 @@ async function saveTelegramBotToken() {
 
 async function loadAdminStatusTab() {
     try {
+        // 0) 실시간 현황 요약 카드
+        const summary = await eel.admin_get_realtime_summary(currentUser?.user_id || '')();
+        if (summary && summary.success) {
+            const elActive = document.getElementById('statActiveUsers');
+            const elToday = document.getElementById('statTodayRecords');
+            const elErrors = document.getElementById('statUnresolvedErrors');
+            const elTime = document.getElementById('statRefreshTime');
+            if (elActive) elActive.textContent = summary.activeUsers;
+            if (elToday) elToday.textContent = summary.todayFilledRecords + '건';
+            if (elErrors) elErrors.textContent = summary.unresolvedErrors;
+            if (elTime) elTime.textContent = '업데이트: ' + summary.timestamp;
+        }
+
         // 1) 버전 현황 테이블
-        const users = await eel.admin_get_user_status()();
+        const users = await eel.admin_get_user_status(currentUser?.user_id || '')();
         const tbody = document.getElementById('userStatusTable');
         if (tbody) {
             tbody.innerHTML = (users && users.length > 0) ? users.map(u => {
@@ -675,7 +688,7 @@ async function loadAdminStatusTab() {
         }
 
         // 2) 오류 리포트
-        const errors = await eel.admin_get_error_reports()();
+        const errors = await eel.admin_get_error_reports(50, currentUser?.user_id || '')();
         const badge = document.getElementById('errorReportBadge');
         const unread = (errors || []).filter(e => !e.is_read).length;
         if (badge) {
@@ -713,7 +726,7 @@ async function loadAdminStatusTab() {
 }
 
 async function markErrorRead(errorId) {
-    await eel.admin_mark_error_read(errorId)();
+    await eel.admin_mark_error_read(errorId, currentUser?.user_id || '')();
     await loadAdminStatusTab();
 }
 
