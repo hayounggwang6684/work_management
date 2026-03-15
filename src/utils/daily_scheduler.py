@@ -44,13 +44,21 @@ class DailyScheduler:
                 logger.error(f"스케줄러 오류: {e}")
             time.sleep(60)
 
+    @staticmethod
+    def _normalize_hm(t: str) -> str:
+        """'9:30' → '09:30' 형식으로 정규화 (strftime('%H:%M') 비교용)"""
+        if not t or ':' not in t:
+            return t
+        h, m = t.split(':', 1)
+        return f"{int(h):02d}:{m.zfill(2)}"
+
     def _tick(self):
         now = datetime.now()
         today = now.strftime('%Y-%m-%d')
         hm = now.strftime('%H:%M')
 
         # ── 자동 백업 ──────────────────────────────────────────────────────────
-        backup_time = config.get('backup.auto_schedule_time', '')
+        backup_time = self._normalize_hm(config.get('backup.auto_schedule_time', ''))
         if backup_time and hm == backup_time and self._ran_today.get('backup') != today:
             self._ran_today['backup'] = today
             self._do_backup()
@@ -64,8 +72,9 @@ class DailyScheduler:
         if isinstance(summary_times, str):
             summary_times = [summary_times]
         for _t in summary_times:
-            _key = f'summary_{_t}'
-            if _t and hm == _t and self._ran_today.get(_key) != today:
+            _t_norm = self._normalize_hm(_t)   # '9:30' → '09:30' 정규화
+            _key = f'summary_{_t_norm}'
+            if _t_norm and hm == _t_norm and self._ran_today.get(_key) != today:
                 self._ran_today[_key] = today   # 주말에도 마킹 (중복 방지)
                 if now.isoweekday() <= 5:        # 평일(월=1~금=5)만 발송
                     self._do_daily_summary(today)

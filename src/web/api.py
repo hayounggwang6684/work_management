@@ -43,6 +43,19 @@ def wait_pending_threads(timeout: float = 5.0) -> None:
     logger.info(f"백그라운드 스레드 대기 완료 ({len(threads)}건)")
 
 
+def _date_to_md(date_str: str) -> str:
+    """'YYYY-MM-DD' 문자열을 'M/D' 형식으로 변환. 형식이 잘못된 경우 빈 문자열 반환."""
+    if not date_str:
+        return ''
+    parts = date_str.split('-')
+    if len(parts) != 3:
+        return ''
+    try:
+        return f"{int(parts[1])}/{int(parts[2])}"
+    except (ValueError, IndexError):
+        return ''
+
+
 # ============================================================================
 # 연결 확인 (스플래시 화면용)
 # ============================================================================
@@ -352,8 +365,11 @@ def admin_get_settings(admin_id: str = '') -> Dict[str, Any]:
 
 @eel.expose
 def admin_update_local_db_path(new_path: str, admin_id: str) -> Dict[str, Any]:
-    """로컬 DB 경로 변경 (관리자)"""
+    """로컬 DB 경로 변경 (관리자 전용)"""
     try:
+        user = auth_manager.get_user(admin_id)
+        if not user or user.get('role') != 'admin':
+            return {'success': False, 'message': '관리자 권한이 필요합니다.'}
         logger.info(f"로컬 DB 경로 변경 요청: {new_path} by {admin_id}")
         return settings_manager.update_local_db_path(new_path)
     except Exception as e:
@@ -1903,15 +1919,9 @@ def get_gantt_data(year: int, month: int) -> List[Dict[str, Any]]:
 
             start_date = row[5] or ''
             end_date = row[6] or ''
-            # M/D 형식으로 변환
-            start_md = ''
-            end_md = ''
-            if start_date:
-                parts = start_date.split('-')
-                start_md = f"{int(parts[1])}/{int(parts[2])}"
-            if end_date:
-                parts = end_date.split('-')
-                end_md = f"{int(parts[1])}/{int(parts[2])}"
+            # M/D 형식으로 변환 (잘못된 날짜 형식 → 빈 문자열)
+            start_md = _date_to_md(start_date)
+            end_md = _date_to_md(end_date)
 
             projects.append({
                 'contractNumber': contract_number,
@@ -2064,15 +2074,9 @@ def get_kanban_data() -> Dict[str, Any]:
             end_date = row[6] or ''
             start_date = row[5] or ''
 
-            # M/D 형식
-            start_md = ''
-            end_md = ''
-            if start_date:
-                parts = start_date.split('-')
-                start_md = f"{int(parts[1])}/{int(parts[2])}"
-            if end_date:
-                parts = end_date.split('-')
-                end_md = f"{int(parts[1])}/{int(parts[2])}"
+            # M/D 형식 (잘못된 날짜 형식 → 빈 문자열)
+            start_md = _date_to_md(start_date)
+            end_md = _date_to_md(end_date)
 
             # 상태 판단: 수동 > 자동
             manual_status = manual_statuses.get(contract_number, '')

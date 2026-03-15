@@ -524,7 +524,7 @@ class AuthManager:
     # =========================================================================
 
     def generate_link_code(self, user_id: str) -> Optional[str]:
-        """텔레그램 연결용 6자리 코드 생성 (5분 만료)"""
+        """텔레그램 연결용 6자리 코드 생성 (30분 만료)"""
         try:
             code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
             expires_at = (datetime.now() + timedelta(minutes=30)).isoformat()

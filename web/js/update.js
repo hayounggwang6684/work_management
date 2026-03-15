@@ -138,11 +138,13 @@ function showUpdateModal() {
 
 function closeUpdateModal() {
     document.getElementById('updateModal')?.classList.add('hidden');
-    
+
     // 다운로드 진행률 초기화
-    document.getElementById('downloadProgress').classList.add('hidden');
-    document.getElementById('downloadBar').style.width = '0%';
-    document.getElementById('downloadPercent').textContent = '0%';
+    document.getElementById('downloadProgress')?.classList.add('hidden');
+    const downloadBar = document.getElementById('downloadBar');
+    if (downloadBar) downloadBar.style.width = '0%';
+    const downloadPercent = document.getElementById('downloadPercent');
+    if (downloadPercent) downloadPercent.textContent = '0%';
 }
 
 // ============================================================================

@@ -21,8 +21,10 @@ def extract_names(text: str) -> List[Tuple[str, bool]]:
     
     result = []
     for part in parts:
-        is_italic = part.startswith('*') and part.endswith('*')
-        name = part.strip('*').strip() if is_italic else part.strip()
+        # 양쪽을 *로 정확히 감싼 경우만 이탤릭(기울임체)으로 인식
+        is_italic = part.startswith('*') and part.endswith('*') and len(part) >= 3
+        # strip('*') 대신 [1:-1] 사용 — 양 끝 *만 제거, 중간 * 보존
+        name = part[1:-1].strip() if is_italic else part.strip()
         if name:
             result.append((name, is_italic))
     
@@ -42,8 +44,9 @@ def calculate_leader_manpower(leader_text: str) -> float:
     if not leader_text or not leader_text.strip():
         return 0.0
     
-    # 기울임체(*로 감싸진 경우) 체크
-    is_italic = '*' in leader_text
+    # 기울임체(*로 양쪽 감싸진 경우만) 체크 — 한쪽만 * 있으면 직영 팀장
+    stripped = leader_text.strip()
+    is_italic = stripped.startswith('*') and stripped.endswith('*') and len(stripped) >= 3
     return 0.5 if is_italic else 1.0
 
 

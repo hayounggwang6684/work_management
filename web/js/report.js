@@ -302,7 +302,7 @@ async function captureReport(elementId) {
         }, 'image/png');
     } catch (error) {
         console.error('캡쳐 실패:', error);
-        showCustomAlert('오류', '캡쳐에 실패했습니다: ' + error.message, 'error');
+        showCustomAlert('오류', '캡쳐에 실패했습니다.', 'error');
     }
 }
 
@@ -367,7 +367,7 @@ async function loadMonthlyReport() {
                 <td class="border border-gray-900 p-2 text-left break-keep">${escapeHtml(ship.work_content || ship.workContent || '-')}</td>
                 <td class="border border-gray-900 p-2 text-center break-keep">${escapeHtml(inHouseDisplay)}</td>
                 <td class="border border-gray-900 p-2 text-center break-keep">${escapeHtml(outsourced)}</td>
-                <td class="border border-gray-900 p-2 text-center whitespace-nowrap">${ship.total_manpower.toFixed(1)}</td>
+                <td class="border border-gray-900 p-2 text-center whitespace-nowrap">${(ship.total_manpower ?? 0).toFixed(1)}</td>
             `;
             tbody.appendChild(row);
         });
@@ -375,7 +375,7 @@ async function loadMonthlyReport() {
     } catch (error) {
         console.error('월간 보고 로드 실패:', error);
         showLoading(false);
-        showCustomAlert('오류', '데이터를 불러오는데 실패했습니다: ' + error.message, 'error');
+        showCustomAlert('오류', '데이터를 불러오는데 실패했습니다.', 'error');
     }
 }
 

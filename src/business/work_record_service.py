@@ -220,7 +220,8 @@ class WorkRecordService:
             
             # 데이터
             for row_idx, record in enumerate(records, 2):
-                ws.cell(row=row_idx, column=1, value=record.get('record_number'))
+                # camelCase 변환 후이므로 'recordNumber' 키 사용 (snake_case 폴백 포함)
+                ws.cell(row=row_idx, column=1, value=record.get('recordNumber') or record.get('record_number'))
                 ws.cell(row=row_idx, column=2, value=record.get('contractNumber'))
                 ws.cell(row=row_idx, column=3, value=record.get('company'))
                 ws.cell(row=row_idx, column=4, value=record.get('shipName'))
