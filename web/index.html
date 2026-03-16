@@ -608,6 +608,8 @@
                                 class="px-6 py-2 rounded-lg bg-blue-600 text-white font-semibold">사용자 설정</button>
                         <button onclick="showSettingsTab('activityLog')" id="btnSettingsLog"
                                 class="px-6 py-2 rounded-lg bg-slate-200 font-semibold">활동 로그</button>
+                        <button onclick="showSettingsTab('erpInput')" id="btnSettingsErp"
+                                class="hidden px-6 py-2 rounded-lg bg-slate-200 font-semibold">ERP 입력</button>
                     </div>
 
                     <!-- 사용자 설정 탭 -->
@@ -703,6 +705,53 @@
                         </div>
                         <div id="activityLogContent">
                             <p class="text-slate-400 text-sm">로그를 불러오는 중...</p>
+                        </div>
+                    </div>
+
+                    <!-- ERP 입력 탭 -->
+                    <div id="erpInputTab" class="hidden">
+                        <h3 class="font-semibold text-lg mb-4">ERP 자동 입력 (선진종합시스템)</h3>
+
+                        <!-- 날짜 범위 조회 -->
+                        <div class="flex flex-wrap gap-2 mb-4 items-center">
+                            <label class="text-sm font-medium text-slate-700">기간</label>
+                            <input type="date" id="erpStartDate"
+                                   class="border border-slate-300 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-blue-400 focus:outline-none">
+                            <span class="text-slate-500">~</span>
+                            <input type="date" id="erpEndDate"
+                                   class="border border-slate-300 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-blue-400 focus:outline-none">
+                            <button onclick="loadErpRecords()"
+                                    class="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-lg font-medium">
+                                조회
+                            </button>
+                        </div>
+
+                        <!-- 레코드 목록 (날짜별 그룹) -->
+                        <div id="erpRecordList" class="mb-4 space-y-3 max-h-72 overflow-y-auto"></div>
+
+                        <!-- 실행 버튼 -->
+                        <div class="flex gap-2 mt-3">
+                            <button id="btnErpStart" onclick="startErpMacro()"
+                                    class="px-5 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-semibold text-sm disabled:opacity-50">
+                                ▶ 입력 시작
+                            </button>
+                            <button id="btnErpStop" onclick="stopErpMacro()"
+                                    class="hidden px-5 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold text-sm">
+                                ■ 중단
+                            </button>
+                        </div>
+
+                        <!-- 진행 바 -->
+                        <div id="erpProgressBar" class="hidden mt-4">
+                            <div class="bg-gray-200 rounded-full h-3">
+                                <div id="erpProgressFill" class="bg-blue-500 h-3 rounded-full transition-all" style="width:0%"></div>
+                            </div>
+                            <div id="erpProgressText" class="text-sm text-slate-600 mt-1"></div>
+                        </div>
+
+                        <!-- 실행 로그 -->
+                        <div id="erpLog"
+                             class="mt-4 bg-slate-900 text-green-400 p-3 rounded-lg font-mono text-xs h-40 overflow-y-auto whitespace-pre-wrap hidden">
                         </div>
                     </div>
 

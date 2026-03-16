@@ -217,6 +217,34 @@ def main():
     logger.info("="*60)
 
     # 패치 확인 및 적용 (GitHub에서 자동 다운로드 + 적용)
+    # 무한 재시작 방지: 재시작 횟수를 just_updated.json에 기록, 3회 초과 시 재시작 없이 실행
+    import json as _json
+    _marker_path = Path(__file__).parent.parent / "data" / "just_updated.json"
+    _restart_count = 0
+    if _marker_path.exists():
+        try:
+            _marker_data = _json.loads(_marker_path.read_text(encoding='utf-8'))
+            _restart_count = _marker_data.get('restart_count', 0)
+        except Exception:
+            _restart_count = 0
+
+    def _do_restart(applied_count: int, label: str = ''):
+        """패치 적용 후 재시작 (최대 3회 제한)"""
+        nonlocal _restart_count
+        if _restart_count >= 3:
+            logger.error(f"패치 재시작 {_restart_count}회 초과 — 무한 루프 방지, 재시작 생략")
+            return False
+        _marker_path.parent.mkdir(exist_ok=True)
+        _marker_path.write_text(_json.dumps({
+            "applied_count": applied_count,
+            "version": config.version,
+            "restart_count": _restart_count + 1,
+            "label": label
+        }), encoding='utf-8')
+        logger.info(f"패치 {applied_count}개 적용 완료. 자동 재시작 (#{_restart_count + 1})...")
+        subprocess.Popen([sys.executable] + sys.argv)
+        sys.exit(0)
+
     try:
         logger.info("GitHub에서 패치 확인 및 자동 다운로드 중...")
         patch_result = update_manager.download_and_apply_patches()
@@ -232,17 +260,16 @@ def main():
                 logger.info(f"로컬 패치 {applied}개 적용 완료.")
         # 패치가 적용된 경우 자동 재시작 (Python 프로세스 교체 → 신코드 로드)
         if applied > 0:
-            import json as _json
-            marker = Path(__file__).parent.parent / "data" / "just_updated.json"
-            marker.parent.mkdir(exist_ok=True)
-            marker.write_text(_json.dumps({
-                "applied_count": applied,
-                "version": config.version
-            }), encoding='utf-8')
-            logger.info(f"패치 {applied}개 적용 완료. 자동 재시작...")
-            # 새 Python 프로세스 시작 후 현재 프로세스 종료
-            subprocess.Popen([sys.executable] + sys.argv)
-            sys.exit(0)
+            _do_restart(applied, 'github')
+
+        # 재시작 없이 정상 실행 시 카운터 초기화
+        if _marker_path.exists():
+            try:
+                _marker_path.write_text(_json.dumps({
+                    "applied_count": 0, "version": config.version, "restart_count": 0
+                }), encoding='utf-8')
+            except Exception:
+                pass
 
         patch_system._startup_patches_applied = applied
     except Exception as e:
@@ -252,16 +279,7 @@ def main():
         try:
             local = patch_system.check_and_apply_patches()
             if local > 0:
-                import json as _json
-                marker = Path(__file__).parent.parent / "data" / "just_updated.json"
-                marker.parent.mkdir(exist_ok=True)
-                marker.write_text(_json.dumps({
-                    "applied_count": local,
-                    "version": config.version
-                }), encoding='utf-8')
-                logger.info(f"로컬 패치 {local}개 적용 완료. 자동 재시작...")
-                subprocess.Popen([sys.executable] + sys.argv)
-                sys.exit(0)
+                _do_restart(local, 'local')
             patch_system._startup_patches_applied = local
         except Exception as e2:
             logger.error(f"로컬 패치 적용 오류: {e2}")

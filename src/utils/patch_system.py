@@ -163,11 +163,12 @@ class PatchSystem:
         logger.info(f"패치 적용 시작: {patch_id} - {patch_info.get('description', '')}")
 
         try:
-            # 백업 생성 (실패해도 패치 진행)
+            # 백업 생성 (실패 시 패치 중단 — 롤백 불가 방지)
             try:
                 self._create_backup()
             except Exception as be:
-                logger.warning(f"백업 생성 실패 (패치는 계속 진행): {be}")
+                logger.error(f"백업 생성 실패, 패치 중단: {be}")
+                return False
 
             # 파일 복사
             files = patch_info.get('files', [])

@@ -15,6 +15,7 @@ from ..utils.settings_manager import settings_manager
 from ..utils.path_manager import path_manager
 from ..utils.update_manager import update_manager
 from ..utils.telegram_notifier import telegram_notifier
+from ..utils.erp_macro import erp_macro
 
 
 # ============================================================================
@@ -119,7 +120,8 @@ def authenticate(user_id: str, password: str) -> Dict[str, Any]:
                 'role': result['role'],
                 'tray_mode': bool(result.get('tray_mode', 0)),
                 'leave_report_edit': bool(result.get('leave_report_edit', 0)),
-                'can_write': bool(result.get('can_write', 0))
+                'can_write': bool(result.get('can_write', 0)),
+                'erp_input': bool(result.get('erp_input', 0))
             }
         }
     except Exception as e:
@@ -2692,6 +2694,145 @@ def admin_set_write_permission(user_id: str, enabled: bool, admin_id: str) -> Di
     except Exception as e:
         logger.error(f"쓰기 권한 설정 오류: {e}")
         return {'success': False, 'message': '쓰기 권한 설정 중 오류가 발생했습니다.'}
+
+
+@eel.expose
+def admin_set_erp_input(user_id: str, enabled: bool, admin_id: str) -> Dict[str, Any]:
+    """ERP 입력 자동화 권한 부여/해제 (관리자 전용)"""
+    try:
+        with auth_manager.get_connection() as conn:
+            row = conn.execute(
+                'SELECT role FROM auth_users WHERE user_id = ?', (admin_id,)
+            ).fetchone()
+        if not row or row['role'] != 'admin':
+            return {'success': False, 'message': '관리자 권한 필요'}
+        ok = auth_manager.set_erp_input(user_id, bool(enabled))
+        if not ok:
+            return {'success': False, 'message': 'DB 업데이트 실패'}
+        action = 'ERP입력 권한 부여' if enabled else 'ERP입력 권한 해제'
+        db.add_activity_log(admin_id, 'set_erp_input', f'{user_id} → {action}')
+        return {'success': True}
+    except Exception as e:
+        logger.error(f"ERP 입력 권한 설정 오류: {e}")
+        return {'success': False, 'message': 'ERP 입력 권한 설정 중 오류가 발생했습니다.'}
+
+
+@eel.expose
+def get_records_for_erp(start_date: str, end_date: str, user_id: str) -> Dict[str, Any]:
+    """날짜 범위 내 작업 레코드를 날짜별로 그룹화하여 반환 (ERP 입력용)"""
+    try:
+        # 권한 검증 (erp_input 또는 admin)
+        with auth_manager.get_connection() as conn:
+            row = conn.execute(
+                'SELECT role, erp_input FROM auth_users WHERE user_id = ? AND status = ?',
+                (user_id, 'active')
+            ).fetchone()
+        if not row:
+            return {'success': False, 'message': '유효하지 않은 사용자입니다.'}
+        if row['role'] != 'admin' and not bool(row['erp_input']):
+            return {'success': False, 'message': 'ERP 입력 권한이 없습니다.'}
+
+        # 날짜 범위 검증
+        if not start_date or not end_date or len(start_date) != 10 or len(end_date) != 10:
+            return {'success': False, 'message': '날짜 형식이 올바르지 않습니다.'}
+
+        # 작업 레코드 조회 (빈 레코드 제외)
+        with db.get_connection() as conn:
+            rows = conn.execute('''
+                SELECT date, record_number, contract_number, work_content, leader, teammates
+                FROM work_records
+                WHERE date >= ? AND date <= ?
+                  AND (contract_number != '' OR work_content != '')
+                ORDER BY date ASC, record_number ASC
+            ''', (start_date, end_date)).fetchall()
+
+        # 날짜별 그룹핑
+        from collections import defaultdict
+        grouped: dict = defaultdict(list)
+        for row in rows:
+            grouped[row['date']].append({
+                'recordNumber': row['record_number'],
+                'contractNumber': row['contract_number'] or '',
+                'workContent': row['work_content'] or '',
+                'leader': row['leader'] or '',
+                'teammates': row['teammates'] or '',
+            })
+
+        dates = [{'date': d, 'records': grouped[d]} for d in sorted(grouped.keys())]
+        return {'success': True, 'dates': dates}
+    except Exception as e:
+        logger.error(f"ERP 레코드 조회 오류: {e}")
+        return {'success': False, 'message': '레코드 조회 중 오류가 발생했습니다.'}
+
+
+@eel.expose
+def start_erp_macro(records_json: str, user_id: str) -> Dict[str, Any]:
+    """백그라운드 스레드에서 ERP 매크로 시작"""
+    try:
+        import json as _json
+        # 권한 검증
+        with auth_manager.get_connection() as conn:
+            row = conn.execute(
+                'SELECT role, erp_input FROM auth_users WHERE user_id = ? AND status = ?',
+                (user_id, 'active')
+            ).fetchone()
+        if not row:
+            return {'success': False, 'message': '유효하지 않은 사용자입니다.'}
+        if row['role'] != 'admin' and not bool(row['erp_input']):
+            return {'success': False, 'message': 'ERP 입력 권한이 없습니다.'}
+
+        if erp_macro.get_status()['running']:
+            return {'success': False, 'message': '이미 실행 중입니다.'}
+
+        dates_records = _json.loads(records_json)
+        _start_tracked_thread(target=erp_macro.run, args=(dates_records,))
+        return {'success': True, 'message': '매크로가 시작되었습니다.'}
+    except Exception as e:
+        logger.error(f"ERP 매크로 시작 오류: {e}")
+        return {'success': False, 'message': 'ERP 매크로 시작 중 오류가 발생했습니다.'}
+
+
+@eel.expose
+def stop_erp_macro(user_id: str) -> Dict[str, Any]:
+    """실행 중인 ERP 매크로 중단"""
+    try:
+        # 권한 검증 (erp_input 또는 admin)
+        with auth_manager.get_connection() as conn:
+            row = conn.execute(
+                'SELECT role, erp_input FROM auth_users WHERE user_id = ? AND status = ?',
+                (user_id, 'active')
+            ).fetchone()
+        if not row:
+            return {'success': False, 'message': '유효하지 않은 사용자입니다.'}
+        if row['role'] != 'admin' and not bool(row['erp_input']):
+            return {'success': False, 'message': 'ERP 입력 권한이 없습니다.'}
+
+        erp_macro.stop()
+        return {'success': True, 'message': '매크로 중단 요청이 전송되었습니다.'}
+    except Exception as e:
+        logger.error(f"ERP 매크로 중단 오류: {e}")
+        return {'success': False, 'message': 'ERP 매크로 중단 중 오류가 발생했습니다.'}
+
+
+@eel.expose
+def get_erp_macro_status(user_id: str) -> Dict[str, Any]:
+    """매크로 진행 상태 조회"""
+    try:
+        with auth_manager.get_connection() as conn:
+            row = conn.execute(
+                'SELECT role, erp_input FROM auth_users WHERE user_id = ? AND status = ?',
+                (user_id, 'active')
+            ).fetchone()
+        if not row:
+            return {'success': False, 'message': '유효하지 않은 사용자입니다.'}
+        if row['role'] != 'admin' and not bool(row['erp_input']):
+            return {'success': False, 'message': 'ERP 입력 권한이 없습니다.'}
+
+        status = erp_macro.get_status()
+        return {'success': True, **status}
+    except Exception as e:
+        logger.error(f"ERP 상태 조회 오류: {e}")
+        return {'success': False, 'message': '상태 조회 중 오류가 발생했습니다.'}
 
 
 @eel.expose

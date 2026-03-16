@@ -116,6 +116,11 @@ class AuthManager:
                 cursor.execute("UPDATE auth_users SET can_write = 1 WHERE role = 'admin'")
             except sqlite3.OperationalError:
                 pass  # 이미 존재
+            # ERP 입력 자동화 권한 컬럼 추가 (0=숨김(기본), 1=ERP 입력 탭 표시)
+            try:
+                cursor.execute('ALTER TABLE auth_users ADD COLUMN erp_input INTEGER DEFAULT 0')
+            except sqlite3.OperationalError:
+                pass  # 이미 존재
 
             # 텔레그램 연결 코드 테이블
             cursor.execute('''
@@ -300,27 +305,36 @@ class AuthManager:
                 try:
                     cursor.execute('''
                         SELECT id, user_id, full_name, role, status, created_at, last_login,
-                               leave_report_edit, can_write
+                               leave_report_edit, can_write, erp_input
                         FROM auth_users
                         ORDER BY created_at DESC
                     ''')
                 except sqlite3.OperationalError:
-                    # can_write 컬럼 아직 없는 경우 (업그레이드 과도기)
+                    # erp_input 컬럼 아직 없는 경우 (업그레이드 과도기)
                     try:
                         cursor.execute('''
                             SELECT id, user_id, full_name, role, status, created_at, last_login,
-                                   leave_report_edit, 0 AS can_write
+                                   leave_report_edit, can_write, 0 AS erp_input
                             FROM auth_users
                             ORDER BY created_at DESC
                         ''')
                     except sqlite3.OperationalError:
-                        # leave_report_edit 컬럼도 없는 경우 (구버전)
-                        cursor.execute('''
-                            SELECT id, user_id, full_name, role, status, created_at, last_login,
-                                   0 AS leave_report_edit, 0 AS can_write
-                            FROM auth_users
-                            ORDER BY created_at DESC
-                        ''')
+                        # can_write 컬럼 아직 없는 경우 (업그레이드 과도기)
+                        try:
+                            cursor.execute('''
+                                SELECT id, user_id, full_name, role, status, created_at, last_login,
+                                       leave_report_edit, 0 AS can_write, 0 AS erp_input
+                                FROM auth_users
+                                ORDER BY created_at DESC
+                            ''')
+                        except sqlite3.OperationalError:
+                            # leave_report_edit 컬럼도 없는 경우 (구버전)
+                            cursor.execute('''
+                                SELECT id, user_id, full_name, role, status, created_at, last_login,
+                                       0 AS leave_report_edit, 0 AS can_write, 0 AS erp_input
+                                FROM auth_users
+                                ORDER BY created_at DESC
+                            ''')
                 rows = cursor.fetchall()
                 return [dict(row) for row in rows]
         except Exception as e:
@@ -391,6 +405,19 @@ class AuthManager:
             return True
         except Exception as e:
             logger.error(f"can_write 설정 실패: {e}")
+            return False
+
+    def set_erp_input(self, user_id: str, enabled: bool) -> bool:
+        """ERP 입력 자동화 권한 설정 (관리자가 사용자에게 부여/해제)"""
+        try:
+            with self.get_connection() as conn:
+                conn.execute(
+                    'UPDATE auth_users SET erp_input = ? WHERE user_id = ?',
+                    (1 if enabled else 0, user_id)
+                )
+            return True
+        except Exception as e:
+            logger.error(f"erp_input 설정 실패: {e}")
             return False
 
     def get_can_write_by_fullname(self, full_name: str) -> bool:

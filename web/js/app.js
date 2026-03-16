@@ -94,6 +94,12 @@ function showView(view) {
         if (btnSettings) btnSettings.className = 'px-4 py-2 rounded-lg bg-blue-600 text-white';
         if (settingsView) settingsView.classList.remove('hidden');
         loadUserSettings();
+        // ERP 입력 탭 버튼 — erp_input 권한 또는 admin인 경우에만 표시
+        const erpTabBtn = document.getElementById('btnSettingsErp');
+        if (erpTabBtn) {
+            erpTabBtn.classList.toggle('hidden',
+                !currentUser?.erp_input && currentUser?.role !== 'admin');
+        }
         showSettingsTab('userSettings'); // 기본 탭: 사용자 설정
     } else if (view === 'employee') {
         if (btnEmployee) btnEmployee.className = 'px-4 py-2 rounded-lg bg-blue-600 text-white';
@@ -1011,9 +1017,14 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
-// JS 인라인 이벤트 핸들러 내 문자열 안전 처리 (홑따옴표 이스케이프)
+// JS 인라인 이벤트 핸들러 내 문자열 안전 처리 (홑따옴표·역슬래시·개행 이스케이프)
 function escapeJs(text) {
-    return String(text || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    return String(text || '')
+        .replace(/\\/g, '\\\\')
+        .replace(/'/g, "\\'")
+        .replace(/"/g, '\\"')
+        .replace(/\n/g, '\\n')
+        .replace(/\r/g, '\\r');
 }
 
 function setReplyTo(commentId, userName) {
@@ -2240,7 +2251,7 @@ function _renderSortedSearch() {
     let outsourceHtml = '';
     if (outsourceEntries.length > 0) {
         const outsourceItems = outsourceEntries.map(([company, data]) =>
-            `<span class="font-semibold text-orange-600 cursor-pointer hover:underline" onclick="toggleOutsourceDetail(this, '${escapeHtml(company)}')">${escapeHtml(company)}</span>: ${data.total}공`
+            `<span class="font-semibold text-orange-600 cursor-pointer hover:underline" onclick="toggleOutsourceDetail(this, '${escapeJs(company)}')">${escapeHtml(company)}</span>: ${data.total}공`
         ).join(' &nbsp;|&nbsp; ');
         const detailSections = outsourceEntries.map(([company, data]) => {
             const personItems = Object.entries(data.persons)
@@ -2846,6 +2857,30 @@ async function toggleWritePermission(userId, enabled) {
     }
 }
 
+async function toggleErpInput(userId, enabled) {
+    if (!currentUser) return;
+    const btn = document.querySelector(`button[onclick*="toggleErpInput('${userId}'"]`);
+    if (btn) { btn.disabled = true; btn.textContent = '처리중...'; }
+    try {
+        const r = await eel.admin_set_erp_input(userId, enabled, currentUser.user_id)();
+        if (r && r.success) {
+            showToast(enabled ? 'ERP입력 권한이 부여되었습니다.' : 'ERP입력 권한이 해제되었습니다.', 'success');
+            if (typeof loadAllUsers === 'function') loadAllUsers();
+        } else {
+            showToast('ERP입력 권한 설정 실패: ' + escapeHtml(r?.message || ''), 'error');
+            if (btn) { btn.disabled = false; btn.textContent = 'ERP입력'; }
+        }
+    } catch(e) {
+        showToast('오류가 발생했습니다.', 'error');
+        if (btn) { btn.disabled = false; btn.textContent = 'ERP입력'; }
+    } finally {
+        if (btn && btn.isConnected && btn.disabled) {
+            btn.disabled = false;
+            btn.textContent = 'ERP입력';
+        }
+    }
+}
+
 async function loadLeaveEmployeeList() {
     try {
         const names = await eel.get_employee_names_for_leave()();
@@ -2875,7 +2910,7 @@ async function searchEmployeeLeave() {
         const info = await eel.get_employee_leave_info(name)();
         renderLeaveResult(info, name);
     } catch (e) {
-        if (resultDiv) resultDiv.innerHTML = '<p class="text-red-500">조회 실패: ' + e.message + '</p>';
+        if (resultDiv) resultDiv.innerHTML = '<p class="text-red-500">조회 실패: ' + escapeHtml(e.message) + '</p>';
     }
 }
 
@@ -3147,22 +3182,27 @@ async function deleteLeaveUsage(id, employeeName) {
 function showSettingsTab(tab) {
     const userTab = document.getElementById('userSettingsTab');
     const logTab  = document.getElementById('activityLogTab');
+    const erpTab  = document.getElementById('erpInputTab');
     const btnUser = document.getElementById('btnSettingsUser');
     const btnLog  = document.getElementById('btnSettingsLog');
+    const btnErp  = document.getElementById('btnSettingsErp');
 
     const activeClass   = 'px-6 py-2 rounded-lg bg-blue-600 text-white font-semibold';
     const inactiveClass = 'px-6 py-2 rounded-lg bg-slate-200 font-semibold';
 
+    // 모든 탭 숨기기
+    [userTab, logTab, erpTab].forEach(t => t?.classList.add('hidden'));
+    [btnUser, btnLog, btnErp].forEach(b => { if (b) b.className = inactiveClass; });
+
     if (tab === 'activityLog') {
-        if (userTab) userTab.classList.add('hidden');
         if (logTab)  logTab.classList.remove('hidden');
-        if (btnUser) btnUser.className = inactiveClass;
-        if (btnLog)  btnLog.className  = activeClass;
+        if (btnLog)  btnLog.className = activeClass;
         loadActivityLog(50);
+    } else if (tab === 'erpInput') {
+        if (erpTab)  erpTab.classList.remove('hidden');
+        if (btnErp)  btnErp.className = activeClass;
     } else {
-        if (logTab)  logTab.classList.add('hidden');
         if (userTab) userTab.classList.remove('hidden');
-        if (btnLog)  btnLog.className  = inactiveClass;
         if (btnUser) btnUser.className = activeClass;
     }
 }
@@ -3428,4 +3468,131 @@ async function loadStatsData() {
 function statsChangeYear(delta) {
     _statsYear += delta;
     loadStatsData();
+}
+
+// ============================================================================
+// ERP 입력 자동화
+// ============================================================================
+
+let _erpPollInterval = null;
+
+async function loadErpRecords() {
+    const startDate = document.getElementById('erpStartDate')?.value;
+    const endDate   = document.getElementById('erpEndDate')?.value;
+    const listEl    = document.getElementById('erpRecordList');
+    if (!startDate || !endDate) {
+        showToast('시작일과 종료일을 입력하세요.', 'warning'); return;
+    }
+    if (!listEl) return;
+    listEl.innerHTML = '<p class="text-slate-400 text-sm">조회 중...</p>';
+    try {
+        const res = await eel.get_records_for_erp(startDate, endDate, currentUser?.user_id || '')();
+        if (!res.success) {
+            listEl.innerHTML = `<p class="text-red-500 text-sm">${escapeHtml(res.message)}</p>`; return;
+        }
+        if (!res.dates || res.dates.length === 0) {
+            listEl.innerHTML = '<p class="text-slate-400 text-sm">해당 기간에 입력된 작업 레코드가 없습니다.</p>'; return;
+        }
+        renderErpRecordList(res.dates);
+    } catch (e) {
+        listEl.innerHTML = `<p class="text-red-500 text-sm">조회 실패: ${escapeHtml(e.message || '')}</p>`;
+    }
+}
+
+function renderErpRecordList(dates) {
+    const listEl = document.getElementById('erpRecordList');
+    if (!listEl) return;
+    listEl.innerHTML = dates.map(day => `
+        <div class="border border-slate-200 rounded-lg p-3">
+            <div class="flex items-center gap-2 mb-2">
+                <input type="checkbox" id="erpDay_${escapeHtml(day.date)}" checked
+                       class="w-4 h-4 accent-blue-600 erpDayCheck" data-date="${escapeHtml(day.date)}">
+                <label for="erpDay_${escapeHtml(day.date)}" class="font-semibold text-sm cursor-pointer">
+                    ${escapeHtml(day.date)} (${day.records.length}건)
+                </label>
+            </div>
+            <ul class="text-xs text-slate-600 ml-6 space-y-0.5">
+                ${day.records.map(r => `
+                    <li class="truncate">・ ${escapeHtml(r.contractNumber)} ${escapeHtml(r.workContent)}</li>
+                `).join('')}
+            </ul>
+        </div>
+    `).join('');
+}
+
+async function startErpMacro() {
+    // 체크된 날짜의 레코드만 수집
+    const checks = document.querySelectorAll('.erpDayCheck:checked');
+    if (checks.length === 0) {
+        showToast('입력할 날짜를 선택하세요.', 'warning'); return;
+    }
+    const listEl = document.getElementById('erpRecordList');
+    const startDate = document.getElementById('erpStartDate')?.value;
+    const endDate   = document.getElementById('erpEndDate')?.value;
+
+    // 선택된 날짜 목록 재조회
+    try {
+        const res = await eel.get_records_for_erp(startDate, endDate, currentUser?.user_id || '')();
+        if (!res.success) { showToast(res.message, 'error'); return; }
+
+        const selectedDates = new Set(Array.from(checks).map(c => c.dataset.date));
+        const filtered = (res.dates || []).filter(d => selectedDates.has(d.date));
+        if (filtered.length === 0) { showToast('선택된 날짜에 레코드가 없습니다.', 'warning'); return; }
+
+        const startRes = await eel.start_erp_macro(JSON.stringify(filtered), currentUser?.user_id || '')();
+        if (!startRes.success) { showToast(startRes.message, 'error'); return; }
+
+        document.getElementById('btnErpStart')?.classList.add('hidden');
+        document.getElementById('btnErpStop')?.classList.remove('hidden');
+        document.getElementById('erpProgressBar')?.classList.remove('hidden');
+        document.getElementById('erpLog')?.classList.remove('hidden');
+        showToast('ERP 입력 매크로를 시작합니다.', 'success');
+        _erpPollInterval = setInterval(pollErpStatus, 1000);
+    } catch (e) {
+        showToast('매크로 시작 중 오류: ' + escapeHtml(e.message || ''), 'error');
+    }
+}
+
+async function stopErpMacro() {
+    try {
+        const res = await eel.stop_erp_macro(currentUser?.user_id || '')();
+        showToast(res.success ? '중단 요청이 전송되었습니다.' : res.message,
+                  res.success ? 'warning' : 'error');
+    } catch (e) {
+        showToast('중단 요청 중 오류가 발생했습니다.', 'error');
+    }
+}
+
+async function pollErpStatus() {
+    try {
+        const res = await eel.get_erp_macro_status(currentUser?.user_id || '')();
+        if (!res.success) return;
+
+        // 진행 바
+        const fill = document.getElementById('erpProgressFill');
+        const text = document.getElementById('erpProgressText');
+        if (fill && res.total > 0) {
+            const pct = Math.round(res.progress / res.total * 100);
+            fill.style.width = pct + '%';
+            if (text) text.textContent = `${res.progress} / ${res.total} (${pct}%) — ${res.current || ''}`;
+        }
+
+        // 로그
+        const logEl = document.getElementById('erpLog');
+        if (logEl && res.log) {
+            logEl.textContent = res.log.join('\n');
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+
+        // 완료 감지
+        if (!res.running) {
+            clearInterval(_erpPollInterval);
+            _erpPollInterval = null;
+            document.getElementById('btnErpStart')?.classList.remove('hidden');
+            document.getElementById('btnErpStop')?.classList.add('hidden');
+            showToast('ERP 입력이 완료되었습니다.', 'success');
+        }
+    } catch (e) {
+        // 일시적 통신 오류 — 조용히 무시
+    }
 }

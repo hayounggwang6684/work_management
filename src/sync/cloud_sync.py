@@ -200,36 +200,65 @@ class CloudSync:
         
         return success
     
+    def _get_db_max_updated_at(self, db_path) -> str:
+        """DB의 work_records MAX(updated_at) 조회 (충돌 해소용, 실패 시 '' 반환)"""
+        try:
+            import sqlite3 as _sqlite3
+            conn = _sqlite3.connect(str(db_path), timeout=5)
+            cursor = conn.cursor()
+            cursor.execute("SELECT MAX(updated_at) FROM work_records")
+            row = cursor.fetchone()
+            conn.close()
+            if row and row[0]:
+                return row[0]  # e.g. "2026-03-05T14:23:00.123456"
+            return ''
+        except Exception as e:
+            logger.warning(f"DB updated_at 조회 실패 ({db_path.name}): {e}")
+            return ''
+
     def _smart_sync(self) -> bool:
         """
-        스마트 동기화: 로컬과 클라우드 중 최신 파일 사용
+        스마트 동기화: 로컬과 클라우드 중 최신 DB 사용
+        파일 mtime 대신 work_records.updated_at 기준으로 비교 (더 정확)
         """
         try:
             cloud_db_path = self.cloud_folder / self.local_db_path.name
-            
+
             # 둘 다 없으면 패스
             if not self.local_db_path.exists() and not cloud_db_path.exists():
                 return True
-            
+
             # 로컬만 있으면 클라우드로
             if self.local_db_path.exists() and not cloud_db_path.exists():
                 return self.sync_to_cloud()
-            
+
             # 클라우드만 있으면 로컬로
             if not self.local_db_path.exists() and cloud_db_path.exists():
                 return self.sync_from_cloud()
-            
-            # 둘 다 있으면 최신 파일 사용
-            local_mtime = self.local_db_path.stat().st_mtime
-            cloud_mtime = cloud_db_path.stat().st_mtime
-            
-            if cloud_mtime > local_mtime:
-                logger.info("클라우드 파일이 더 최신입니다.")
-                return self.sync_from_cloud()
+
+            # 둘 다 있으면 work_records.updated_at 기준으로 최신 DB 사용
+            local_updated = self._get_db_max_updated_at(self.local_db_path)
+            cloud_updated = self._get_db_max_updated_at(cloud_db_path)
+
+            if local_updated or cloud_updated:
+                # updated_at 비교 가능한 경우 (ISO 문자열 비교)
+                if cloud_updated > local_updated:
+                    logger.info(f"클라우드 DB가 더 최신입니다. (cloud={cloud_updated}, local={local_updated})")
+                    return self.sync_from_cloud()
+                else:
+                    logger.info(f"로컬 DB가 더 최신입니다. (local={local_updated}, cloud={cloud_updated})")
+                    return self.sync_to_cloud()
             else:
-                logger.info("로컬 파일이 더 최신입니다.")
-                return self.sync_to_cloud()
-                
+                # updated_at 조회 실패 시 기존 mtime 방식 fallback
+                local_mtime = self.local_db_path.stat().st_mtime
+                cloud_mtime = cloud_db_path.stat().st_mtime
+                if cloud_mtime > local_mtime:
+                    logger.info("클라우드 파일이 더 최신입니다. (mtime fallback)")
+                    return self.sync_from_cloud()
+                else:
+                    logger.info("로컬 파일이 더 최신입니다. (mtime fallback)")
+                    return self.sync_to_cloud()
+
         except Exception as e:
             logger.error(f"스마트 동기화 실패: {e}")
             return False
@@ -397,8 +426,10 @@ class CloudSync:
                 lock_data = {'timestamp': datetime.now().isoformat(), 'source': 'external'}
                 with open(lock_new, 'w', encoding='utf-8') as f:
                     json.dump(lock_data, f, indent=2, ensure_ascii=False)
+                logger.info(f"잠금 파일 생성 완료: {lock_new}")
             except Exception as e:
-                logger.warning(f"잠금 파일 생성 실패 (무시): {e}")
+                logger.error(f"잠금 파일 생성 실패 (접속 중단): {e}")
+                return {'success': False, 'message': f'동기화 잠금을 설정할 수 없습니다. ({e})\n디스크 공간 또는 권한을 확인하세요.'}
 
             # 7. 설정 저장 및 인스턴스 갱신
             config.set('database.cloud_path', cloud_path)
