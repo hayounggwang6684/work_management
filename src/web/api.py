@@ -2717,20 +2717,36 @@ def admin_set_erp_input(user_id: str, enabled: bool, admin_id: str) -> Dict[str,
         return {'success': False, 'message': 'ERP 입력 권한 설정 중 오류가 발생했습니다.'}
 
 
+def _check_erp_permission(user_id: str) -> Optional[str]:
+    """ERP 권한 검증 헬퍼.
+    통과하면 None 반환, 실패하면 오류 메시지 문자열 반환.
+    erp_input 컬럼이 없는 구버전 DB도 안전하게 처리."""
+    try:
+        with auth_manager.get_connection() as conn:
+            row = conn.execute(
+                'SELECT * FROM auth_users WHERE user_id = ? AND status = ?',
+                (user_id, 'active')
+            ).fetchone()
+        if not row:
+            return '유효하지 않은 사용자입니다.'
+        user = dict(row)
+        if user.get('role') == 'admin':
+            return None  # admin 무조건 허용
+        if not bool(user.get('erp_input', 0)):
+            return 'ERP 입력 권한이 없습니다. 관리자에게 권한 부여를 요청하세요.'
+        return None
+    except Exception as e:
+        logger.error(f"ERP 권한 검증 오류: {e}")
+        return '권한 검증 중 오류가 발생했습니다.'
+
+
 @eel.expose
 def get_records_for_erp(start_date: str, end_date: str, user_id: str) -> Dict[str, Any]:
     """날짜 범위 내 작업 레코드를 날짜별로 그룹화하여 반환 (ERP 입력용)"""
     try:
-        # 권한 검증 (erp_input 또는 admin)
-        with auth_manager.get_connection() as conn:
-            row = conn.execute(
-                'SELECT role, erp_input FROM auth_users WHERE user_id = ? AND status = ?',
-                (user_id, 'active')
-            ).fetchone()
-        if not row:
-            return {'success': False, 'message': '유효하지 않은 사용자입니다.'}
-        if row['role'] != 'admin' and not bool(row['erp_input']):
-            return {'success': False, 'message': 'ERP 입력 권한이 없습니다.'}
+        err = _check_erp_permission(user_id)
+        if err:
+            return {'success': False, 'message': err}
 
         # 날짜 범위 검증
         if not start_date or not end_date or len(start_date) != 10 or len(end_date) != 10:
@@ -2770,16 +2786,9 @@ def start_erp_macro(records_json: str, user_id: str) -> Dict[str, Any]:
     """백그라운드 스레드에서 ERP 매크로 시작"""
     try:
         import json as _json
-        # 권한 검증
-        with auth_manager.get_connection() as conn:
-            row = conn.execute(
-                'SELECT role, erp_input FROM auth_users WHERE user_id = ? AND status = ?',
-                (user_id, 'active')
-            ).fetchone()
-        if not row:
-            return {'success': False, 'message': '유효하지 않은 사용자입니다.'}
-        if row['role'] != 'admin' and not bool(row['erp_input']):
-            return {'success': False, 'message': 'ERP 입력 권한이 없습니다.'}
+        err = _check_erp_permission(user_id)
+        if err:
+            return {'success': False, 'message': err}
 
         if erp_macro.get_status()['running']:
             return {'success': False, 'message': '이미 실행 중입니다.'}
@@ -2796,16 +2805,9 @@ def start_erp_macro(records_json: str, user_id: str) -> Dict[str, Any]:
 def stop_erp_macro(user_id: str) -> Dict[str, Any]:
     """실행 중인 ERP 매크로 중단"""
     try:
-        # 권한 검증 (erp_input 또는 admin)
-        with auth_manager.get_connection() as conn:
-            row = conn.execute(
-                'SELECT role, erp_input FROM auth_users WHERE user_id = ? AND status = ?',
-                (user_id, 'active')
-            ).fetchone()
-        if not row:
-            return {'success': False, 'message': '유효하지 않은 사용자입니다.'}
-        if row['role'] != 'admin' and not bool(row['erp_input']):
-            return {'success': False, 'message': 'ERP 입력 권한이 없습니다.'}
+        err = _check_erp_permission(user_id)
+        if err:
+            return {'success': False, 'message': err}
 
         erp_macro.stop()
         return {'success': True, 'message': '매크로 중단 요청이 전송되었습니다.'}
@@ -2818,15 +2820,9 @@ def stop_erp_macro(user_id: str) -> Dict[str, Any]:
 def get_erp_macro_status(user_id: str) -> Dict[str, Any]:
     """매크로 진행 상태 조회"""
     try:
-        with auth_manager.get_connection() as conn:
-            row = conn.execute(
-                'SELECT role, erp_input FROM auth_users WHERE user_id = ? AND status = ?',
-                (user_id, 'active')
-            ).fetchone()
-        if not row:
-            return {'success': False, 'message': '유효하지 않은 사용자입니다.'}
-        if row['role'] != 'admin' and not bool(row['erp_input']):
-            return {'success': False, 'message': 'ERP 입력 권한이 없습니다.'}
+        err = _check_erp_permission(user_id)
+        if err:
+            return {'success': False, 'message': err}
 
         status = erp_macro.get_status()
         return {'success': True, **status}

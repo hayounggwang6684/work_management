@@ -806,26 +806,25 @@ class AuthManager:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
-                    'SELECT user_id, full_name, role, status, tray_mode, leave_report_edit, can_write FROM auth_users WHERE user_id = ?',
+                    'SELECT * FROM auth_users WHERE user_id = ?',
                     (user_id,)
                 )
                 row = cursor.fetchone()
                 if not row:
                     return None
-                uid, full_name, role, status = row['user_id'], row['full_name'], row['role'], row['status']
-                tray_mode = bool(row['tray_mode']) if row['tray_mode'] else False
-                leave_report_edit = bool(row['leave_report_edit']) if row['leave_report_edit'] else False
+                user = dict(row)
+                uid, full_name, role, status = user['user_id'], user['full_name'], user['role'], user['status']
+                tray_mode = bool(user.get('tray_mode', 0))
+                leave_report_edit = bool(user.get('leave_report_edit', 0))
                 # admin은 can_write 컬럼 무관하게 항상 쓰기 허용
-                try:
-                    can_write = bool(row['can_write']) if row['can_write'] else (role == 'admin')
-                except Exception:
-                    can_write = (role == 'admin')
+                can_write = bool(user.get('can_write', 0)) or (role == 'admin')
+                erp_input = bool(user.get('erp_input', 0))
                 if status not in ('active', 'approved'):
                     return None
             logger.info(f"자동 로그인 토큰 검증 성공: {uid}")
             return {'user_id': uid, 'full_name': full_name, 'role': role,
                     'tray_mode': tray_mode, 'leave_report_edit': leave_report_edit,
-                    'can_write': can_write}
+                    'can_write': can_write, 'erp_input': erp_input}
         except Exception as e:
             logger.error(f"Remember token 검증 실패: {e}")
             return None
