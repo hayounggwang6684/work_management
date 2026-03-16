@@ -712,6 +712,15 @@
                     <div id="erpInputTab" class="hidden">
                         <h3 class="font-semibold text-lg mb-4">ERP 자동 입력 (선진종합시스템)</h3>
 
+                        <!-- 관리자 전용 권한 관리 패널 -->
+                        <div id="erpAdminSection" class="hidden mb-5 p-3 bg-purple-50 border border-purple-200 rounded-lg">
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="text-sm font-semibold text-purple-700">🔑 ERP 권한 관리 (관리자 전용)</span>
+                                <button onclick="loadErpPermList()" class="text-xs text-purple-500 hover:underline">새로고침</button>
+                            </div>
+                            <div id="erpPermList" class="space-y-1 text-sm"></div>
+                        </div>
+
                         <!-- 날짜 범위 조회 -->
                         <div class="flex flex-wrap gap-2 mb-4 items-center">
                             <label class="text-sm font-medium text-slate-700">기간</label>
@@ -738,6 +747,10 @@
                             <button id="btnErpStop" onclick="stopErpMacro()"
                                     class="hidden px-5 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold text-sm">
                                 ■ 중단
+                            </button>
+                            <button id="btnInstallErpDeps" onclick="installErpDeps()"
+                                    class="hidden px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white text-sm rounded-lg font-semibold">
+                                📦 필수 라이브러리 설치
                             </button>
                         </div>
 

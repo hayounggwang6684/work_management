@@ -4,12 +4,12 @@
 
 [Setup]
 AppName=湲덉씪?묒뾽?꾪솴 愿由?
-AppVersion=2.1.12
+AppVersion=2.1.13
 AppPublisher=Your Company
 DefaultDirName={autopf}\WorkManagement
 DefaultGroupName=湲덉씪?묒뾽?꾪솴 愿由?
 OutputDir=dist\installer
-OutputBaseFilename=WorkManagement_Setup_v2.1.12
+OutputBaseFilename=WorkManagement_Setup_v2.1.13
 Compression=lzma2/max
 SolidCompression=yes
 ArchitecturesAllowed=x64compatible

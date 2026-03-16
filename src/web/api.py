@@ -2817,6 +2817,26 @@ def stop_erp_macro(user_id: str) -> Dict[str, Any]:
 
 
 @eel.expose
+def install_erp_deps(user_id: str) -> Dict[str, Any]:
+    """pyautogui, pywin32, pyperclip 자동 설치 (ERP 권한 필요)"""
+    try:
+        err = _check_erp_permission(user_id)
+        if err:
+            return {'success': False, 'message': err}
+        import subprocess
+        import sys
+        result = subprocess.run(
+            [sys.executable, '-m', 'pip', 'install', 'pyautogui', 'pywin32', 'pyperclip'],
+            capture_output=True, text=True, timeout=120
+        )
+        if result.returncode == 0:
+            return {'success': True, 'message': '설치 완료. 입력 시작 버튼을 다시 눌러주세요.'}
+        return {'success': False, 'message': '설치 실패: ' + (result.stderr or '')[-300:]}
+    except Exception:
+        return {'success': False, 'message': '요청 처리 중 오류가 발생했습니다.'}
+
+
+@eel.expose
 def get_erp_macro_status(user_id: str) -> Dict[str, Any]:
     """매크로 진행 상태 조회"""
     try:

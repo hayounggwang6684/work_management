@@ -2857,6 +2857,30 @@ async function toggleWritePermission(userId, enabled) {
     }
 }
 
+async function loadErpPermList() {
+    const listEl = document.getElementById('erpPermList');
+    if (!listEl) return;
+    try {
+        const res = await eel.admin_get_all_users(currentUser?.user_id || '')();
+        const users = Array.isArray(res) ? res : (res?.users || []);
+        if (!users.length) { listEl.innerHTML = '<p class="text-slate-400 text-xs">사용자 없음</p>'; return; }
+        listEl.innerHTML = users
+            .filter(u => u.user_id !== 'guest')
+            .map(u => `
+                <div class="flex items-center justify-between py-1 px-2 rounded hover:bg-purple-100">
+                    <span class="text-slate-700">${escapeHtml(u.full_name)} <span class="text-xs text-slate-400">(${escapeHtml(u.user_id)})</span></span>
+                    <button onclick="toggleErpInput('${escapeJs(u.user_id)}', ${!u.erp_input})"
+                            class="px-3 py-0.5 text-xs rounded font-semibold ${u.erp_input
+                                ? 'bg-purple-600 text-white hover:bg-purple-700'
+                                : 'bg-slate-200 text-slate-600 hover:bg-slate-300'}">
+                        ${u.erp_input ? 'ERP ✓' : 'ERP 권한 없음'}
+                    </button>
+                </div>`).join('');
+    } catch(e) {
+        listEl.innerHTML = '<p class="text-red-400 text-xs">목록 로드 실패</p>';
+    }
+}
+
 async function toggleErpInput(userId, enabled) {
     if (!currentUser) return;
     const btn = document.querySelector(`button[onclick*="toggleErpInput('${userId}'"]`);
@@ -2866,6 +2890,7 @@ async function toggleErpInput(userId, enabled) {
         if (r && r.success) {
             showToast(enabled ? 'ERP입력 권한이 부여되었습니다.' : 'ERP입력 권한이 해제되었습니다.', 'success');
             if (typeof loadAllUsers === 'function') loadAllUsers();
+            if (typeof loadErpPermList === 'function') loadErpPermList();
         } else {
             showToast('ERP입력 권한 설정 실패: ' + escapeHtml(r?.message || ''), 'error');
             if (btn) { btn.disabled = false; btn.textContent = 'ERP입력'; }
@@ -3201,6 +3226,13 @@ function showSettingsTab(tab) {
     } else if (tab === 'erpInput') {
         if (erpTab)  erpTab.classList.remove('hidden');
         if (btnErp)  btnErp.className = activeClass;
+        // 관리자이면 권한 관리 섹션 표시 + 목록 로드
+        const adminSec = document.getElementById('erpAdminSection');
+        if (adminSec) {
+            const isAdmin = currentUser?.role === 'admin';
+            adminSec.classList.toggle('hidden', !isAdmin);
+            if (isAdmin) loadErpPermList();
+        }
     } else {
         if (userTab) userTab.classList.remove('hidden');
         if (btnUser) btnUser.className = activeClass;
@@ -3584,6 +3616,11 @@ async function pollErpStatus() {
             logEl.scrollTop = logEl.scrollHeight;
         }
 
+        // 라이브러리 누락 감지 → 설치 버튼 표시
+        if (res.log && res.log.some(l => l.includes('필수 라이브러리 누락'))) {
+            document.getElementById('btnInstallErpDeps')?.classList.remove('hidden');
+        }
+
         // 완료 감지
         if (!res.running) {
             clearInterval(_erpPollInterval);
@@ -3596,3 +3633,22 @@ async function pollErpStatus() {
         // 일시적 통신 오류 — 조용히 무시
     }
 }
+
+async function installErpDeps() {
+    const btn = document.getElementById('btnInstallErpDeps');
+    if (btn) { btn.disabled = true; btn.textContent = '설치 중...'; }
+    try {
+        const res = await eel.install_erp_deps(currentUser?.user_id || '')();
+        if (res?.success) {
+            showToast(res.message, 'success');
+            if (btn) btn.classList.add('hidden');
+        } else {
+            showToast('설치 실패: ' + escapeHtml(res?.message || ''), 'error');
+            if (btn) { btn.disabled = false; btn.textContent = '📦 필수 라이브러리 설치'; }
+        }
+    } catch(e) {
+        showToast('오류가 발생했습니다.', 'error');
+        if (btn) { btn.disabled = false; btn.textContent = '📦 필수 라이브러리 설치'; }
+    }
+}
+
