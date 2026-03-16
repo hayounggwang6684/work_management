@@ -3,7 +3,7 @@
 import eel
 import threading
 from datetime import datetime
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from ..business.work_record_service import work_record_service
 from ..business.calculations import separate_workers, split_manpower_by_type
 from ..database.db_manager import db
