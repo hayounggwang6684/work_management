@@ -584,6 +584,40 @@
                             </div>
                             <canvas id="manpowerChart" height="80"></canvas>
                         </div>
+                        <!-- KPI 카드 4개 -->
+                        <div id="kpiCards" class="hidden grid grid-cols-4 gap-3 mb-4">
+                            <div class="bg-white border rounded-lg p-3 text-center shadow-sm">
+                                <div class="text-xs text-slate-400 mb-1">연간 작업 건수</div>
+                                <div id="kpiTotalProjects" class="text-2xl font-bold text-slate-800">-</div>
+                                <div class="text-xs text-slate-400">건</div>
+                            </div>
+                            <div class="bg-white border rounded-lg p-3 text-center shadow-sm">
+                                <div class="text-xs text-slate-400 mb-1">준공 완료율</div>
+                                <div id="kpiCompletionRate" class="text-2xl font-bold text-green-600">-</div>
+                                <div class="text-xs text-slate-400">%</div>
+                                <div class="mt-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                                    <div id="kpiCompletionBar" class="h-full bg-green-500 rounded-full transition-all" style="width:0%"></div>
+                                </div>
+                            </div>
+                            <div class="bg-white border rounded-lg p-3 text-center shadow-sm">
+                                <div class="text-xs text-slate-400 mb-1">외주 비율</div>
+                                <div id="kpiOutsourcedRate" class="text-2xl font-bold text-orange-500">-</div>
+                                <div class="text-xs text-slate-400">%</div>
+                                <div class="mt-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                                    <div id="kpiOutsourcedBar" class="h-full bg-orange-400 rounded-full transition-all" style="width:0%"></div>
+                                </div>
+                            </div>
+                            <div class="bg-white border rounded-lg p-3 text-center shadow-sm">
+                                <div class="text-xs text-slate-400 mb-1">총 투입 공수</div>
+                                <div id="kpiTotalManpower" class="text-2xl font-bold text-blue-600">-</div>
+                                <div class="text-xs text-slate-400">공</div>
+                            </div>
+                        </div>
+                        <!-- 월별 작업 건수 꺾은선 차트 -->
+                        <div id="projectCountChartBox" class="hidden bg-slate-50 rounded-lg p-4 mb-4">
+                            <h3 class="font-semibold mb-3 text-slate-700">월별 작업 건수</h3>
+                            <canvas id="projectCountChart" height="60"></canvas>
+                        </div>
                         <!-- 2컬럼: 회사별 / 계약별 -->
                         <div class="grid grid-cols-2 gap-4">
                             <div class="bg-slate-50 rounded-lg p-4">

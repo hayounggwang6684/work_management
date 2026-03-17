@@ -170,6 +170,17 @@ class DatabaseManager:
                 )
             ''')
 
+            # board_projects 마일스톤 컬럼 마이그레이션
+            for _col in [
+                ('target_start_date', 'TEXT DEFAULT ""'),
+                ('target_end_date',   'TEXT DEFAULT ""'),
+                ('actual_end_date',   'TEXT DEFAULT ""'),
+            ]:
+                try:
+                    cursor.execute(f'ALTER TABLE board_projects ADD COLUMN {_col[0]} {_col[1]}')
+                except sqlite3.OperationalError:
+                    pass  # 이미 존재
+
             # 휴가자 현황 테이블 (날짜별 연차/반차/공가)
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS vacation_records (
@@ -680,7 +691,8 @@ class DatabaseManager:
                 now = datetime.now().isoformat()
                 fields = []
                 values = []
-                for key in ['contract_number', 'company', 'ship_name', 'engine_model', 'work_content', 'status']:
+                for key in ['contract_number', 'company', 'ship_name', 'engine_model', 'work_content', 'status',
+                            'target_start_date', 'target_end_date', 'actual_end_date']:
                     if key in data:
                         fields.append(f"{key} = ?")
                         values.append(data[key])

@@ -666,8 +666,13 @@ function renderReceptionCard(project) {
             </div>
             ${safeCn ? `<div class="text-xs text-slate-400 mt-0.5">${safeCn}</div>` : ''}
             <div class="text-xs mt-1 text-slate-700">${escapeHtml(workDesc)}</div>
+            ${_renderMilestoneBadges(project)}
             <div class="flex justify-between items-center mt-1">
-                <div class="text-xs text-slate-400">접수 대기</div>
+                <div class="flex gap-1 items-center">
+                    <div class="text-xs text-slate-400">접수 대기</div>
+                    <button onclick="event.stopPropagation(); openMilestoneModal(${project.id}, '${escapeJs(project.targetStartDate||'')}', '${escapeJs(project.targetEndDate||'')}', '${escapeJs(project.actualEndDate||'')}')"
+                            class="text-xs px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded hover:bg-slate-200" title="마일스톤 편집">📅</button>
+                </div>
                 <button onclick="event.stopPropagation(); openCommentModal('', ${project.id}, '${jsTitle}')" class="text-slate-400 hover:text-blue-500 text-sm" title="댓글">💬</button>
             </div>
         </div>
@@ -716,16 +721,86 @@ function renderCard(project, borderColor) {
             </div>
             <div class="text-xs text-slate-500 mt-0.5">${safeCn}</div>
             <div class="text-xs mt-1 text-slate-700">${escapeHtml(workDesc)}</div>
+            ${_renderMilestoneBadges(project)}
             <div class="flex justify-between mt-2 text-xs text-slate-500">
                 <span>${escapeHtml(project.startMD || '')} ~ ${escapeHtml(project.endMD || '')}</span>
                 <span class="font-semibold text-blue-600">${project.totalManpower || 0}공</span>
             </div>
             <div class="flex justify-between items-center mt-1">
-                <div class="text-xs text-slate-400">${project.workDays || 0}일 작업</div>
+                <div class="flex gap-1 items-center">
+                    <div class="text-xs text-slate-400">${project.workDays || 0}일 작업</div>
+                    ${project.boardProjectId ? `<button onclick="event.stopPropagation(); openMilestoneModal(${project.boardProjectId}, '${escapeJs(project.targetStartDate||'')}', '${escapeJs(project.targetEndDate||'')}', '${escapeJs(project.actualEndDate||'')}')"
+                            class="text-xs px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded hover:bg-slate-200" title="마일스톤 편집">📅</button>` : ''}
+                </div>
                 <button onclick="event.stopPropagation(); openCommentModal(this.dataset.cn, null, this.dataset.title)" data-cn="${escapeHtml(cn)}" data-title="${escapeHtml(project.company || '')} ${escapeHtml(project.shipName || '')}" class="text-slate-400 hover:text-blue-500 text-sm" title="댓글">💬</button>
             </div>
         </div>
     `;
+}
+
+// ============================================================================
+// 마일스톤 UI 헬퍼
+// ============================================================================
+
+function _renderMilestoneBadges(project) {
+    const ts = project.targetStartDate || '';
+    const te = project.targetEndDate   || '';
+    const ae = project.actualEndDate   || '';
+    const parts = [];
+    if (ts) parts.push(`<span class="text-slate-400">착수 ${escapeHtml(ts)}</span>`);
+    if (te) parts.push(`<span class="text-orange-500">완료예정 ${escapeHtml(te)}</span>`);
+    if (ae) parts.push(`<span class="text-green-600">완료 ✅ ${escapeHtml(ae)}</span>`);
+    return parts.length ? `<div class="flex flex-wrap gap-1 mt-1 text-xs">${parts.join('')}</div>` : '';
+}
+
+function openMilestoneModal(projectId, targetStart, targetEnd, actualEnd) {
+    // 기존 모달이 있으면 제거
+    const old = document.getElementById('milestoneModal');
+    if (old) old.remove();
+
+    const m = document.createElement('div');
+    m.id = 'milestoneModal';
+    m.className = 'fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50';
+    m.innerHTML = `
+        <div class="bg-white rounded-xl shadow-xl p-6 w-80">
+            <h3 class="font-bold text-base mb-4">📅 마일스톤 편집</h3>
+            <label class="block text-xs text-slate-500 mb-1">착수 예정일</label>
+            <input id="msTargetStart" type="date" value="${escapeHtml(targetStart || '')}"
+                   class="w-full border rounded px-2 py-1 text-sm mb-3">
+            <label class="block text-xs text-slate-500 mb-1">완료 예정일</label>
+            <input id="msTargetEnd" type="date" value="${escapeHtml(targetEnd || '')}"
+                   class="w-full border rounded px-2 py-1 text-sm mb-3">
+            <label class="block text-xs text-slate-500 mb-1">실제 완료일</label>
+            <input id="msActualEnd" type="date" value="${escapeHtml(actualEnd || '')}"
+                   class="w-full border rounded px-2 py-1 text-sm mb-4">
+            <div class="flex justify-end gap-2">
+                <button onclick="document.getElementById('milestoneModal').remove()"
+                        class="px-3 py-1.5 text-sm border rounded text-slate-600 hover:bg-slate-50">취소</button>
+                <button onclick="saveMilestone(${projectId})"
+                        class="px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700">저장</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(m);
+    m.addEventListener('click', e => { if (e.target === m) m.remove(); });
+}
+
+async function saveMilestone(projectId) {
+    const ts = document.getElementById('msTargetStart')?.value || '';
+    const te = document.getElementById('msTargetEnd')?.value   || '';
+    const ae = document.getElementById('msActualEnd')?.value   || '';
+    try {
+        const result = await eel.update_project_milestones(projectId, ts, te, ae)();
+        if (result.success) {
+            showToast('마일스톤이 저장되었습니다.', 'success');
+            document.getElementById('milestoneModal')?.remove();
+            loadKanbanBoard();
+        } else {
+            showToast(result.message || '저장 실패', 'error');
+        }
+    } catch (e) {
+        showToast('마일스톤 저장 중 오류가 발생했습니다.', 'error');
+    }
 }
 
 // ============================================================================
@@ -798,7 +873,7 @@ async function changeKanbanStatus(contractNumber, newStatus) {
     }
 }
 
-function showToast(msg, type = 'default') {
+function showToast(msg, type = 'default', duration = 2500) {
     const t = document.createElement('div');
     const colorMap = {
         'error':   'bg-red-600',
@@ -810,7 +885,7 @@ function showToast(msg, type = 'default') {
     t.className = `fixed bottom-6 left-1/2 -translate-x-1/2 ${color} text-white text-sm px-4 py-2 rounded-lg shadow-lg z-50`;
     t.textContent = msg;
     document.body.appendChild(t);
-    setTimeout(() => t.remove(), 2500);
+    setTimeout(() => t.remove(), duration);
 }
 
 // 새 프로젝트 접수 모달
@@ -1355,7 +1430,10 @@ async function _autoSaveWorkRecords() {
     try {
         const info = await eel.get_date_save_info(dateStr)();
         if (info && info.has_records && _dateLoadedAt && info.updated_at > _dateLoadedAt) {
-            showToast('⚠️ 충돌 감지 — 자동 저장 건너뜀. 직접 저장해 주세요.', 'warning');
+            const who = info.updated_by || '다른 사용자';
+            const when = info.updated_at ? info.updated_at.replace('T', ' ').substring(11, 16) : '';
+            const timeStr = when ? `${when}에 ` : '';
+            showToast(`⚠️ ${who}님이 ${timeStr}수정했습니다. [저장] 버튼으로 확인 후 직접 저장해 주세요.`, 'warning', 5000);
             return;
         }
     } catch (e) {
@@ -1796,22 +1874,19 @@ function updateRecord(index, field, value) {
 // ============================================================================
 
 async function exportToExcel() {
+    const dateStr = formatDateForInput(currentDate);
+    showLoading(true, 'Excel 파일 생성 중...');
     try {
-        const dateStr = formatDateForInput(currentDate);
-        showLoading(true);
-        
         const result = await eel.export_to_excel(dateStr)();
-        
         if (result.success) {
-            showCustomAlert('저장 완료', 'Excel 파일이 저장되었습니다.\n위치: ' + result.path, 'success');
+            showToast('Excel 파일이 저장되었습니다: ' + result.path, 'success');
         } else {
             showCustomAlert('오류', 'Excel 내보내기 실패: ' + result.message, 'error');
         }
-
-        showLoading(false);
     } catch (error) {
         console.error('Excel 내보내기 오류:', error);
         showCustomAlert('오류', 'Excel 내보내기 중 오류가 발생했습니다.', 'error');
+    } finally {
         showLoading(false);
     }
 }
@@ -3389,6 +3464,7 @@ function _closeNotifPanel(e) {
 
 let _statsYear = new Date().getFullYear();
 let _manpowerChart = null;
+let _projectCountChart = null;
 
 async function loadStatsData() {
     const label = document.getElementById('statsYearLabel');
@@ -3458,6 +3534,49 @@ async function loadStatsData() {
         inHouseLabel.textContent = (data.inHouseTotal || 0).toFixed(1);
         outLabel.textContent     = (data.outsourcedTotal || 0).toFixed(1);
         document.getElementById('manpowerSummary')?.classList.remove('hidden');
+    }
+
+    // ── KPI 카드 ─────────────────────────────────────────────────────
+    const kpiCards = document.getElementById('kpiCards');
+    if (kpiCards && data.totalProjects !== undefined) {
+        const grandTotal = (data.inHouseTotal || 0) + (data.outsourcedTotal || 0);
+        document.getElementById('kpiTotalProjects').textContent  = data.totalProjects;
+        document.getElementById('kpiCompletionRate').textContent = (data.completionRate ?? 0).toFixed(1);
+        document.getElementById('kpiOutsourcedRate').textContent = (data.outsourcedRate ?? 0).toFixed(1);
+        document.getElementById('kpiTotalManpower').textContent  = grandTotal.toFixed(1);
+        const cRate = Math.min(data.completionRate ?? 0, 100);
+        const oRate = Math.min(data.outsourcedRate ?? 0, 100);
+        document.getElementById('kpiCompletionBar').style.width  = `${cRate}%`;
+        document.getElementById('kpiOutsourcedBar').style.width  = `${oRate}%`;
+        kpiCards.classList.remove('hidden');
+    }
+
+    // ── 월별 작업 건수 꺾은선 차트 ────────────────────────────────────
+    const pcBox = document.getElementById('projectCountChartBox');
+    const pcCtx = document.getElementById('projectCountChart');
+    if (pcCtx && data.monthlyProjectCount) {
+        pcBox?.classList.remove('hidden');
+        if (_projectCountChart) { _projectCountChart.destroy(); _projectCountChart = null; }
+        _projectCountChart = new Chart(pcCtx, {
+            type: 'line',
+            data: {
+                labels: ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'],
+                datasets: [{
+                    label: '작업 건수',
+                    data: data.monthlyProjectCount,
+                    borderColor: 'rgba(99,102,241,0.9)',
+                    backgroundColor: 'rgba(99,102,241,0.12)',
+                    tension: 0.3,
+                    pointRadius: 4,
+                    fill: true
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: { legend: { display: false } },
+                scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
+            }
+        });
     }
 
     // ── 회사별 상위 10 ────────────────────────────────────────────────

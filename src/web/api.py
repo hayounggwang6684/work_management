@@ -1306,16 +1306,56 @@ def get_analytics_data(year: int) -> Dict[str, Any]:
             (year_str,)
         )
 
+        # 5) KPI 지표 추가
+        # 5-1) 월별 고유 계약 건수
+        monthly_cnt_rows = db.execute_query(
+            "SELECT strftime('%m', date) as m, COUNT(DISTINCT contract_number) as cnt "
+            "FROM work_records "
+            "WHERE strftime('%Y', date) = ? AND contract_number != '' "
+            "GROUP BY m ORDER BY m",
+            (year_str,)
+        )
+        cnt_map = {int(m): int(c) for m, c in (monthly_cnt_rows or [])}
+        monthly_project_count = [cnt_map.get(i, 0) for i in range(1, 13)]
+
+        # 5-2) board_projects 완료율 (준공 / 전체)
+        bp_stats = db.execute_query(
+            "SELECT COUNT(*) as total, SUM(CASE WHEN status='준공' THEN 1 ELSE 0 END) as done "
+            "FROM board_projects"
+        )
+        bp_total = int(bp_stats[0][0]) if bp_stats else 0
+        bp_done  = int(bp_stats[0][1]) if bp_stats else 0
+        completion_rate = round(bp_done / bp_total * 100, 1) if bp_total > 0 else 0.0
+
+        # 5-3) 외주 비율 & 연간 총 공수
+        in_house_total   = round(sum(monthly_inhouse), 1)
+        outsourced_total = round(sum(monthly_outsourced), 1)
+        grand_total      = round(in_house_total + outsourced_total, 1)
+        outsourced_rate  = round(outsourced_total / grand_total * 100, 1) if grand_total > 0 else 0.0
+
+        # 5-4) 연간 고유 계약 건수 (작업 레코드 기준)
+        total_projects_row = db.execute_query(
+            "SELECT COUNT(DISTINCT contract_number) FROM work_records "
+            "WHERE strftime('%Y', date) = ? AND contract_number != ''",
+            (year_str,)
+        )
+        total_projects = int(total_projects_row[0][0]) if total_projects_row else 0
+
         return {
-            'success':           True,
-            'year':              year,
-            'monthly':           monthly_data,
-            'inHouseMonthly':    monthly_inhouse,
-            'outsourcedMonthly': monthly_outsourced,
-            'inHouseTotal':      round(sum(monthly_inhouse), 1),
-            'outsourcedTotal':   round(sum(monthly_outsourced), 1),
+            'success':             True,
+            'year':                year,
+            'monthly':             monthly_data,
+            'inHouseMonthly':      monthly_inhouse,
+            'outsourcedMonthly':   monthly_outsourced,
+            'inHouseTotal':        in_house_total,
+            'outsourcedTotal':     outsourced_total,
             'companies': [{'name': r[0], 'total': float(r[1])} for r in (company_rows or [])],
-            'contracts': [{'cn': r[0], 'company': r[1], 'total': float(r[2])} for r in (contract_rows or [])]
+            'contracts': [{'cn': r[0], 'company': r[1], 'total': float(r[2])} for r in (contract_rows or [])],
+            # KPI
+            'monthlyProjectCount': monthly_project_count,
+            'completionRate':      completion_rate,
+            'outsourcedRate':      outsourced_rate,
+            'totalProjects':       total_projects,
         }
     except Exception as e:
         logger.error(f"통계 데이터 조회 오류: {e}")
@@ -2004,6 +2044,24 @@ def update_board_project(project_id: int, data: Dict) -> Dict[str, Any]:
 
 
 @eel.expose
+def update_project_milestones(project_id: int, target_start: str, target_end: str, actual_end: str) -> Dict[str, Any]:
+    """프로젝트 마일스톤 날짜 업데이트"""
+    try:
+        data = {
+            'target_start_date': target_start or '',
+            'target_end_date':   target_end   or '',
+            'actual_end_date':   actual_end   or '',
+        }
+        success = db.update_board_project(project_id, data)
+        if success:
+            return {'success': True, 'message': '마일스톤이 저장되었습니다.'}
+        return {'success': False, 'message': '마일스톤 저장 실패'}
+    except Exception as e:
+        logger.error(f"마일스톤 업데이트 오류: {e}")
+        return {'success': False, 'message': '요청 처리 중 오류가 발생했습니다.'}
+
+
+@eel.expose
 def delete_board_project(project_id: int) -> Dict[str, Any]:
     """보드 프로젝트 삭제"""
     try:
@@ -2044,7 +2102,10 @@ def get_kanban_data() -> Dict[str, Any]:
                 'workDays': 0,
                 'totalManpower': 0,
                 'status': '접수',
-                'source': 'board'
+                'source': 'board',
+                'targetStartDate': bp.get('target_start_date', ''),
+                'targetEndDate':   bp.get('target_end_date', ''),
+                'actualEndDate':   bp.get('actual_end_date', ''),
             })
 
         # 2. 착수/준공 - work_records 기반 + board_projects 수동 상태
@@ -2106,6 +2167,8 @@ def get_kanban_data() -> Dict[str, Any]:
                 else:
                     final_status = '준공'
 
+            # 마일스톤 데이터 — board_projects에서 계약번호로 매칭
+            bp_data = board_started.get(contract_number) or board_done.get(contract_number) or {}
             project = {
                 'contractNumber': contract_number,
                 'company': row[1] or '',
@@ -2120,7 +2183,11 @@ def get_kanban_data() -> Dict[str, Any]:
                 'totalManpower': row[8] or 0,
                 'status': final_status,
                 'manualStatus': manual_status,
-                'source': 'records'
+                'source': 'records',
+                'boardProjectId': bp_data.get('id', None),
+                'targetStartDate': bp_data.get('target_start_date', ''),
+                'targetEndDate':   bp_data.get('target_end_date', ''),
+                'actualEndDate':   bp_data.get('actual_end_date', ''),
             }
 
             if final_status == '착수':
