@@ -2827,11 +2827,16 @@ def install_erp_deps(user_id: str) -> Dict[str, Any]:
         import sys
         result = subprocess.run(
             [sys.executable, '-m', 'pip', 'install', 'pyautogui', 'pywin32', 'pyperclip'],
-            capture_output=True, text=True, timeout=120
+            capture_output=True, encoding='utf-8', errors='replace', timeout=120
         )
         if result.returncode == 0:
             return {'success': True, 'message': '설치 완료. 입력 시작 버튼을 다시 눌러주세요.'}
-        return {'success': False, 'message': '설치 실패: ' + (result.stderr or '')[-300:]}
+        stderr_lower = (result.stderr or '').lower()
+        if 'permission' in stderr_lower or 'access' in stderr_lower or 'winerror 5' in stderr_lower:
+            msg = '⚠️ 권한 오류: 앱을 관리자 모드로 실행 후 다시 시도해주세요. (우클릭 → 관리자 권한으로 실행)'
+        else:
+            msg = '설치 실패. 관리자 모드로 실행 후 재시도하거나 관리자에게 문의하세요.'
+        return {'success': False, 'message': msg}
     except Exception:
         return {'success': False, 'message': '요청 처리 중 오류가 발생했습니다.'}
 
