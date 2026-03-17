@@ -255,6 +255,8 @@ async function loadDailyReport() {
         
     } catch (error) {
         console.error('일일 보고 로드 실패:', error);
+        const dailyTbody = document.getElementById('dailyReportTable');
+        if (dailyTbody) dailyTbody.innerHTML = '';
         showCustomAlert('오류', '데이터를 불러오는데 실패했습니다.', 'error');
     }
 }
@@ -375,6 +377,8 @@ async function loadMonthlyReport() {
     } catch (error) {
         console.error('월간 보고 로드 실패:', error);
         showLoading(false);
+        const monthlyTbody = document.getElementById('monthlyReportTable');
+        if (monthlyTbody) monthlyTbody.innerHTML = '';
         showCustomAlert('오류', '데이터를 불러오는데 실패했습니다.', 'error');
     }
 }

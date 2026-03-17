@@ -197,32 +197,35 @@ document.addEventListener('DOMContentLoaded', function() {
 // ============================================================================
 
 function showSearchTab(tab) {
-    const statusTab = document.getElementById('statusSearchTab');
-    const workTab = document.getElementById('workSearchTab');
-    const companyTab = document.getElementById('companySearchTab');
-    const btnStatus = document.getElementById('btnSearchStatus');
-    const btnWork = document.getElementById('btnSearchWork');
-    const btnCompany = document.getElementById('btnSearchCompany');
+    const statusTab      = document.getElementById('statusSearchTab');
+    const workTab        = document.getElementById('workSearchTab');
+    const companyTab     = document.getElementById('companySearchTab');
+    const perfTab        = document.getElementById('performanceSearchTab');
+    const btnStatus      = document.getElementById('btnSearchStatus');
+    const btnWork        = document.getElementById('btnSearchWork');
+    const btnCompany     = document.getElementById('btnSearchCompany');
+    const btnPerformance = document.getElementById('btnSearchPerformance');
 
     // 모두 숨김 + 버튼 기본 스타일 초기화
-    [statusTab, workTab, companyTab].forEach(t => { if (t) t.classList.add('hidden'); });
-    [btnStatus, btnWork, btnCompany].forEach(b => {
+    [statusTab, workTab, companyTab, perfTab].forEach(t => { if (t) t.classList.add('hidden'); });
+    [btnStatus, btnWork, btnCompany, btnPerformance].forEach(b => {
         if (!b) return;
         b.classList.remove('bg-blue-600', 'text-white');
         b.classList.add('bg-slate-200');
     });
 
     // 선택된 탭만 표시
-    const tabMap = { status: statusTab, work: workTab, company: companyTab };
-    const btnMap = { status: btnStatus, work: btnWork, company: btnCompany };
+    const tabMap = { status: statusTab, work: workTab, company: companyTab, performance: perfTab };
+    const btnMap = { status: btnStatus, work: btnWork, company: btnCompany, performance: btnPerformance };
     if (tabMap[tab]) tabMap[tab].classList.remove('hidden');
     if (btnMap[tab]) {
         btnMap[tab].classList.remove('bg-slate-200');
         btnMap[tab].classList.add('bg-blue-600', 'text-white');
     }
 
-    // 업체별 조회 탭 진입 시 드롭다운 목록 로드
+    // 탭별 진입 처리
     if (tab === 'company') loadCompanyNameList();
+    if (tab === 'performance') _initPerfMonthDefaults();
 }
 
 async function loadCompanyNameList() {
@@ -234,6 +237,156 @@ async function loadCompanyNameList() {
     } catch(e) {
         console.warn('업체명 목록 로드 실패:', e);
         showToast('업체명 목록을 불러오지 못했습니다.', 'warning');
+    }
+}
+
+// ============================================================================
+// 업체 실적 분석
+// ============================================================================
+
+let _perfData = [];
+
+function _initPerfMonthDefaults() {
+    const now = new Date();
+    const yyyy = now.getFullYear();
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const startEl = document.getElementById('perfStartMonth');
+    const endEl   = document.getElementById('perfEndMonth');
+    if (startEl && !startEl.value) startEl.value = `${yyyy}-01`;
+    if (endEl && !endEl.value)     endEl.value   = `${yyyy}-${mm}`;
+}
+
+async function loadCompanyPerformance() {
+    const startEl = document.getElementById('perfStartMonth');
+    const endEl   = document.getElementById('perfEndMonth');
+    if (!startEl?.value || !endEl?.value) {
+        showCustomAlert('알림', '기간을 선택해 주세요.', 'warning');
+        return;
+    }
+    const startDate = startEl.value + '-01';
+    const endDate   = endEl.value   + '-31';
+    showLoading(true, '업체 실적 분석 중...');
+    try {
+        const result = await eel.get_company_performance(startDate, endDate, currentUser?.user_id || '')();
+        showLoading(false);
+        if (!result.success) {
+            showCustomAlert('오류', result.message || '조회 실패', 'error');
+            return;
+        }
+        _perfData = result.data || [];
+        _renderPerfTable(_perfData);
+        _renderPerfChart(_perfData);
+    } catch (e) {
+        showLoading(false);
+        console.error('업체 실적 조회 오류:', e);
+        showCustomAlert('오류', '조회 중 오류가 발생했습니다.', 'error');
+    }
+}
+
+function _renderPerfTable(data) {
+    const container = document.getElementById('perfTableContainer');
+    if (!container) return;
+    if (!data.length) {
+        container.innerHTML = '<p class="text-slate-500">해당 기간에 작업 데이터가 없습니다.</p>';
+        return;
+    }
+    const html = `
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm border-collapse">
+        <thead>
+          <tr class="bg-slate-100 text-slate-700">
+            <th class="border p-2 text-left cursor-pointer hover:bg-slate-200" onclick="_sortPerfTable('company')">업체명 ↕</th>
+            <th class="border p-2 text-right cursor-pointer hover:bg-slate-200" onclick="_sortPerfTable('totalManpower')">총 공수 ↕</th>
+            <th class="border p-2 text-right">본공</th>
+            <th class="border p-2 text-right">외주</th>
+            <th class="border p-2 text-right cursor-pointer hover:bg-slate-200" onclick="_sortPerfTable('projectCount')">프로젝트 ↕</th>
+            <th class="border p-2 text-left">참여 선박</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${data.map((r, i) => `
+          <tr class="${i % 2 === 0 ? '' : 'bg-slate-50'} hover:bg-blue-50">
+            <td class="border p-2 font-medium">${escapeHtml(r.company)}</td>
+            <td class="border p-2 text-right font-bold text-blue-700">${r.totalManpower.toFixed(1)}</td>
+            <td class="border p-2 text-right text-slate-600">${r.inHouse.toFixed(1)}</td>
+            <td class="border p-2 text-right text-orange-600">${r.outsourced.toFixed(1)}</td>
+            <td class="border p-2 text-right">${r.projectCount}</td>
+            <td class="border p-2 text-slate-500 text-xs">${(r.ships || []).map(s => escapeHtml(s)).join(', ')}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`;
+    container.innerHTML = html;
+}
+
+let _perfSortKey = 'totalManpower', _perfSortAsc = false;
+function _sortPerfTable(key) {
+    if (_perfSortKey === key) _perfSortAsc = !_perfSortAsc;
+    else { _perfSortKey = key; _perfSortAsc = false; }
+    const sorted = [..._perfData].sort((a, b) => {
+        const av = a[key], bv = b[key];
+        if (typeof av === 'string') return _perfSortAsc ? av.localeCompare(bv) : bv.localeCompare(av);
+        return _perfSortAsc ? av - bv : bv - av;
+    });
+    _renderPerfTable(sorted);
+}
+
+let _perfChart = null;
+function _renderPerfChart(data) {
+    const box    = document.getElementById('perfChartBox');
+    const canvas = document.getElementById('perfChart');
+    if (!box || !canvas) return;
+    const top5 = data.slice(0, 5);
+    if (!top5.length) { box.classList.add('hidden'); return; }
+    box.classList.remove('hidden');
+    if (_perfChart) { _perfChart.destroy(); _perfChart = null; }
+    _perfChart = new Chart(canvas, {
+        type: 'bar',
+        data: {
+            labels: top5.map(r => r.company),
+            datasets: [
+                { label: '본공',   data: top5.map(r => r.inHouse),    backgroundColor: 'rgba(59,130,246,0.7)' },
+                { label: '외주',   data: top5.map(r => r.outsourced),  backgroundColor: 'rgba(249,115,22,0.7)' },
+            ]
+        },
+        options: {
+            responsive: true,
+            indexAxis: 'y',
+            plugins: {
+                legend: { position: 'bottom' },
+                title: { display: true, text: '상위 5개 업체 공수 (본공/외주)' }
+            },
+            scales: { x: { stacked: true }, y: { stacked: true } }
+        }
+    });
+}
+
+async function exportCompanyPerformance() {
+    if (!_perfData.length) {
+        showCustomAlert('알림', '먼저 조회를 실행하세요.', 'warning');
+        return;
+    }
+    try {
+        const startEl = document.getElementById('perfStartMonth');
+        const endEl   = document.getElementById('perfEndMonth');
+        const period  = `${startEl?.value || ''}_${endEl?.value || ''}`;
+        const header  = ['업체명', '총공수', '본공', '외주', '프로젝트건수', '참여선박'];
+        const rows    = _perfData.map(r => [
+            r.company, r.totalManpower, r.inHouse, r.outsourced,
+            r.projectCount, (r.ships || []).join('|')
+        ]);
+        const csv = [header, ...rows].map(r => r.join('\t')).join('\n');
+        const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+        const url  = URL.createObjectURL(blob);
+        const a    = document.createElement('a');
+        a.href     = url;
+        a.download = `업체실적_${period}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+        showToast('CSV 파일로 저장되었습니다.', 'success');
+    } catch (e) {
+        console.error('내보내기 오류:', e);
+        showCustomAlert('오류', '내보내기 중 오류가 발생했습니다.', 'error');
     }
 }
 
@@ -670,7 +823,7 @@ function renderReceptionCard(project) {
             <div class="flex justify-between items-center mt-1">
                 <div class="flex gap-1 items-center">
                     <div class="text-xs text-slate-400">접수 대기</div>
-                    <button onclick="event.stopPropagation(); openMilestoneModal(${project.id}, '${escapeJs(project.targetStartDate||'')}', '${escapeJs(project.targetEndDate||'')}', '${escapeJs(project.actualEndDate||'')}')"
+                    <button onclick="event.stopPropagation(); openMilestoneModal(${project.id}, '${escapeJs(project.targetStartDate||'')}', '${escapeJs(project.targetEndDate||'')}', '${escapeJs(project.actualEndDate||'')}', '${escapeJs(project.engineModel||'')}', '${escapeJs(project.workContent||'')}')"
                             class="text-xs px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded hover:bg-slate-200" title="마일스톤 편집">📅</button>
                 </div>
                 <button onclick="event.stopPropagation(); openCommentModal('', ${project.id}, '${jsTitle}')" class="text-slate-400 hover:text-blue-500 text-sm" title="댓글">💬</button>
@@ -729,7 +882,7 @@ function renderCard(project, borderColor) {
             <div class="flex justify-between items-center mt-1">
                 <div class="flex gap-1 items-center">
                     <div class="text-xs text-slate-400">${project.workDays || 0}일 작업</div>
-                    ${project.boardProjectId ? `<button onclick="event.stopPropagation(); openMilestoneModal(${project.boardProjectId}, '${escapeJs(project.targetStartDate||'')}', '${escapeJs(project.targetEndDate||'')}', '${escapeJs(project.actualEndDate||'')}')"
+                    ${project.boardProjectId ? `<button onclick="event.stopPropagation(); openMilestoneModal(${project.boardProjectId}, '${escapeJs(project.targetStartDate||'')}', '${escapeJs(project.targetEndDate||'')}', '${escapeJs(project.actualEndDate||'')}', '${escapeJs(project.engineModel||'')}', '${escapeJs(project.workContent||'')}')"
                             class="text-xs px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded hover:bg-slate-200" title="마일스톤 편집">📅</button>` : ''}
                 </div>
                 <button onclick="event.stopPropagation(); openCommentModal(this.dataset.cn, null, this.dataset.title)" data-cn="${escapeHtml(cn)}" data-title="${escapeHtml(project.company || '')} ${escapeHtml(project.shipName || '')}" class="text-slate-400 hover:text-blue-500 text-sm" title="댓글">💬</button>
@@ -753,7 +906,7 @@ function _renderMilestoneBadges(project) {
     return parts.length ? `<div class="flex flex-wrap gap-1 mt-1 text-xs">${parts.join('')}</div>` : '';
 }
 
-function openMilestoneModal(projectId, targetStart, targetEnd, actualEnd) {
+function openMilestoneModal(projectId, targetStart, targetEnd, actualEnd, engineModel, workContent) {
     // 기존 모달이 있으면 제거
     const old = document.getElementById('milestoneModal');
     if (old) old.remove();
@@ -766,10 +919,13 @@ function openMilestoneModal(projectId, targetStart, targetEnd, actualEnd) {
             <h3 class="font-bold text-base mb-4">📅 마일스톤 편집</h3>
             <label class="block text-xs text-slate-500 mb-1">착수 예정일</label>
             <input id="msTargetStart" type="date" value="${escapeHtml(targetStart || '')}"
-                   class="w-full border rounded px-2 py-1 text-sm mb-3">
+                   class="w-full border rounded px-2 py-1 text-sm mb-3"
+                   oninput="_fetchEtaSuggestion()">
             <label class="block text-xs text-slate-500 mb-1">완료 예정일</label>
             <input id="msTargetEnd" type="date" value="${escapeHtml(targetEnd || '')}"
-                   class="w-full border rounded px-2 py-1 text-sm mb-3">
+                   class="w-full border rounded px-2 py-1 text-sm mb-1">
+            <!-- ETA 제안 -->
+            <div id="msEtaHint" class="text-xs text-blue-600 mb-3 min-h-[1rem]"></div>
             <label class="block text-xs text-slate-500 mb-1">실제 완료일</label>
             <input id="msActualEnd" type="date" value="${escapeHtml(actualEnd || '')}"
                    class="w-full border rounded px-2 py-1 text-sm mb-4">
@@ -783,6 +939,31 @@ function openMilestoneModal(projectId, targetStart, targetEnd, actualEnd) {
     `;
     document.body.appendChild(m);
     m.addEventListener('click', e => { if (e.target === m) m.remove(); });
+
+    // 모달 열릴 때 자동 ETA 조회
+    m._engineModel  = engineModel  || '';
+    m._workContent  = workContent  || '';
+    _fetchEtaSuggestion();
+}
+
+async function _fetchEtaSuggestion() {
+    const modal = document.getElementById('milestoneModal');
+    if (!modal) return;
+    const hint   = document.getElementById('msEtaHint');
+    const tsVal  = document.getElementById('msTargetStart')?.value || '';
+    if (!hint) return;
+    try {
+        const r = await eel.estimate_completion(modal._engineModel || '', modal._workContent || '', tsVal)();
+        if (r.success && r.avgDays) {
+            hint.innerHTML = `📊 과거 평균: <strong>${r.avgDays}일</strong> (${r.sampleCount}건 기준)
+                ${r.suggestionEndDate ? ` &nbsp;<button onclick="document.getElementById('msTargetEnd').value='${escapeHtml(r.suggestionEndDate)}'"
+                    class="underline text-blue-700 hover:text-blue-900">적용 (${escapeHtml(r.suggestionEndDate)})</button>` : ''}`;
+        } else {
+            hint.textContent = '(과거 유사 작업 데이터 없음)';
+        }
+    } catch (_) {
+        hint.textContent = '';
+    }
 }
 
 async function saveMilestone(projectId) {
@@ -1449,7 +1630,7 @@ async function _autoSaveWorkRecords() {
             const now = new Date();
             const el = document.getElementById('saveStatusText');
             if (el) el.textContent = `✓ ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
-            showToast('자동 저장되었습니다.');
+            showToast('자동 저장되었습니다.', 'success', 2000);
         }
     } catch (e) {
         console.error('자동 저장 오류:', e);
@@ -3014,6 +3195,101 @@ async function searchEmployeeLeave() {
     }
 }
 
+// ----------------------------------------------------------------------------
+// 직원 개인 프로필 모달
+// ----------------------------------------------------------------------------
+
+let _empProfileChart = null;
+
+async function openEmployeeProfile(name) {
+    if (!name) return;
+    const year = new Date().getFullYear();
+    try {
+        const result = await eel.get_employee_profile(name, year)();
+        if (!result.success) { showToast('프로필 조회 실패', 'error'); return; }
+        _showEmployeeProfileModal(result);
+    } catch (e) {
+        console.error('직원 프로필 오류:', e);
+        showToast('프로필 조회 중 오류가 발생했습니다.', 'error');
+    }
+}
+
+function _showEmployeeProfileModal(data) {
+    const old = document.getElementById('empProfileModal');
+    if (old) old.remove();
+    if (_empProfileChart) { _empProfileChart.destroy(); _empProfileChart = null; }
+
+    const leave = data.leaveBalance;
+    const leaveHtml = leave
+        ? `<div class="flex gap-4 text-sm text-center mt-2">
+            <div class="flex-1 bg-blue-50 rounded p-2"><div class="text-xs text-slate-500">총 부여</div><div class="font-bold text-blue-700">${leave.total}</div></div>
+            <div class="flex-1 bg-amber-50 rounded p-2"><div class="text-xs text-slate-500">사용</div><div class="font-bold text-amber-600">${leave.used}</div></div>
+            <div class="flex-1 bg-emerald-50 rounded p-2"><div class="text-xs text-slate-500">잔여</div><div class="font-bold text-emerald-600">${leave.remaining}</div></div>
+           </div>`
+        : '<p class="text-xs text-slate-400 mt-2">연차 데이터 없음</p>';
+
+    const modal = document.createElement('div');
+    modal.id = 'empProfileModal';
+    modal.className = 'fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50';
+    modal.innerHTML = `
+      <div class="bg-white rounded-xl shadow-xl p-6 w-96 max-h-[90vh] overflow-y-auto">
+        <div class="flex justify-between items-center mb-4">
+          <h3 class="font-bold text-lg">👤 ${escapeHtml(data.name)} (${data.year}년)</h3>
+          <button onclick="document.getElementById('empProfileModal').remove()"
+                  class="text-slate-400 hover:text-slate-600 text-xl leading-none">✕</button>
+        </div>
+        <!-- 요약 카드 -->
+        <div class="grid grid-cols-2 gap-3 mb-4">
+          <div class="bg-blue-50 rounded-lg p-3 text-center">
+            <div class="text-xs text-slate-500 mb-1">총 공수</div>
+            <div class="text-2xl font-bold text-blue-700">${data.totalManpower.toFixed(1)}</div>
+          </div>
+          <div class="bg-slate-50 rounded-lg p-3 text-center">
+            <div class="text-xs text-slate-500 mb-1">참여 프로젝트</div>
+            <div class="text-2xl font-bold text-slate-700">${data.projectCount}</div>
+          </div>
+        </div>
+        <!-- 월별 공수 차트 -->
+        <div class="mb-4">
+          <div class="text-xs text-slate-500 mb-1 font-semibold">월별 공수</div>
+          <canvas id="empMonthlyChart" height="80"></canvas>
+        </div>
+        <!-- 연차 -->
+        <div class="mb-4">
+          <div class="text-xs text-slate-500 font-semibold mb-1">연차 현황</div>
+          ${leaveHtml}
+        </div>
+        <!-- 최근 프로젝트 -->
+        ${data.projects.length ? `
+        <div>
+          <div class="text-xs text-slate-500 font-semibold mb-1">참여 계약 (최대 10건)</div>
+          <div class="flex flex-wrap gap-1">
+            ${data.projects.map(p => `<span class="text-xs bg-slate-100 rounded px-2 py-0.5">${escapeHtml(p)}</span>`).join('')}
+          </div>
+        </div>` : ''}
+      </div>`;
+    document.body.appendChild(modal);
+    modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+
+    // 차트 렌더링
+    const canvas = document.getElementById('empMonthlyChart');
+    if (canvas) {
+        const months = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
+        _empProfileChart = new Chart(canvas, {
+            type: 'bar',
+            data: {
+                labels: months,
+                datasets: [{ label: '공수', data: data.monthlyManpower, backgroundColor: 'rgba(59,130,246,0.6)' }]
+            },
+            options: {
+                responsive: true,
+                plugins: { legend: { display: false } },
+                scales: { y: { beginAtZero: true } }
+            }
+        });
+    }
+}
+
 function renderLeaveResult(info, name) {
     const resultDiv = document.getElementById('leaveResult');
     if (!resultDiv) return;
@@ -3030,6 +3306,13 @@ function renderLeaveResult(info, name) {
     const remainingColor = summary.remaining < 0 ? 'text-red-600' : 'text-emerald-600';
     let html = `
     <div class="space-y-6">
+      <!-- 프로필 버튼 -->
+      <div class="flex justify-end">
+        <button onclick="openEmployeeProfile('${escapeJs(name)}')"
+                class="text-xs px-3 py-1.5 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 border border-blue-200">
+          📊 ${escapeHtml(name)} 공수 프로필 보기
+        </button>
+      </div>
       <!-- 요약 박스 -->
       <div class="grid grid-cols-3 gap-4">
         <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 text-center">

@@ -39,7 +39,7 @@ function showLoginForm() {
             }
         });
     } catch(e) {
-        // eel 연결 전 호출 시 무시
+        console.warn('버전 표시 실패 (eel 연결 전):', e);
     }
 }
 
@@ -65,7 +65,7 @@ function showMainApp() {
             const badge = document.getElementById('appVersionBadge');
             if (badge && info && info.version) badge.textContent = 'v' + info.version;
         });
-    } catch(e) {}
+    } catch(e) { console.warn('앱 버전 배지 표시 실패:', e); }
     
     // 날짜 초기화
     if (typeof updateDateInput === 'function') {
@@ -118,7 +118,7 @@ function showAdminApp() {
             const badge = document.getElementById('adminVersionBadge');
             if (badge && info && info.version) badge.textContent = 'v' + info.version;
         });
-    } catch(e) {}
+    } catch(e) { console.warn('관리자 버전 배지 표시 실패:', e); }
     
     // 관리자 데이터 로드
     loadAdminData();
@@ -144,7 +144,7 @@ async function handleLogin() {
     if (loginBtn) { loginBtn.disabled = true; loginBtn.textContent = '로그인 중...'; }
 
     try {
-        const result = await eel.authenticate(userId, password)();
+        const result = await eelWithTimeout(eel.authenticate(userId, password)());
 
         if (result.success) {
             currentUser = result.user;

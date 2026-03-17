@@ -291,6 +291,8 @@
                                 class="px-6 py-2 rounded-lg bg-slate-200 font-semibold">작업별 조회</button>
                         <button onclick="showSearchTab('company')" id="btnSearchCompany"
                                 class="px-6 py-2 rounded-lg bg-slate-200 font-semibold">업체별 조회</button>
+                        <button onclick="showSearchTab('performance')" id="btnSearchPerformance"
+                                class="px-6 py-2 rounded-lg bg-slate-200 font-semibold">업체 실적</button>
                     </div>
 
                     <!-- 현황 조회 (계약번호 기준) -->
@@ -354,6 +356,31 @@
                         </div>
                         <div id="companySearchResult">
                             <p class="text-slate-500">업체명을 입력하고 조회 버튼을 클릭하세요.</p>
+                        </div>
+                    </div>
+
+                    <!-- 업체 실적 분석 -->
+                    <div id="performanceSearchTab" class="hidden">
+                        <h2 class="text-2xl font-bold mb-4">업체 실적 분석</h2>
+                        <div class="flex gap-3 mb-6 items-center flex-wrap">
+                            <label class="font-semibold text-slate-700">기간:</label>
+                            <input type="month" id="perfStartMonth"
+                                   class="px-3 py-2 border rounded-lg text-sm">
+                            <span class="text-slate-500">~</span>
+                            <input type="month" id="perfEndMonth"
+                                   class="px-3 py-2 border rounded-lg text-sm">
+                            <button onclick="loadCompanyPerformance()"
+                                    class="px-6 py-2 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700">조회</button>
+                            <button onclick="exportCompanyPerformance()"
+                                    class="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm hover:bg-emerald-700">Excel 내보내기</button>
+                        </div>
+                        <!-- 상위 5개 바차트 -->
+                        <div id="perfChartBox" class="hidden mb-6">
+                            <canvas id="perfChart" height="80"></canvas>
+                        </div>
+                        <!-- 테이블 -->
+                        <div id="perfTableContainer">
+                            <p class="text-slate-500">기간을 선택하고 조회 버튼을 클릭하세요.</p>
                         </div>
                     </div>
                 </div>

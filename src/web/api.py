@@ -2075,6 +2075,165 @@ def delete_board_project(project_id: int) -> Dict[str, Any]:
 
 
 @eel.expose
+def get_company_performance(start_date: str, end_date: str, user_id: str = '') -> Dict[str, Any]:
+    """협력사 실적 분석 — 기간별 업체별 공수/건수 집계"""
+    try:
+        rows = db.execute_query(
+            "SELECT company, leader, teammates, manpower, contract_number, ship_name "
+            "FROM work_records WHERE date BETWEEN ? AND ? AND company != '' "
+            "ORDER BY company",
+            (start_date, end_date)
+        )
+        from collections import defaultdict
+        companies: dict = defaultdict(lambda: {
+            'totalManpower': 0.0, 'inHouse': 0.0, 'outsourced': 0.0,
+            'projects': set(), 'ships': set()
+        })
+        for row in (rows or []):
+            company  = row[0]
+            leader   = row[1] or ''
+            teammates = row[2] or ''
+            manpower  = float(row[3] or 0)
+            contract  = row[4] or ''
+            ship      = row[5] or ''
+            in_h, out = split_manpower_by_type(leader, teammates)
+            companies[company]['totalManpower'] += in_h + out
+            companies[company]['inHouse']       += in_h
+            companies[company]['outsourced']    += out
+            if contract:
+                companies[company]['projects'].add(contract)
+            if ship:
+                companies[company]['ships'].add(ship)
+
+        result = []
+        for company, data in companies.items():
+            result.append({
+                'company':      company,
+                'totalManpower': round(data['totalManpower'], 1),
+                'inHouse':       round(data['inHouse'], 1),
+                'outsourced':    round(data['outsourced'], 1),
+                'projectCount':  len(data['projects']),
+                'ships':         sorted(data['ships'])[:5],
+            })
+        result.sort(key=lambda x: x['totalManpower'], reverse=True)
+        return {'success': True, 'data': result}
+    except Exception as e:
+        logger.error(f"협력사 실적 조회 오류: {e}")
+        return {'success': False, 'message': '요청 처리 중 오류가 발생했습니다.'}
+
+
+@eel.expose
+def get_employee_profile(name: str, year: int = 0) -> Dict[str, Any]:
+    """직원별 연간 공수·프로젝트·연차 현황 조회"""
+    try:
+        target_year = year if year else datetime.now().year
+        rows = db.execute_query(
+            "SELECT date, leader, teammates, manpower, contract_number, ship_name "
+            "FROM work_records "
+            "WHERE (leader LIKE ? OR teammates LIKE ?) AND date LIKE ? "
+            "ORDER BY date",
+            (f'%{name}%', f'%{name}%', f'{target_year}%')
+        )
+        monthly = [0.0] * 12
+        projects: set = set()
+        total_manpower = 0.0
+        for row in (rows or []):
+            date_str  = row[0] or ''
+            leader    = row[1] or ''
+            teammates = row[2] or ''
+            contract  = row[4] or ''
+            ship      = row[5] or ''
+            try:
+                month_idx = int(date_str.split('-')[1]) - 1
+            except (IndexError, ValueError):
+                month_idx = 0
+            in_h, out = split_manpower_by_type(leader, teammates)
+            manpower  = round(in_h + out, 2)
+            monthly[max(0, min(11, month_idx))] += manpower
+            total_manpower += manpower
+            if contract:
+                projects.add(contract)
+            elif ship:
+                projects.add(ship)
+
+        # 연차 잔여
+        leave_rows = db.execute_query(
+            "SELECT total_days, used_annual, used_half "
+            "FROM vacation_balances WHERE year=? AND employee_name=?",
+            (target_year, name)
+        )
+        leave_balance = None
+        if leave_rows:
+            total_d  = float(leave_rows[0][0] or 0)
+            used_a   = float(leave_rows[0][1] or 0)
+            used_h   = float(leave_rows[0][2] or 0)
+            remaining = total_d - used_a - used_h * 0.5
+            leave_balance = {
+                'total': total_d,
+                'used': round(used_a + used_h * 0.5, 1),
+                'remaining': round(remaining, 1)
+            }
+        return {
+            'success': True,
+            'name': name,
+            'year': target_year,
+            'totalManpower': round(total_manpower, 1),
+            'monthlyManpower': [round(m, 1) for m in monthly],
+            'projectCount': len(projects),
+            'projects': sorted(projects)[:10],
+            'leaveBalance': leave_balance,
+        }
+    except Exception as e:
+        logger.error(f"직원 프로필 조회 오류: {e}")
+        return {'success': False, 'message': '요청 처리 중 오류가 발생했습니다.'}
+
+
+@eel.expose
+def estimate_completion(engine_model: str, work_content: str, target_start: str = '') -> Dict[str, Any]:
+    """과거 유사 작업 기간 기반 완료일 예측"""
+    try:
+        from datetime import datetime as _dt, timedelta as _td
+        rows = db.execute_query(
+            "SELECT target_start_date, actual_end_date FROM board_projects "
+            "WHERE actual_end_date != '' AND target_start_date != '' "
+            "AND (engine_model = ? OR work_content LIKE ?) "
+            "ORDER BY id DESC LIMIT 30",
+            (engine_model or '', f'%{(work_content or "")[:10]}%')
+        )
+        durations = []
+        for row in (rows or []):
+            try:
+                s = row[0]; e = row[1]
+                d = (_dt.strptime(e, '%Y-%m-%d') - _dt.strptime(s, '%Y-%m-%d')).days
+                if 1 <= d <= 365:
+                    durations.append(d)
+            except Exception:
+                pass
+
+        if not durations:
+            return {'success': True, 'avgDays': None, 'sampleCount': 0, 'suggestionEndDate': ''}
+
+        avg_days = round(sum(durations) / len(durations))
+        suggestion_end = ''
+        if target_start:
+            try:
+                end_dt = _dt.strptime(target_start, '%Y-%m-%d') + _td(days=avg_days)
+                suggestion_end = end_dt.strftime('%Y-%m-%d')
+            except Exception:
+                pass
+
+        return {
+            'success': True,
+            'avgDays': avg_days,
+            'sampleCount': len(durations),
+            'suggestionEndDate': suggestion_end,
+        }
+    except Exception as e:
+        logger.error(f"완료 예측 오류: {e}")
+        return {'success': False, 'message': '요청 처리 중 오류가 발생했습니다.'}
+
+
+@eel.expose
 def get_kanban_data() -> Dict[str, Any]:
     """칸반 보드용 프로젝트 데이터 (접수/착수/준공/아카이브 4단계)"""
     try:

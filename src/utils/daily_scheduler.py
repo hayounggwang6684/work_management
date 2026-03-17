@@ -49,8 +49,14 @@ class DailyScheduler:
         """'9:30' → '09:30' 형식으로 정규화 (strftime('%H:%M') 비교용)"""
         if not t or ':' not in t:
             return t
-        h, m = t.split(':', 1)
-        return f"{int(h):02d}:{m.zfill(2)}"
+        try:
+            h, m = t.split(':', 1)
+            hi, mi = int(h), int(m)
+            if not (0 <= hi <= 23 and 0 <= mi <= 59):
+                return t  # 범위 초과 시 원본 반환
+            return f"{hi:02d}:{mi:02d}"
+        except ValueError:
+            return t
 
     def _tick(self):
         now = datetime.now()
