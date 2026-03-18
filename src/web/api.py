@@ -3138,6 +3138,65 @@ def get_erp_macro_status(user_id: str) -> Dict[str, Any]:
 
 
 @eel.expose
+def diagnose_erp_controls(user_id: str = '') -> Dict[str, Any]:
+    """ERP 창의 자식 컨트롤 목록 반환 (달력 컨트롤 탐색 진단용)"""
+    try:
+        err = _check_erp_permission(user_id)
+        if err:
+            return {'success': False, 'message': err}
+
+        try:
+            import win32gui
+        except ImportError:
+            return {'success': False, 'message': 'pywin32 미설치. pip install pywin32'}
+
+        hwnd = erp_macro._find_erp_window(win32gui)
+        if not hwnd:
+            visible: list = []
+
+            def _cb(h, _):
+                t = win32gui.GetWindowText(h)
+                if t and win32gui.IsWindowVisible(h):
+                    visible.append(t[:60])
+
+            win32gui.EnumWindows(_cb, None)
+            return {
+                'success': False,
+                'message': 'ERP 창을 찾을 수 없습니다. 선진종합시스템을 먼저 실행하세요.',
+                'open_windows': visible[:10],
+            }
+
+        controls = erp_macro._discover_controls(hwnd, win32gui)
+
+        from src.utils.erp_macro import CALENDAR_CLASSES
+        cal_set = {c.lower() for c in CALENDAR_CLASSES}
+        calendar_candidates = [
+            c for c in controls if c['cls'].lower() in cal_set
+        ]
+
+        safe_controls = [
+            {'hwnd': c['hwnd'], 'cls': c['cls'],
+             'text': c['text'][:50], 'rect': list(c['rect'])}
+            for c in controls
+        ]
+
+        return {
+            'success': True,
+            'erp_hwnd': hwnd,
+            'erp_title': win32gui.GetWindowText(hwnd),
+            'controls': safe_controls,
+            'calendar_candidates': [
+                {'hwnd': c['hwnd'], 'cls': c['cls'],
+                 'text': c['text'][:50], 'rect': list(c['rect'])}
+                for c in calendar_candidates
+            ],
+        }
+    except Exception as e:
+        logger.error(f"ERP 컨트롤 진단 오류: {e}")
+        return {'success': False, 'message': '요청 처리 중 오류가 발생했습니다.'}
+
+
+@eel.expose
 def get_telegram_bot_enabled() -> Dict[str, Any]:
     """텔레그램 봇 활성화 상태 조회"""
     try:

@@ -4060,6 +4060,39 @@ async function pollErpStatus() {
     }
 }
 
+async function diagnoseErpControls() {
+    const el = document.getElementById('erpDiagResult');
+    if (!el) return;
+    el.classList.remove('hidden');
+    el.textContent = '진단 중...';
+    try {
+        const res = await eel.diagnose_erp_controls(currentUser?.user_id || '')();
+        if (res && res.success) {
+            const cands = res.calendar_candidates || [];
+            const calInfo = cands.length
+                ? '✅ 달력 컨트롤 발견: ' + cands.map(c => c.cls).join(', ')
+                : '⚠️ 달력 컨트롤 미발견 (Win32 직접 설정 불가 — 좌표 폴백 사용)';
+            const lines = [
+                `ERP 창: "${escapeHtml(res.erp_title || '')}" (hwnd=${res.erp_hwnd})`,
+                calInfo,
+                `전체 자식 컨트롤: ${(res.controls || []).length}개`,
+                '',
+                ...(res.controls || []).slice(0, 25).map(c =>
+                    `[${c.hwnd}] ${escapeHtml(c.cls)} "${escapeHtml(c.text || '')}" rect=${JSON.stringify(c.rect)}`)
+            ];
+            el.textContent = lines.join('\n');
+        } else {
+            let msg = res?.message || '진단 실패';
+            if (res?.open_windows?.length) {
+                msg += '\n현재 열린 창: ' + res.open_windows.map(w => escapeHtml(w)).join(', ');
+            }
+            el.textContent = msg;
+        }
+    } catch(e) {
+        el.textContent = '진단 오류: ' + escapeHtml(e?.message || String(e));
+    }
+}
+
 async function installErpDeps() {
     const btn = document.getElementById('btnInstallErpDeps');
     if (btn) { btn.disabled = true; btn.textContent = '설치 중...'; }

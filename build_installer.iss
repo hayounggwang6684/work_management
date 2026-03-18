@@ -4,7 +4,7 @@
 
 [Setup]
 AppName=湲덉씪?묒뾽?꾪솴 愿由?
-AppVersion=2.1.18
+AppVersion=2.1.20
 AppPublisher=Your Company
 DefaultDirName={autopf}\WorkManagement
 DefaultGroupName=湲덉씪?묒뾽?꾪솴 愿由?
