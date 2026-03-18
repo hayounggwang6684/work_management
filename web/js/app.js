@@ -732,8 +732,9 @@ function renderCard(project, borderColor) {
             <div class="flex justify-between items-center mt-1">
                 <div class="flex gap-1 items-center">
                     <div class="text-xs text-slate-400">${project.workDays || 0}일 작업</div>
-                    ${project.boardProjectId ? `<button onclick="event.stopPropagation(); openMilestoneModal(${project.boardProjectId}, '${escapeJs(project.targetStartDate||'')}', '${escapeJs(project.targetEndDate||'')}', '${escapeJs(project.actualEndDate||'')}', '${escapeJs(project.engineModel||'')}', '${escapeJs(project.workContent||'')}')"
-                            class="text-xs px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded hover:bg-slate-200" title="마일스톤 편집">📅</button>` : ''}
+                    ${project.boardProjectId
+                        ? `<button onclick="event.stopPropagation(); openMilestoneModal(${project.boardProjectId}, '${escapeJs(project.targetStartDate||'')}', '${escapeJs(project.targetEndDate||'')}', '${escapeJs(project.actualEndDate||'')}', '${escapeJs(project.engineModel||'')}', '${escapeJs(project.workContent||'')}')" class="text-xs px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded hover:bg-slate-200" title="마일스톤 편집">📅</button>`
+                        : `<button onclick="event.stopPropagation(); _openMilestoneForNew('${jsCn}', '${escapeJs(project.engineModel||'')}', '${escapeJs(project.workContent||'')}')" class="text-xs px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded hover:bg-slate-200" title="마일스톤 편집">📅</button>`}
                 </div>
                 <button onclick="event.stopPropagation(); openCommentModal(this.dataset.cn, null, this.dataset.title)" data-cn="${escapeHtml(cn)}" data-title="${escapeHtml(project.company || '')} ${escapeHtml(project.shipName || '')}" class="text-slate-400 hover:text-blue-500 text-sm" title="댓글">💬</button>
             </div>
@@ -754,6 +755,21 @@ function _renderMilestoneBadges(project) {
     if (te) parts.push(`<span class="text-orange-500">완료예정 ${escapeHtml(te)}</span>`);
     if (ae) parts.push(`<span class="text-green-600">완료 ✅ ${escapeHtml(ae)}</span>`);
     return parts.length ? `<div class="flex flex-wrap gap-1 mt-1 text-xs">${parts.join('')}</div>` : '';
+}
+
+// boardProjectId 없는 카드(착수 직접 등록)에서 📅 클릭 시 호출
+// board_projects 행을 자동 생성 후 마일스톤 모달 열기
+async function _openMilestoneForNew(contractNumber, engineModel, workContent) {
+    try {
+        const res = await eel.get_or_create_board_project(contractNumber)();
+        if (res && res.success) {
+            openMilestoneModal(res.projectId, '', '', '', engineModel, workContent);
+        } else {
+            showToast(res?.message || '마일스톤 생성 중 오류가 발생했습니다.', 'error');
+        }
+    } catch(e) {
+        showToast('마일스톤 생성 중 오류가 발생했습니다.', 'error');
+    }
 }
 
 function openMilestoneModal(projectId, targetStart, targetEnd, actualEnd, engineModel, workContent) {

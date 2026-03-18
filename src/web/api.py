@@ -2327,6 +2327,50 @@ def get_kanban_data() -> Dict[str, Any]:
         return {'reception': [], 'started': [], 'done': [], 'archive': []}
 
 
+@eel.expose
+def get_or_create_board_project(contract_number: str) -> Dict[str, Any]:
+    """착수 직접 등록 프로젝트 — board_projects 항목이 없으면 자동 생성 후 ID 반환.
+    마일스톤 편집 버튼 클릭 시 boardProjectId 없는 카드에서 호출."""
+    try:
+        cn = (contract_number or '').strip()
+        if not cn:
+            return {'success': False, 'message': '계약번호가 없습니다.'}
+        with db.get_connection() as conn:
+            # 이미 존재하는 항목 확인
+            row = conn.execute(
+                'SELECT id FROM board_projects WHERE contract_number = ?', (cn,)
+            ).fetchone()
+            if row:
+                return {'success': True, 'projectId': row['id']}
+            # work_records에서 기본 정보 조회
+            rec = conn.execute(
+                '''SELECT company, ship_name, engine_model, work_content
+                   FROM work_records
+                   WHERE contract_number = ? AND company != ''
+                   ORDER BY date DESC LIMIT 1''',
+                (cn,)
+            ).fetchone()
+            from datetime import datetime as _dt
+            now = _dt.now().isoformat()
+            company      = rec['company']      if rec else ''
+            ship_name    = rec['ship_name']    if rec else ''
+            engine_model = rec['engine_model'] if rec else ''
+            work_content = rec['work_content'] if rec else ''
+            cursor = conn.execute(
+                '''INSERT INTO board_projects
+                   (contract_number, company, ship_name, engine_model,
+                    work_content, status, created_at, created_by, updated_at)
+                   VALUES (?, ?, ?, ?, ?, '착수', ?, '', ?)''',
+                (cn, company, ship_name, engine_model, work_content, now, now)
+            )
+            new_id = cursor.lastrowid
+        logger.info(f"board_projects 자동 생성: {cn} → id={new_id}")
+        return {'success': True, 'projectId': new_id}
+    except Exception as e:
+        logger.error(f"board_projects 생성 오류: {e}")
+        return {'success': False, 'message': '요청 처리 중 오류가 발생했습니다.'}
+
+
 # ============================================================================
 # 댓글 시스템
 # ============================================================================
