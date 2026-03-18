@@ -2829,6 +2829,7 @@ function showEmployeeTab(tab) {
 // ============================================================================
 
 let _leaveReportData = [];  // T3: 현재 표시 중인 직원 데이터 (순서 변경용)
+let _leaveExcluded = [];    // 제외된 직원 이름 목록
 let _leaveReportYear = 0;   // T3: 현재 조회 연도
 
 async function loadLeaveMonthlyReport() {
@@ -2850,12 +2851,20 @@ async function loadLeaveMonthlyReport() {
     container.innerHTML = '<p class="text-slate-400 text-sm">불러오는 중...</p>';
     try {
         // T3: 저장된 순서 먼저 로드
-        const [result, orderResult] = await Promise.all([
+        const [result, orderResult, excludedResult] = await Promise.all([
             eel.get_all_leave_monthly_report(year)(),
-            eel.get_employee_leave_order()()
+            eel.get_employee_leave_order()(),
+            eel.get_employee_leave_excluded()()
         ]);
+        // 제외 목록 파싱
+        _leaveExcluded = [];
+        if (excludedResult && excludedResult.excluded) {
+            try { _leaveExcluded = JSON.parse(excludedResult.excluded); } catch(e) {}
+        }
         if (result && result.success) {
             let data = result.data || [];
+            // 제외된 직원 필터링
+            data = data.filter(emp => !_leaveExcluded.includes(emp.name));
             // T3: 저장된 순서가 있으면 적용
             if (orderResult && orderResult.order) {
                 try {
@@ -2906,6 +2915,38 @@ async function saveLeaveOrder() {
     }
 }
 
+// 직원 제거 — 제외 목록에 추가 후 테이블에서 숨김
+async function removeLeaveEmployee(idx) {
+    const emp = _leaveReportData[idx];
+    if (!emp) return;
+    const name = emp.name;
+    if (!confirm(`"${name}"을(를) 보고서에서 제거하시겠습니까?\n하단 목록에서 복원할 수 있습니다.`)) return;
+    _leaveExcluded.push(name);
+    _leaveReportData.splice(idx, 1);
+    try {
+        await Promise.all([
+            eel.set_employee_leave_excluded(JSON.stringify(_leaveExcluded))(),
+            eel.save_employee_leave_order(JSON.stringify(_leaveReportData.map(e => e.name)))()
+        ]);
+        showToast(`${escapeHtml(name)}이(가) 보고서에서 제거되었습니다.`, 'success');
+        renderLeaveMonthlyReport(_leaveReportData, _leaveReportYear);
+    } catch(e) {
+        showToast('제거 중 오류가 발생했습니다.', 'error');
+    }
+}
+
+// 제외된 직원 복원
+async function restoreLeaveEmployee(name) {
+    _leaveExcluded = _leaveExcluded.filter(n => n !== name);
+    try {
+        await eel.set_employee_leave_excluded(JSON.stringify(_leaveExcluded))();
+        showToast(`${escapeHtml(name)}이(가) 복원되었습니다.`, 'success');
+        loadLeaveMonthlyReport();
+    } catch(e) {
+        showToast('복원 중 오류가 발생했습니다.', 'error');
+    }
+}
+
 function renderLeaveMonthlyReport(data, year) {
     const container = document.getElementById('leaveReportTableContainer');
     if (!container) return;
@@ -2949,6 +2990,7 @@ function renderLeaveMonthlyReport(data, year) {
             <td class="border border-gray-400 px-1 py-1 text-center no-print whitespace-nowrap">
                 <button onclick="moveLeaveRow(${idx}, -1)" class="px-1 text-slate-500 hover:text-blue-600 disabled:opacity-30 text-xs" ${idx === 0 ? 'disabled' : ''}>▲</button>
                 <button onclick="moveLeaveRow(${idx}, 1)" class="px-1 text-slate-500 hover:text-blue-600 disabled:opacity-30 text-xs" ${idx === data.length - 1 ? 'disabled' : ''}>▼</button>
+                <button onclick="removeLeaveEmployee(${idx})" class="px-1 text-red-400 hover:text-red-600 text-xs ml-1" title="보고서에서 제거">✕</button>
             </td>
             <td class="border border-gray-400 px-2 py-2 text-center">${idx + 1}</td>
             <td class="border border-gray-400 px-3 py-2 text-center font-medium">${escapeHtml(emp.name)}</td>`;
@@ -2964,7 +3006,22 @@ function renderLeaveMonthlyReport(data, year) {
         </tr>`;
     });
 
-    html += `</tbody></table></div>`;
+    html += `</tbody></table>`;
+
+    // 제외된 직원 복원 영역 (인쇄 제외)
+    if (_leaveExcluded.length > 0) {
+        html += `<div class="mt-3 no-print p-3 bg-slate-50 rounded border border-slate-200">
+            <p class="text-xs text-slate-500 font-semibold mb-2">🚫 제외된 직원 — 클릭하면 복원됩니다</p>
+            <div class="flex flex-wrap gap-2">`;
+        _leaveExcluded.forEach(name => {
+            html += `<button onclick="restoreLeaveEmployee(this.dataset.name)" data-name="${escapeHtml(name)}"
+                class="px-2 py-1 bg-white border border-slate-300 rounded text-xs text-slate-600 hover:bg-blue-50 hover:border-blue-400 hover:text-blue-700">
+                ↩ ${escapeHtml(name)}</button>`;
+        });
+        html += `</div></div>`;
+    }
+
+    html += `</div>`;
     container.innerHTML = html;
 }
 
@@ -3971,7 +4028,16 @@ async function pollErpStatus() {
             _erpPollInterval = null;
             document.getElementById('btnErpStart')?.classList.remove('hidden');
             document.getElementById('btnErpStop')?.classList.add('hidden');
-            showToast('ERP 입력이 완료되었습니다.', 'success');
+            // 오류/완료/종료 구분
+            const _hasErr = res.log && res.log.some(l =>
+                l.includes('찾을 수 없습니다') || l.includes('라이브러리 누락') || l.includes('오류 발생'));
+            if (_hasErr) {
+                showToast('ERP 입력 중 오류가 발생했습니다. 로그를 확인하세요.', 'error');
+            } else if (res.progress > 0) {
+                showToast('ERP 입력이 완료되었습니다.', 'success');
+            } else {
+                showToast('ERP 매크로가 종료되었습니다.', 'warning');
+            }
         }
     } catch (e) {
         // 일시적 통신 오류 — 조용히 무시

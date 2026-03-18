@@ -2865,6 +2865,35 @@ def get_employee_leave_order() -> Dict[str, Any]:
 
 
 @eel.expose
+def set_employee_leave_excluded(names_json: str) -> Dict[str, Any]:
+    """직원 연차 보고 제외 목록 저장 (app_settings)"""
+    try:
+        with db.get_connection() as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO app_settings (key, value) VALUES ('employee_leave_excluded', ?)",
+                (names_json,)
+            )
+        return {'success': True}
+    except Exception as e:
+        logger.error(f"직원 제외 목록 저장 오류: {e}")
+        return {'success': False, 'message': '요청 처리 중 오류가 발생했습니다.'}
+
+
+@eel.expose
+def get_employee_leave_excluded() -> Dict[str, Any]:
+    """제외된 직원 이름 목록 반환 (JSON 배열 문자열)"""
+    try:
+        with db.get_connection() as conn:
+            row = conn.execute(
+                "SELECT value FROM app_settings WHERE key = 'employee_leave_excluded'"
+            ).fetchone()
+        return {'success': True, 'excluded': row[0] if row else '[]'}
+    except Exception as e:
+        logger.error(f"직원 제외 목록 조회 오류: {e}")
+        return {'success': True, 'excluded': '[]'}
+
+
+@eel.expose
 def set_leave_report_edit(user_id: str, enabled: bool, admin_id: str) -> Dict[str, Any]:
     """연차 월별 보고 편집 권한 설정 (관리자 전용)"""
     try:

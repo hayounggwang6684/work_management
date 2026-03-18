@@ -63,27 +63,40 @@ class ERPMacro:
         dates_records 형식:
             [{'date': 'YYYY-MM-DD', 'records': [{'contractNumber': ..., ...}]}, ...]
         """
-        try:
-            import pyautogui
-            import win32gui
-            import win32con
-        except ImportError as e:
-            self._set_status(running=False)
-            self._log(f"필수 라이브러리 누락: {e}. pip install pyautogui pywin32")
-            return
-
-        self._stop_flag = False
+        # running=True + 로그 초기화를 먼저 (폴링이 즉시 상태 반영되도록)
         total = sum(len(d.get('records', [])) for d in dates_records)
         with self._lock:
             self._status.update({'running': True, 'progress': 0,
                                  'total': total, 'current': '', 'log': []})
 
-        hwnd = self._find_erp_window(win32gui)
-        if not hwnd:
-            self._log("ERP 창을 찾을 수 없습니다. 선진종합시스템을 먼저 실행해 주세요.")
+        try:
+            import pyautogui
+            import win32gui
+            import win32con
+        except ImportError as e:
+            self._log(f"필수 라이브러리 누락: {e}. pip install pyautogui pywin32")
             self._set_status(running=False)
             return
 
+        self._stop_flag = False
+        hwnd = self._find_erp_window(win32gui)
+        if not hwnd:
+            # 진단: 현재 열린 창 제목 목록 로깅
+            visible: list = []
+
+            def _cb(h, _):
+                t = win32gui.GetWindowText(h)
+                if t and win32gui.IsWindowVisible(h):
+                    visible.append(t[:40])
+
+            win32gui.EnumWindows(_cb, None)
+            self._log("ERP 창을 찾을 수 없습니다. 선진종합시스템을 먼저 실행해 주세요.")
+            if visible:
+                self._log(f"현재 열린 창 (진단): {', '.join(visible[:8])}")
+            self._set_status(running=False)
+            return
+
+        self._log(f"ERP 창 발견: '{win32gui.GetWindowText(hwnd)}'")
         self._activate_window(hwnd, win32gui, win32con)
         pyautogui.FAILSAFE = True   # 마우스를 화면 모서리로 이동 시 중단
         pyautogui.PAUSE = 0.05      # 각 동작 사이 기본 딜레이
@@ -159,8 +172,13 @@ class ERPMacro:
 
     def _activate_window(self, hwnd, win32gui, win32con):
         """ERP 창을 최상위로 가져와 포커스 설정"""
-        win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
-        win32gui.SetForegroundWindow(hwnd)
+        try:
+            win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
+            time.sleep(0.3)
+            win32gui.BringWindowToTop(hwnd)
+            win32gui.SetForegroundWindow(hwnd)
+        except Exception as e:
+            self._log(f"창 활성화 경고: {e} (계속 진행)")
         time.sleep(0.6)
 
     def _get_window_rect(self, hwnd, win32gui) -> tuple:
