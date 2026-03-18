@@ -225,7 +225,6 @@ function showSearchTab(tab) {
 
     // 탭별 진입 처리
     if (tab === 'company') loadCompanyNameList();
-    if (tab === 'performance') _initPerfMonthDefaults();
 }
 
 async function loadCompanyNameList() {
@@ -240,155 +239,6 @@ async function loadCompanyNameList() {
     }
 }
 
-// ============================================================================
-// 업체 실적 분석
-// ============================================================================
-
-let _perfData = [];
-
-function _initPerfMonthDefaults() {
-    const now = new Date();
-    const yyyy = now.getFullYear();
-    const mm = String(now.getMonth() + 1).padStart(2, '0');
-    const startEl = document.getElementById('perfStartMonth');
-    const endEl   = document.getElementById('perfEndMonth');
-    if (startEl && !startEl.value) startEl.value = `${yyyy}-01`;
-    if (endEl && !endEl.value)     endEl.value   = `${yyyy}-${mm}`;
-}
-
-async function loadCompanyPerformance() {
-    const startEl = document.getElementById('perfStartMonth');
-    const endEl   = document.getElementById('perfEndMonth');
-    if (!startEl?.value || !endEl?.value) {
-        showCustomAlert('알림', '기간을 선택해 주세요.', 'warning');
-        return;
-    }
-    const startDate = startEl.value + '-01';
-    const endDate   = endEl.value   + '-31';
-    showLoading(true, '업체 실적 분석 중...');
-    try {
-        const result = await eel.get_company_performance(startDate, endDate, currentUser?.user_id || '')();
-        showLoading(false);
-        if (!result.success) {
-            showCustomAlert('오류', result.message || '조회 실패', 'error');
-            return;
-        }
-        _perfData = result.data || [];
-        _renderPerfTable(_perfData);
-        _renderPerfChart(_perfData);
-    } catch (e) {
-        showLoading(false);
-        console.error('업체 실적 조회 오류:', e);
-        showCustomAlert('오류', '조회 중 오류가 발생했습니다.', 'error');
-    }
-}
-
-function _renderPerfTable(data) {
-    const container = document.getElementById('perfTableContainer');
-    if (!container) return;
-    if (!data.length) {
-        container.innerHTML = '<p class="text-slate-500">해당 기간에 작업 데이터가 없습니다.</p>';
-        return;
-    }
-    const html = `
-    <div class="overflow-x-auto">
-      <table class="w-full text-sm border-collapse">
-        <thead>
-          <tr class="bg-slate-100 text-slate-700">
-            <th class="border p-2 text-left cursor-pointer hover:bg-slate-200" onclick="_sortPerfTable('company')">업체명 ↕</th>
-            <th class="border p-2 text-right cursor-pointer hover:bg-slate-200" onclick="_sortPerfTable('totalManpower')">총 공수 ↕</th>
-            <th class="border p-2 text-right">본공</th>
-            <th class="border p-2 text-right">외주</th>
-            <th class="border p-2 text-right cursor-pointer hover:bg-slate-200" onclick="_sortPerfTable('projectCount')">프로젝트 ↕</th>
-            <th class="border p-2 text-left">참여 선박</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${data.map((r, i) => `
-          <tr class="${i % 2 === 0 ? '' : 'bg-slate-50'} hover:bg-blue-50">
-            <td class="border p-2 font-medium">${escapeHtml(r.company)}</td>
-            <td class="border p-2 text-right font-bold text-blue-700">${r.totalManpower.toFixed(1)}</td>
-            <td class="border p-2 text-right text-slate-600">${r.inHouse.toFixed(1)}</td>
-            <td class="border p-2 text-right text-orange-600">${r.outsourced.toFixed(1)}</td>
-            <td class="border p-2 text-right">${r.projectCount}</td>
-            <td class="border p-2 text-slate-500 text-xs">${(r.ships || []).map(s => escapeHtml(s)).join(', ')}</td>
-          </tr>`).join('')}
-        </tbody>
-      </table>
-    </div>`;
-    container.innerHTML = html;
-}
-
-let _perfSortKey = 'totalManpower', _perfSortAsc = false;
-function _sortPerfTable(key) {
-    if (_perfSortKey === key) _perfSortAsc = !_perfSortAsc;
-    else { _perfSortKey = key; _perfSortAsc = false; }
-    const sorted = [..._perfData].sort((a, b) => {
-        const av = a[key], bv = b[key];
-        if (typeof av === 'string') return _perfSortAsc ? av.localeCompare(bv) : bv.localeCompare(av);
-        return _perfSortAsc ? av - bv : bv - av;
-    });
-    _renderPerfTable(sorted);
-}
-
-let _perfChart = null;
-function _renderPerfChart(data) {
-    const box    = document.getElementById('perfChartBox');
-    const canvas = document.getElementById('perfChart');
-    if (!box || !canvas) return;
-    const top5 = data.slice(0, 5);
-    if (!top5.length) { box.classList.add('hidden'); return; }
-    box.classList.remove('hidden');
-    if (_perfChart) { _perfChart.destroy(); _perfChart = null; }
-    _perfChart = new Chart(canvas, {
-        type: 'bar',
-        data: {
-            labels: top5.map(r => r.company),
-            datasets: [
-                { label: '본공',   data: top5.map(r => r.inHouse),    backgroundColor: 'rgba(59,130,246,0.7)' },
-                { label: '외주',   data: top5.map(r => r.outsourced),  backgroundColor: 'rgba(249,115,22,0.7)' },
-            ]
-        },
-        options: {
-            responsive: true,
-            indexAxis: 'y',
-            plugins: {
-                legend: { position: 'bottom' },
-                title: { display: true, text: '상위 5개 업체 공수 (본공/외주)' }
-            },
-            scales: { x: { stacked: true }, y: { stacked: true } }
-        }
-    });
-}
-
-async function exportCompanyPerformance() {
-    if (!_perfData.length) {
-        showCustomAlert('알림', '먼저 조회를 실행하세요.', 'warning');
-        return;
-    }
-    try {
-        const startEl = document.getElementById('perfStartMonth');
-        const endEl   = document.getElementById('perfEndMonth');
-        const period  = `${startEl?.value || ''}_${endEl?.value || ''}`;
-        const header  = ['업체명', '총공수', '본공', '외주', '프로젝트건수', '참여선박'];
-        const rows    = _perfData.map(r => [
-            r.company, r.totalManpower, r.inHouse, r.outsourced,
-            r.projectCount, (r.ships || []).join('|')
-        ]);
-        const csv = [header, ...rows].map(r => r.join('\t')).join('\n');
-        const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
-        const url  = URL.createObjectURL(blob);
-        const a    = document.createElement('a');
-        a.href     = url;
-        a.download = `업체실적_${period}.csv`;
-        a.click();
-        URL.revokeObjectURL(url);
-        showToast('CSV 파일로 저장되었습니다.', 'success');
-    } catch (e) {
-        console.error('내보내기 오류:', e);
-        showCustomAlert('오류', '내보내기 중 오류가 발생했습니다.', 'error');
-    }
-}
 
 // ============================================================================
 // 조회 탭 초기 기본값: DB 최신 계약번호 설정
@@ -1162,6 +1012,8 @@ async function deleteBoardProject(projectId) {
 // 댓글 시스템
 // ============================================================================
 
+let _commentPollTimer = null;
+
 function openCommentModal(contractNumber, boardProjectId, title) {
     document.getElementById('commentContractNumber').value = contractNumber || '';
     document.getElementById('commentBoardProjectId').value = boardProjectId || '';
@@ -1170,10 +1022,32 @@ function openCommentModal(contractNumber, boardProjectId, title) {
     document.getElementById('commentReplyToId').value = '';
     document.getElementById('replyIndicator').classList.add('hidden');
     document.getElementById('commentModal').classList.remove('hidden');
+
+    // T2a: textarea keydown 이벤트 설정 (Enter=제출, Shift+Enter=줄바꿈)
+    const textarea = document.getElementById('commentInput');
+    if (textarea && !textarea._commentKeydownBound) {
+        textarea.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                submitComment();
+            }
+        });
+        textarea._commentKeydownBound = true;
+    }
+
+    // T2c: 자동 폴링 시작 (10초 주기)
+    clearInterval(_commentPollTimer);
+    _commentPollTimer = setInterval(async () => {
+        try { await loadComments(); } catch(e) {}
+    }, 10000);
+
     loadComments();
 }
 
 function closeCommentModal() {
+    // T2c: 폴링 해제
+    clearInterval(_commentPollTimer);
+    _commentPollTimer = null;
     document.getElementById('commentModal').classList.add('hidden');
 }
 
@@ -1295,11 +1169,15 @@ function cancelReply() {
     document.getElementById('replyIndicator').classList.add('hidden');
 }
 
+let _isSubmittingComment = false; // T2b: 중복 제출 방지 플래그
+
 async function submitComment() {
+    if (_isSubmittingComment) return; // T2b: 중복 제출 차단
     const input = document.getElementById('commentInput');
     const content = input.value.trim();
     if (!content) return;
 
+    _isSubmittingComment = true;
     const cn = document.getElementById('commentContractNumber').value;
     const bpId = document.getElementById('commentBoardProjectId').value;
     const parentId = document.getElementById('commentReplyToId').value;
@@ -1319,12 +1197,14 @@ async function submitComment() {
         if (result.success) {
             input.value = '';
             cancelReply();
-            try { await loadComments(); } catch(e) { console.warn('댓글 목록 갱신 실패:', e); } // #9
+            try { await loadComments(); } catch(e) { console.warn('댓글 목록 갱신 실패:', e); }
         } else {
             showCustomAlert('오류', result.message, 'error');
         }
     } catch (error) {
         console.error('댓글 등록 실패:', error);
+    } finally {
+        _isSubmittingComment = false; // T2b: 항상 플래그 해제
     }
 }
 
@@ -2948,6 +2828,9 @@ function showEmployeeTab(tab) {
 // 연차 월별 보고
 // ============================================================================
 
+let _leaveReportData = [];  // T3: 현재 표시 중인 직원 데이터 (순서 변경용)
+let _leaveReportYear = 0;   // T3: 현재 조회 연도
+
 async function loadLeaveMonthlyReport() {
     const sel = document.getElementById('leaveReportYear');
     if (!sel) return;
@@ -2966,14 +2849,60 @@ async function loadLeaveMonthlyReport() {
     if (!container) return;
     container.innerHTML = '<p class="text-slate-400 text-sm">불러오는 중...</p>';
     try {
-        const result = await eel.get_all_leave_monthly_report(year)();
+        // T3: 저장된 순서 먼저 로드
+        const [result, orderResult] = await Promise.all([
+            eel.get_all_leave_monthly_report(year)(),
+            eel.get_employee_leave_order()()
+        ]);
         if (result && result.success) {
-            renderLeaveMonthlyReport(result.data, year);
+            let data = result.data || [];
+            // T3: 저장된 순서가 있으면 적용
+            if (orderResult && orderResult.order) {
+                try {
+                    const savedOrder = JSON.parse(orderResult.order);
+                    data = _applyLeaveOrder(data, savedOrder);
+                } catch(e) { console.warn('직원 순서 파싱 실패:', e); }
+            }
+            renderLeaveMonthlyReport(data, year);
         } else {
             container.innerHTML = '<p class="text-red-500 text-sm">데이터 조회 실패</p>';
         }
     } catch (e) {
         container.innerHTML = '<p class="text-red-500 text-sm">오류: ' + escapeHtml(String(e)) + '</p>';
+    }
+}
+
+// T3: 저장된 이름 순서대로 data 배열 재정렬 (저장된 이름 없는 항목은 뒤에 추가)
+function _applyLeaveOrder(data, savedOrder) {
+    const orderMap = {};
+    savedOrder.forEach((name, idx) => { orderMap[name] = idx; });
+    return [...data].sort((a, b) => {
+        const ia = orderMap[a.name] ?? 9999;
+        const ib = orderMap[b.name] ?? 9999;
+        return ia - ib;
+    });
+}
+
+// T3: 직원 행 이동
+function moveLeaveRow(idx, dir) {
+    const newIdx = idx + dir;
+    if (newIdx < 0 || newIdx >= _leaveReportData.length) return;
+    [_leaveReportData[idx], _leaveReportData[newIdx]] = [_leaveReportData[newIdx], _leaveReportData[idx]];
+    renderLeaveMonthlyReport(_leaveReportData, _leaveReportYear);
+}
+
+// T3: 현재 순서 DB에 저장
+async function saveLeaveOrder() {
+    const names = _leaveReportData.map(e => e.name);
+    try {
+        const r = await eel.save_employee_leave_order(JSON.stringify(names))();
+        if (r && r.success) {
+            showToast('직원 순서가 저장되었습니다.', 'success');
+        } else {
+            showToast('순서 저장 실패', 'error');
+        }
+    } catch(e) {
+        showToast('순서 저장 중 오류가 발생했습니다.', 'error');
     }
 }
 
@@ -2985,15 +2914,24 @@ function renderLeaveMonthlyReport(data, year) {
         return;
     }
 
+    // T3: 모듈 변수 업데이트
+    _leaveReportData = data;
+    _leaveReportYear = year;
+
     const curYear = new Date().getFullYear();
     const maxMonth = (year === curYear) ? new Date().getMonth() + 1 : 12;
     const monthNames = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
 
     let html = `<div id="leaveReportPrintArea">
         <h3 class="text-lg font-bold text-center mb-3 hidden" id="leaveReportPrintTitle">${escapeHtml(String(year))}년 연차 현황</h3>
+        <div class="mb-2 no-print flex items-center gap-2">
+            <span class="text-xs text-slate-500">↑↓ 버튼으로 순서를 조정하고</span>
+            <button onclick="saveLeaveOrder()" class="px-3 py-1 bg-slate-600 text-white rounded text-xs font-semibold hover:bg-slate-700">💾 순서 저장</button>
+        </div>
         <table class="w-full border-collapse text-sm">
             <thead>
                 <tr class="bg-blue-50">
+                    <th class="border border-gray-400 px-2 py-2 text-center whitespace-nowrap no-print">순서</th>
                     <th class="border border-gray-400 px-2 py-2 text-center whitespace-nowrap">순번</th>
                     <th class="border border-gray-400 px-3 py-2 text-center whitespace-nowrap">이름</th>`;
     for (let m = 1; m <= maxMonth; m++) {
@@ -3008,6 +2946,10 @@ function renderLeaveMonthlyReport(data, year) {
 
     data.forEach((emp, idx) => {
         html += `<tr class="${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'}">
+            <td class="border border-gray-400 px-1 py-1 text-center no-print whitespace-nowrap">
+                <button onclick="moveLeaveRow(${idx}, -1)" class="px-1 text-slate-500 hover:text-blue-600 disabled:opacity-30 text-xs" ${idx === 0 ? 'disabled' : ''}>▲</button>
+                <button onclick="moveLeaveRow(${idx}, 1)" class="px-1 text-slate-500 hover:text-blue-600 disabled:opacity-30 text-xs" ${idx === data.length - 1 ? 'disabled' : ''}>▼</button>
+            </td>
             <td class="border border-gray-400 px-2 py-2 text-center">${idx + 1}</td>
             <td class="border border-gray-400 px-3 py-2 text-center font-medium">${escapeHtml(emp.name)}</td>`;
         for (let m = 1; m <= maxMonth; m++) {

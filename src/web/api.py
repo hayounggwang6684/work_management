@@ -2074,53 +2074,6 @@ def delete_board_project(project_id: int) -> Dict[str, Any]:
         return {'success': False, 'message': '요청 처리 중 오류가 발생했습니다.'}
 
 
-@eel.expose
-def get_company_performance(start_date: str, end_date: str, user_id: str = '') -> Dict[str, Any]:
-    """협력사 실적 분석 — 기간별 업체별 공수/건수 집계"""
-    try:
-        rows = db.execute_query(
-            "SELECT company, leader, teammates, manpower, contract_number, ship_name "
-            "FROM work_records WHERE date BETWEEN ? AND ? AND company != '' "
-            "ORDER BY company",
-            (start_date, end_date)
-        )
-        from collections import defaultdict
-        companies: dict = defaultdict(lambda: {
-            'totalManpower': 0.0, 'inHouse': 0.0, 'outsourced': 0.0,
-            'projects': set(), 'ships': set()
-        })
-        for row in (rows or []):
-            company  = row[0]
-            leader   = row[1] or ''
-            teammates = row[2] or ''
-            manpower  = float(row[3] or 0)
-            contract  = row[4] or ''
-            ship      = row[5] or ''
-            in_h, out = split_manpower_by_type(leader, teammates)
-            companies[company]['totalManpower'] += in_h + out
-            companies[company]['inHouse']       += in_h
-            companies[company]['outsourced']    += out
-            if contract:
-                companies[company]['projects'].add(contract)
-            if ship:
-                companies[company]['ships'].add(ship)
-
-        result = []
-        for company, data in companies.items():
-            result.append({
-                'company':      company,
-                'totalManpower': round(data['totalManpower'], 1),
-                'inHouse':       round(data['inHouse'], 1),
-                'outsourced':    round(data['outsourced'], 1),
-                'projectCount':  len(data['projects']),
-                'ships':         sorted(data['ships'])[:5],
-            })
-        result.sort(key=lambda x: x['totalManpower'], reverse=True)
-        return {'success': True, 'data': result}
-    except Exception as e:
-        logger.error(f"협력사 실적 조회 오류: {e}")
-        return {'success': False, 'message': '요청 처리 중 오류가 발생했습니다.'}
-
 
 @eel.expose
 def get_employee_profile(name: str, year: int = 0) -> Dict[str, Any]:
@@ -2880,6 +2833,35 @@ def get_all_leave_monthly_report(year: int) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"연차 월별 보고 조회 오류: {e}")
         return {'success': False, 'message': '요청 처리 중 오류가 발생했습니다.'}
+
+
+@eel.expose
+def save_employee_leave_order(names_json: str) -> Dict[str, Any]:
+    """직원 연차 보고 표시 순서 저장 (app_settings)"""
+    try:
+        with db.get_connection() as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO app_settings (key, value) VALUES ('employee_leave_order', ?)",
+                (names_json,)
+            )
+        return {'success': True}
+    except Exception as e:
+        logger.error(f"직원 순서 저장 오류: {e}")
+        return {'success': False, 'message': '요청 처리 중 오류가 발생했습니다.'}
+
+
+@eel.expose
+def get_employee_leave_order() -> Dict[str, Any]:
+    """저장된 직원 연차 보고 순서 반환"""
+    try:
+        with db.get_connection() as conn:
+            row = conn.execute(
+                "SELECT value FROM app_settings WHERE key = 'employee_leave_order'"
+            ).fetchone()
+        return {'success': True, 'order': row[0] if row else None}
+    except Exception as e:
+        logger.error(f"직원 순서 조회 오류: {e}")
+        return {'success': True, 'order': None}
 
 
 @eel.expose

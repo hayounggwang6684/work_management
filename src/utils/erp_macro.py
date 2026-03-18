@@ -40,6 +40,7 @@ class ERPMacro:
             'current': '',
             'log': [],
         }
+        self._cal_base = None  # T4b: 캘린더 베이스 날짜 (OCR 인식 또는 today 폴백)
 
     # ------------------------------------------------------------------
     # 공개 인터페이스
@@ -86,6 +87,15 @@ class ERPMacro:
         self._activate_window(hwnd, win32gui, win32con)
         pyautogui.FAILSAFE = True   # 마우스를 화면 모서리로 이동 시 중단
         pyautogui.PAUSE = 0.05      # 각 동작 사이 기본 딜레이
+
+        # T4a: 시작 3초 딜레이 (창 전환 및 ERP 로딩 안정화)
+        self._log("3초 후 입력을 시작합니다...")
+        time.sleep(3)
+
+        # T4b: 캘린더 현재 표시 월 인식
+        rect = self._get_window_rect(hwnd, win32gui)
+        self._cal_base = self._detect_calendar_base(rect, pyautogui)
+        self._log(f"캘린더 기준 월: {self._cal_base.strftime('%Y-%m')}")
 
         done = 0
         try:
@@ -157,17 +167,59 @@ class ERPMacro:
         """창의 (left, top, right, bottom) 반환"""
         return win32gui.GetWindowRect(hwnd)
 
+    def _detect_calendar_base(self, win_rect: tuple, pyautogui) -> 'datetime.date':
+        """
+        T4b: ERP 캘린더 헤더 영역을 스크린샷으로 캡처하여 현재 표시 중인 월을 인식.
+        pytesseract OCR로 "YYYY년 M월" 텍스트 추출, 실패 시 today.replace(day=1) 반환.
+        """
+        from datetime import date as _date
+        today = _date.today()
+        default_base = today.replace(day=1)
+
+        try:
+            import pytesseract
+            win_left, win_top = win_rect[0], win_rect[1]
+            # 첫 번째 월 헤더 영역 캡처
+            region = (
+                win_left + self.CAL_LEFT_OFFSET,
+                win_top + self.CAL_TOP_OFFSET,
+                7 * self.CELL_W,
+                self.MONTH_HEADER_H
+            )
+            img = pyautogui.screenshot(region=region)
+            text = pytesseract.image_to_string(img, lang='kor+eng', config='--psm 7')
+            # "2026년 3월" 또는 "2026 3" 형식 파싱
+            m = re.search(r'(\d{4})[년\s]+(\d{1,2})월?', text)
+            if m:
+                year_n, month_n = int(m.group(1)), int(m.group(2))
+                if 2000 <= year_n <= 2100 and 1 <= month_n <= 12:
+                    detected = _date(year_n, month_n, 1)
+                    self._log(f"캘린더 OCR 인식: {year_n}년 {month_n}월")
+                    return detected
+            self._log("캘린더 OCR 텍스트 파싱 실패 — 오늘 기준 사용")
+        except ImportError:
+            self._log("pytesseract 미설치 — 오늘 기준으로 달력 베이스 계산")
+        except Exception as e:
+            self._log(f"캘린더 인식 오류 ({e}) — 오늘 기준 사용")
+
+        return default_base
+
     def _get_calendar_cell_pos(self, target_date_str: str, hwnd, win32gui) -> tuple:
         """
         달력 패널에서 target_date의 절대 좌표 (x, y) 계산.
 
         선진종합시스템 달력은 창 왼쪽에 고정 배치되며 일요일 시작 기준.
-        현재 화면에 표시된 첫 번째 달을 today.replace(day=1)로 가정.
+        T4b: self._cal_base (OCR 인식 또는 today.replace(day=1)) 기준으로 month_offset 계산.
         """
         from datetime import date as _date
         target = _date.fromisoformat(target_date_str)
-        today = _date.today()
-        first_visible = today.replace(day=1)
+
+        # T4b: OCR로 인식한 베이스 사용 (없으면 today 폴백)
+        if self._cal_base is not None:
+            first_visible = self._cal_base
+        else:
+            today = _date.today()
+            first_visible = today.replace(day=1)
 
         month_offset = (target.year - first_visible.year) * 12 + \
                        (target.month - first_visible.month)
@@ -194,9 +246,10 @@ class ERPMacro:
         return int(x), int(y)
 
     def _navigate_to_date(self, date_str: str, hwnd, pyautogui, win32gui):
-        """달력에서 해당 날짜 셀 클릭"""
+        """달력에서 해당 날짜 셀 클릭 (T4b: self._cal_base 기반 좌표 계산)"""
         try:
             x, y = self._get_calendar_cell_pos(date_str, hwnd, win32gui)
+            self._log(f"  날짜 클릭 좌표: ({x}, {y})")
             pyautogui.click(x, y)
             time.sleep(0.4)
         except Exception as e:
