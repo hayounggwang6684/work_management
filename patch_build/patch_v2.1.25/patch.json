@@ -1,0 +1,10 @@
+{
+  "version": "2.1.25",
+  "description": "v2.1.25 패치",
+  "files": [
+    {
+      "source": "src/utils/erp_dock_window.py",
+      "target": "src/utils/erp_dock_window.py"
+    }
+  ]
+}
