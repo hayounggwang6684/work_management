@@ -1,0 +1,14 @@
+{
+  "version": "2.1.22",
+  "description": "v2.1.22 패치",
+  "files": [
+    {
+      "source": "src/utils/erp_dock_window.py",
+      "target": "src/utils/erp_dock_window.py"
+    },
+    {
+      "source": "web/js/app.js",
+      "target": "web/js/app.js"
+    }
+  ]
+}
