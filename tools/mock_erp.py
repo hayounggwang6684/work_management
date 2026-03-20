@@ -15,11 +15,15 @@ Mock ERP Window — 선진종합시스템 2014 테스트용
 """
 
 import sys
+import os
 import ctypes
 import tkinter as tk
 from tkinter import ttk, messagebox
 import calendar
 import datetime
+
+# 매크로가 날짜를 공유하는 임시 파일
+MOCK_DATE_FILE = os.path.join(os.environ.get('TEMP', 'C:\\Windows\\Temp'), 'mock_erp_date.txt')
 
 # DPI 설정 (고해상도 모니터)
 try:
@@ -124,6 +128,10 @@ class MockERPApp:
         self.root.bind('<Control-N>', self._on_ctrl_n)
         self.root.bind('<Control-s>', self._on_ctrl_s)
         self.root.bind('<Control-S>', self._on_ctrl_s)
+
+        # 매크로 날짜 동기화 — 200ms 폴링
+        self._last_macro_date = ''
+        self._poll_macro_date()
 
         # 시작 로그
         self.append_log('▶ Mock ERP 준비 완료')
@@ -283,12 +291,27 @@ class MockERPApp:
                   command=lambda: self._select_date(datetime.date.today())
                   ).place(relx=0.25, rely=0.1, relwidth=0.5, relheight=0.8)
 
-    def _select_date(self, d: datetime.date):
+    def _poll_macro_date(self):
+        """매크로가 날짜 파일에 쓴 날짜를 읽어 달력 동기화 (200ms 간격)"""
+        try:
+            if os.path.exists(MOCK_DATE_FILE):
+                with open(MOCK_DATE_FILE, 'r', encoding='utf-8') as f:
+                    date_str = f.read().strip()
+                if date_str and date_str != self._last_macro_date:
+                    self._last_macro_date = date_str
+                    d = datetime.date.fromisoformat(date_str)
+                    self._select_date(d, from_macro=True)
+        except Exception:
+            pass
+        self.root.after(200, self._poll_macro_date)
+
+    def _select_date(self, d: datetime.date, from_macro: bool = False):
         self._selected_date = d
         self._cal_year  = d.year
         self._cal_month = d.month
         self._draw_calendar()
-        self.append_log(f'📅 날짜 선택: {d.strftime("%Y-%m-%d")}')
+        source = '(매크로)' if from_macro else ''
+        self.append_log(f'📅 날짜 선택: {d.strftime("%Y-%m-%d")} {source}')
         self._set_status(f'선택 날짜: {d.strftime("%Y-%m-%d")}  —  Ctrl+N: 신규 행 추가')
 
     def _prev_month(self):
@@ -374,6 +397,28 @@ class MockERPApp:
         self._edit_entry.bind('<Tab>',    lambda e: (self._on_enter(), 'break'))
         self._edit_entry.bind('<Escape>', lambda e: self._cancel_edit())
 
+    def _read_entry_text(self) -> str:
+        """Entry 텍스트 읽기.
+
+        erp_macro는 WM_SETTEXT로 Win32 HWND에 직접 텍스트를 주입하므로
+        tkinter StringVar에는 반영되지 않음. GetWindowTextW로 HWND를 직접
+        읽어야 실제 입력된 값을 얻을 수 있음.
+        """
+        if not self._edit_entry:
+            return ''
+        try:
+            hwnd = self._edit_entry.winfo_id()
+            if hwnd:
+                buf = ctypes.create_unicode_buffer(512)
+                ctypes.windll.user32.GetWindowTextW(hwnd, buf, 512)
+                hwnd_text = buf.value
+                if hwnd_text:
+                    return hwnd_text
+        except Exception:
+            pass
+        # fallback: tkinter 내부 값
+        return self._edit_entry.get()
+
     def _on_enter(self):
         """현재 셀 값 저장 + 다음 셀로 이동 (또는 팝업)"""
         if not self._edit_row or not self.tree.exists(self._edit_row):
@@ -382,7 +427,7 @@ class MockERPApp:
             return
 
         tree_col = self.EDIT_COLS[self._edit_col]
-        val = self._edit_entry.get()
+        val      = self._read_entry_text()   # WM_SETTEXT 주입 텍스트 포함해서 읽기
         col_name = self.COLUMNS[tree_col][0]
 
         # 값 저장
@@ -396,10 +441,12 @@ class MockERPApp:
         row_id     = self._edit_row
         next_idx   = self._edit_col + 1
 
-        # 공사 열 → 계약 팝업
+        # 공사 열 → 계약 팝업 (자동 입력 모드에서는 팝업 없이 통과)
         if tree_col == self.EDIT_COLS[0] and val.strip():
             self._commit_edit()
-            self._show_contract_popup(val.strip(), row_id, next_idx)
+            # 매크로가 이미 Enter를 보내 팝업을 자동 선택한 것으로 간주 → 바로 다음 열
+            self.append_log(f'  📋 계약 팝업 자동 선택: "{val}"')
+            self.root.after(50, lambda: self._start_edit(row_id, edit_idx=next_idx))
             return
 
         self._commit_edit()
