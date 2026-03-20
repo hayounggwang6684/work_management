@@ -1,0 +1,14 @@
+{
+  "version": "2.1.31",
+  "description": "v2.1.31 패치",
+  "files": [
+    {
+      "source": "src/utils/erp_macro.py",
+      "target": "src/utils/erp_macro.py"
+    },
+    {
+      "source": "src/web/api.py",
+      "target": "src/web/api.py"
+    }
+  ]
+}
