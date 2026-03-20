@@ -1,0 +1,22 @@
+{
+  "version": "2.1.28",
+  "description": "v2.1.28 패치",
+  "files": [
+    {
+      "source": "web/erp_popup.html",
+      "target": "web/erp_popup.html"
+    },
+    {
+      "source": "src/web/api.py",
+      "target": "src/web/api.py"
+    },
+    {
+      "source": "web/js/app.js",
+      "target": "web/js/app.js"
+    },
+    {
+      "source": "web/index.html",
+      "target": "web/index.html"
+    }
+  ]
+}

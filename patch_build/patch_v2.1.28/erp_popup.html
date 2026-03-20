@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>ERP 입력 자동화</title>
+<script type="text/javascript" src="/eel.js"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+    font-family: 'Segoe UI', sans-serif;
+    background: #0f1117;
+    color: #e2e8f0;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    user-select: none;
+}
+#header {
+    background: #1e293b;
+    padding: 12px 16px;
+    border-bottom: 1px solid #334155;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+#header .icon { font-size: 18px; }
+#header h1 { font-size: 14px; font-weight: 700; color: #f1f5f9; }
+#header .sub { font-size: 11px; color: #64748b; margin-left: auto; }
+#records-area {
+    background: #1a2035;
+    border-bottom: 1px solid #334155;
+    padding: 10px 14px;
+    max-height: 130px;
+    overflow-y: auto;
+}
+#records-area .day-row {
+    font-size: 11px;
+    color: #94a3b8;
+    padding: 2px 0;
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+}
+#records-area .day-row .date { color: #60a5fa; font-weight: 600; min-width: 88px; }
+#records-area .day-row .cnt { color: #22d3ee; font-size: 10px; }
+#controls {
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    flex: 1;
+}
+#status-line {
+    font-size: 11px;
+    color: #64748b;
+    min-height: 16px;
+}
+#status-line.running { color: #34d399; }
+#status-line.done { color: #60a5fa; }
+#status-line.error { color: #f87171; }
+#progress-wrap { display: flex; flex-direction: column; gap: 4px; }
+#progress-bar {
+    width: 100%;
+    height: 6px;
+    background: #334155;
+    border-radius: 3px;
+    overflow: hidden;
+}
+#progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #3b82f6, #22d3ee);
+    border-radius: 3px;
+    transition: width 0.3s ease;
+    width: 0%;
+}
+#progress-text { font-size: 11px; color: #64748b; }
+#log-area {
+    flex: 1;
+    background: #0a0e1a;
+    border: 1px solid #1e293b;
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 11px;
+    color: #4ade80;
+    overflow-y: auto;
+    min-height: 160px;
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+#log-area .log-warn { color: #fbbf24; }
+#log-area .log-err  { color: #f87171; }
+#btn-row { display: flex; gap: 8px; }
+button {
+    border: none;
+    border-radius: 6px;
+    padding: 8px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity .15s;
+}
+button:disabled { opacity: 0.45; cursor: not-allowed; }
+#btnStart { background: #16a34a; color: #fff; flex: 1; }
+#btnStart:hover:not(:disabled) { background: #15803d; }
+#btnStop  { background: #dc2626; color: #fff; }
+#btnStop:hover:not(:disabled)  { background: #b91c1c; }
+</style>
+</head>
+<body>
+
+<div id="header">
+  <span class="icon">⚙️</span>
+  <h1>ERP 입력 자동화</h1>
+  <span class="sub" id="headerSub">로딩 중...</span>
+</div>
+
+<div id="records-area" id="recordsList"></div>
+
+<div id="controls">
+  <div id="status-line">준비 중...</div>
+
+  <div id="progress-wrap">
+    <div id="progress-bar"><div id="progress-fill"></div></div>
+    <div id="progress-text">0 / 0</div>
+  </div>
+
+  <div id="log-area" id="logArea"></div>
+
+  <div id="btn-row">
+    <button id="btnStart" onclick="startMacro()" disabled>▶ 입력 시작</button>
+    <button id="btnStop"  onclick="stopMacro()"  disabled>■ 중단</button>
+  </div>
+</div>
+
+<script>
+let _userId = '';
+let _pollTimer = null;
+
+async function init() {
+    try {
+        const ctx = await eel.get_erp_popup_context()();
+        if (!ctx.success || !ctx.dates_records || ctx.dates_records.length === 0) {
+            setStatus('레코드 정보를 불러오지 못했습니다. 메인 앱에서 다시 시도하세요.', 'error');
+            return;
+        }
+        _userId = ctx.user_id || '';
+
+        const days = ctx.dates_records;
+        const totalRecords = days.reduce((s, d) => s + (d.records?.length || 0), 0);
+        document.getElementById('headerSub').textContent = `${days.length}일 / ${totalRecords}건`;
+
+        const listEl = document.getElementById('records-area');
+        listEl.innerHTML = days.map(d => {
+            const cnt = d.records?.length || 0;
+            const preview = (d.records || []).slice(0, 2).map(r =>
+                (r.contractNumber || r.contract_number || '') + ' ' + (r.workContent || r.work_content || '')
+            ).join(', ');
+            return `<div class="day-row">
+                <span class="date">${d.date}</span>
+                <span class="cnt">${cnt}건</span>
+                <span style="color:#475569;font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:260px">${preview}</span>
+            </div>`;
+        }).join('');
+
+        document.getElementById('btnStart').disabled = false;
+        setStatus('선진종합시스템을 열고 [입력 시작]을 누르세요.', '');
+    } catch(e) {
+        setStatus('초기화 오류: ' + (e?.message || String(e)), 'error');
+    }
+}
+
+async function startMacro() {
+    document.getElementById('btnStart').disabled = true;
+    document.getElementById('btnStop').disabled = false;
+    setStatus('매크로 실행 중...', 'running');
+    appendLog('▶ 자동입력 시작');
+    try {
+        const r = await eel.start_erp_macro_inline(_userId)();
+        if (!r.success) {
+            setStatus(r.message || '시작 실패', 'error');
+            document.getElementById('btnStart').disabled = false;
+            document.getElementById('btnStop').disabled = true;
+            return;
+        }
+        _pollTimer = setInterval(pollStatus, 1000);
+    } catch(e) {
+        setStatus('오류가 발생했습니다.', 'error');
+        document.getElementById('btnStart').disabled = false;
+        document.getElementById('btnStop').disabled = true;
+    }
+}
+
+async function stopMacro() {
+    try {
+        await eel.stop_erp_macro(_userId)();
+        appendLog('■ 중단 요청 전송');
+    } catch(e) {}
+}
+
+async function pollStatus() {
+    try {
+        const res = await eel.get_erp_macro_status(_userId)();
+        if (!res.success) return;
+
+        const fill = document.getElementById('progress-fill');
+        const text = document.getElementById('progress-text');
+        if (res.total > 0) {
+            const pct = Math.round(res.progress / res.total * 100);
+            fill.style.width = pct + '%';
+            text.textContent = `${res.progress} / ${res.total} (${pct}%) — ${res.current || ''}`;
+        }
+
+        if (res.log && res.log.length > 0) {
+            const logEl = document.getElementById('log-area');
+            logEl.textContent = res.log.join('\n');
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+
+        if (!res.running) {
+            clearInterval(_pollTimer);
+            _pollTimer = null;
+            document.getElementById('btnStart').disabled = false;
+            document.getElementById('btnStop').disabled = true;
+            const hasErr = res.log && res.log.some(l =>
+                l.includes('찾을 수 없습니다') || l.includes('라이브러리 누락') || l.includes('오류 발생'));
+            if (hasErr) {
+                setStatus('오류가 발생했습니다. 로그를 확인하세요.', 'error');
+            } else if (res.progress > 0) {
+                setStatus('입력 완료. ERP에서 저장(Ctrl+S)하세요.', 'done');
+            } else {
+                setStatus('종료되었습니다.', '');
+            }
+        }
+    } catch(e) {}
+}
+
+function setStatus(msg, cls) {
+    const el = document.getElementById('status-line');
+    el.textContent = msg;
+    el.className = cls || '';
+}
+
+function appendLog(msg) {
+    const logEl = document.getElementById('log-area');
+    logEl.textContent += (logEl.textContent ? '\n' : '') + msg;
+    logEl.scrollTop = logEl.scrollHeight;
+}
+
+// Eel 연결 후 초기화
+document.addEventListener('DOMContentLoaded', () => {
+    // Eel WebSocket이 연결되면 init() 호출
+    // eel.js는 비동기적으로 WebSocket을 연결하므로 잠시 대기
+    setTimeout(init, 600);
+});
+</script>
+</body>
+</html>
