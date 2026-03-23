@@ -1,0 +1,10 @@
+{
+  "version": "2.1.34",
+  "description": "v2.1.34 패치",
+  "files": [
+    {
+      "source": "src/utils/erp_macro.py",
+      "target": "src/utils/erp_macro.py"
+    }
+  ]
+}
