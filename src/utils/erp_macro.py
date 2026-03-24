@@ -130,6 +130,21 @@ class ERPMacro:
             self._set_status(running=False)
             return
 
+        # pywinauto 자동 설치 (UIA 기반 달력 클릭용)
+        try:
+            import pywinauto  # noqa: F401
+        except ImportError:
+            try:
+                import subprocess, sys
+                self._log("pywinauto 설치 중... (UIA 달력 인식 활성화)")
+                subprocess.check_call(
+                    [sys.executable, '-m', 'pip', 'install', 'pywinauto', '-q'],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                )
+                self._log("pywinauto 설치 완료 — UIA 달력 인식 사용")
+            except Exception as _e:
+                self._log(f"pywinauto 설치 실패: {_e} (좌표 클릭 폴백 사용)")
+
         self._stop_flag = False
         hwnd = self._find_erp_window(win32gui)
         if not hwnd:
@@ -181,7 +196,7 @@ class ERPMacro:
                 self._navigate_to_date(date_str, hwnd, pyautogui, win32gui,
                                        cal_hwnd, cal_class)
 
-                for rec in records:
+                for idx, rec in enumerate(records):
                     if self._stop_flag:
                         break
                     contract = rec.get('contractNumber', '').strip()
@@ -192,7 +207,9 @@ class ERPMacro:
                     with self._lock:
                         self._status['current'] = f"{date_str} / {contract}"
 
-                    self._enter_record(rec, pyautogui, hwnd, win32gui)
+                    # 날짜 첫 번째 레코드: Tab×2, 이후: Left×6
+                    self._enter_record(rec, pyautogui, hwnd, win32gui,
+                                       is_first=(idx == 0))
                     done += 1
                     with self._lock:
                         self._status['progress'] = done
@@ -201,7 +218,7 @@ class ERPMacro:
                 # 하루치 저장
                 if not self._stop_flag:
                     if save_daily:
-                        self._save(pyautogui)
+                        self._save(pyautogui, hwnd=hwnd, win32gui=win32gui)
                         self._log(f"[{date_str}] 저장 완료")
                     else:
                         self._log(f"[{date_str}] 입력 완료 (저장은 ERP에서 직접 Ctrl+S 하세요)")
@@ -266,8 +283,10 @@ class ERPMacro:
     def _navigate_to_date(self, date_str: str, hwnd: int, pyautogui,
                           win32gui, cal_hwnd: int, cal_class: str):
         """
-        1순위: MCM_SETCURSEL Win32 메시지로 달력 날짜 직접 설정
-        2순위: 달력 컨트롤 rect 기반 동적 좌표 클릭
+        달력 날짜 변경.
+
+        1순위: MCM_SETCURSEL Win32 메시지로 달력 날짜 직접 설정 (성공 시 반환)
+        2순위: 달력 컨트롤 rect 기반 동적 좌표 클릭 (MCM 실패 시)
         """
         from datetime import date as _date
         try:
@@ -280,14 +299,32 @@ class ERPMacro:
             ok = self._set_calendar_win32(cal_hwnd, cal_class, target)
             if ok:
                 self._log(f"  MCM_SETCURSEL 성공: {date_str}")
-                time.sleep(0.3)
+                time.sleep(0.5)
                 return
-            else:
-                self._log(f"  MCM_SETCURSEL 실패 — rect 기반 폴백 시도")
-                self._fallback_click_date_by_rect(target, cal_hwnd, win32gui, pyautogui)
+            # MCM 실패 시 클릭 폴백
+            self._log(f"  MCM_SETCURSEL 실패 — rect 기반 클릭 시도")
+            self._refocus_erp(hwnd, win32gui)
+            self._fallback_click_date_by_rect(target, cal_hwnd, win32gui, pyautogui)
         else:
-            # 달력 컨트롤 없음 (Mock ERP 등) — 임시 파일로 날짜 동기화 시도
-            self._log(f"  달력 컨트롤 없음 — Mock 날짜 동기화 시도 ({date_str})")
+            # SysMonthCal32 없음 ————————————————————————————————————————
+            # 1순위: UIA(pywinauto) — 날짜 텍스트 인식 기반 클릭
+            if self._click_date_uia(target, hwnd):
+                time.sleep(0.5)
+                return
+            # 2순위: WinForms 달력 HWND + 좌표 계산 폴백
+            wf_cal = self._find_winforms_calendar_narrow(hwnd, win32gui)
+            if wf_cal:
+                self._log(f"  WinForms 달력 발견 (hwnd={wf_cal}) → 좌표 클릭 폴백")
+                self._refocus_erp(hwnd, win32gui)
+                try:
+                    cal_rect = win32gui.GetWindowRect(wf_cal)
+                    self._click_multimonth_calendar_date(target, cal_rect, pyautogui)
+                except Exception as e:
+                    self._log(f"  달력 클릭 오류: {e}")
+                time.sleep(0.8)
+                return
+            # 달력 미발견 — Mock ERP 임시 파일 동기화 시도
+            self._log(f"  달력 미발견 — Mock 날짜 동기화 시도 ({date_str})")
             try:
                 import os as _os
                 _mock_date_file = _os.path.join(
@@ -296,7 +333,7 @@ class ERPMacro:
                     _f.write(date_str)
             except Exception:
                 pass
-            time.sleep(0.3)
+            time.sleep(0.6)
 
     def _set_calendar_win32(self, cal_hwnd: int, cal_class: str,
                             target_date: 'datetime.date') -> bool:
@@ -350,11 +387,188 @@ class ERPMacro:
             x = left + col * cell_w + cell_w // 2
             y = grid_top + row * cell_h + cell_h // 2
 
-            self._log(f"  폴백 클릭: cal_rect={cal_rect}, ({x},{y})")
+            self._log(f"  달력 클릭: cal_rect={cal_rect} → ({x},{y})")
             pyautogui.click(int(x), int(y))
-            time.sleep(0.4)
+            time.sleep(0.5)
         except Exception as e:
             self._log(f"  폴백 클릭 오류: {e}")
+
+    def _click_date_uia(self, target_date: 'datetime.date', erp_hwnd: int) -> bool:
+        """
+        pywinauto UIA 백엔드로 달력 날짜 클릭.
+        좌표 계산 없이 접근성 트리에서 날짜 숫자 텍스트("9" 등)를 탐색하여 클릭.
+
+        성공 시 True, 실패(pywinauto 없음 / 접근성 미노출) 시 False 반환.
+        """
+        try:
+            from pywinauto import Application  # type: ignore
+            app = Application(backend='uia').connect(handle=erp_hwnd)
+            win = app.top_window()
+
+            # 달력 UIA 컨트롤 탐색 — WinForms MonthCalendar의 control_type은
+            # 'Calendar' 또는 구현에 따라 'Custom'/'Pane'일 수 있음
+            cal = None
+            for ct in ('Calendar', 'Custom', 'Pane'):
+                try:
+                    c = win.child_window(control_type=ct, found_index=0)
+                    if c.exists(timeout=0.5):
+                        cal = c
+                        self._log(f"  UIA 달력 컨트롤 발견: control_type={ct}")
+                        break
+                except Exception:
+                    continue
+
+            if cal is None:
+                self._log("  UIA: 달력 컨트롤 미발견")
+                return False
+
+            # 날짜 숫자 텍스트로 자식 요소 탐색
+            day_str = str(target_date.day)
+            for ct in ('DataItem', 'ListItem', 'Custom', 'Text', 'Button'):
+                try:
+                    cell = cal.child_window(title=day_str, control_type=ct)
+                    if cell.exists(timeout=0.3):
+                        cell.click_input()
+                        self._log(f"  UIA 클릭 성공: {target_date.month}월 {day_str}일 "
+                                  f"(control_type={ct})")
+                        return True
+                except Exception:
+                    continue
+
+            # 자식 요소 덤프 (진단 — 탐색 실패 시 로그로 원인 파악)
+            try:
+                names = [c.window_text() for c in cal.children()[:30]]
+                self._log(f"  UIA 달력 자식 요소({len(names)}개): {names}")
+            except Exception:
+                pass
+            return False
+
+        except ImportError:
+            self._log("  pywinauto 미설치 — UIA 건너뜀 (pip install pywinauto로 설치)")
+            return False
+        except Exception as e:
+            self._log(f"  UIA 오류: {e}")
+            return False
+
+    def _find_winforms_calendar_narrow(self, erp_hwnd: int, win32gui) -> int:
+        """
+        WinForms 멀티월 달력 탐색 — ERP 좌측에 위치한 세로로 긴 패널.
+
+        선진종합시스템 2014 달력 특징:
+          - 너비: 약 150~280px (단일 열 달력)
+          - 높이: 너비의 2배 이상 (세로로 긴 형태, 여러 달 스택)
+          - 위치: ERP 창 좌측 20% 이내
+        반환: 달력 hwnd (미발견 시 0)
+        """
+        try:
+            erp_l, erp_t, erp_r, erp_b = win32gui.GetWindowRect(erp_hwnd)
+            erp_w = erp_r - erp_l
+            # 달력 중심이 ERP 좌측 22% 이내
+            left_limit = erp_l + erp_w * 0.22
+
+            candidates = []
+            for c in self._controls_cache:
+                l, t, r, b = c['rect']
+                w, h = r - l, b - t
+                # 너비 100~300px, 높이 200px 이상
+                if not (100 <= w <= 300) or h < 200:
+                    continue
+                # 세로로 긴 형태 (높이 > 너비의 1.5배)
+                if h < w * 1.5:
+                    continue
+                # 중심이 좌측에 있어야 함
+                if (l + r) / 2 > left_limit:
+                    continue
+                # ERP 창 영역 안에 위치
+                if l < erp_l - 10 or t < erp_t - 10:
+                    continue
+                candidates.append(c)
+
+            if not candidates:
+                # 진단: 좌측 컨트롤 전체 출력
+                left_ctrl = [c for c in self._controls_cache
+                             if (c['rect'][0] + c['rect'][2]) / 2 < erp_l + erp_w * 0.22
+                             and c['rect'][2] - c['rect'][0] >= 50
+                             and c['rect'][3] - c['rect'][1] >= 50]
+                self._log(f"  WinForms 달력(narrow) 후보 없음. 좌측 컨트롤 {len(left_ctrl)}개:")
+                for c in left_ctrl[:10]:
+                    l2, t2, r2, b2 = c['rect']
+                    self._log(f"    {c['cls'][:35]}, {r2-l2}x{b2-t2}, ({l2},{t2})")
+                return 0
+
+            # 가장 높은 것 선택 (멀티월 달력은 가장 긴 컨트롤)
+            best = max(candidates, key=lambda c: c['rect'][3] - c['rect'][1])
+            l, t, r, b = best['rect']
+            self._log(f"  WinForms 달력(narrow): hwnd={best['hwnd']}, "
+                      f"{r-l}x{b-t}, cls={best['cls'][:30]}")
+            return best['hwnd']
+
+        except Exception as e:
+            self._log(f"  WinForms 달력(narrow) 탐색 오류: {e}")
+            return 0
+
+    def _click_multimonth_calendar_date(self, target_date: 'datetime.date',
+                                         cal_rect: tuple, pyautogui):
+        """
+        선진종합시스템 2014 멀티월 달력에서 특정 날짜 셀 클릭.
+
+        달력 레이아웃 (스크린샷 기반):
+          [주차] [일] [월] [화] [수] [목] [금] [토]
+          - 주차 열: 달력 너비의 약 12%
+          - 날짜 열: 7등분
+          - 각 월 섹션 높이: header(22px) + 요일행(16px) + 날짜행×6(18px×6)
+          - 오늘 기준 첫 번째 월이 달력 상단에 표시
+
+        month_diff가 음수(과거 달)이면 화면 위로 스크롤 필요하나,
+        현재는 현재 달±2 범위(화면에 보이는 3개월)만 처리.
+        """
+        from datetime import date as _date
+        cal_l, cal_t, cal_r, cal_b = cal_rect
+        cal_w = cal_r - cal_l
+
+        # 컬럼 너비
+        week_col_w = cal_w * 0.12          # 주차 열
+        day_col_w  = cal_w * 0.88 / 7      # 날짜 열 (7개)
+
+        # 각 월 섹션 픽셀 높이 (스크린샷 기반 추정)
+        month_hdr_h = 22    # ← 3월 → ← 2026 → 헤더
+        weekday_h   = 16    # 일 월 화 수 목 금 토
+        cell_h      = 18    # 날짜 셀 1행 높이
+        month_sec_h = month_hdr_h + weekday_h + 6 * cell_h  # ≈ 146px
+
+        # 현재 달이 달력 상단에 표시된다고 가정
+        today = _date.today()
+        month_diff = (target_date.year - today.year) * 12 + \
+                     (target_date.month - today.month)
+
+        self._log(f"  달력 month_diff={month_diff}, "
+                  f"cal_rect=({cal_l},{cal_t},{cal_r},{cal_b}), "
+                  f"cal_w={cal_w}")
+
+        # 대상 월 섹션 상단 Y
+        month_top = cal_t + month_diff * month_sec_h
+
+        # 대상 날짜의 행/열 계산
+        # 1일의 요일 (일=0, 월=1, ..., 토=6)
+        first_dow = (_date(target_date.year, target_date.month, 1).weekday() + 1) % 7
+        slot = first_dow + target_date.day - 1
+        row  = slot // 7
+        col  = slot % 7   # 일=0, 월=1, ..., 토=6
+
+        # 달력은 항상 6행 표시 — 월 시작일이 일요일(first_dow=0)이면
+        # 물리적 row=0이 전달(前月) 마지막 주(회색)로 채워지므로
+        # 현재 월 행 전체가 +1 아래로 밀림
+        extra_row = 1 if first_dow == 0 else 0
+
+        # 클릭 좌표
+        x = cal_l + week_col_w + col * day_col_w + day_col_w / 2
+        y = month_top + month_hdr_h + weekday_h + (row + extra_row) * cell_h + cell_h / 2
+
+        self._log(f"  달력 클릭: ({int(x)},{int(y)}) — "
+                  f"{target_date.month}월 {target_date.day}일 "
+                  f"(row={row}, col={col})")
+        pyautogui.click(int(x), int(y))
+        time.sleep(0.5)
 
     # ------------------------------------------------------------------
     # 레코드 입력
@@ -383,12 +597,22 @@ class ERPMacro:
         except Exception:
             pass
 
-    def _enter_record(self, record: dict, pyautogui, hwnd: int, win32gui):
+    def _enter_record(self, record: dict, pyautogui, hwnd: int, win32gui,
+                      is_first: bool = True):
         """
-        신규 레코드 1건 입력 순서:
-        Ctrl+N → 계약번호 입력 → 팝업 Enter → Right×3 → 작업내용
-        → Right × 1 → 인원 → Right × 2 → 동반자
-        텍스트 입력: WM_SETTEXT 우선, 실패 시 pyperclip 폴백
+        레코드 1건 입력.
+
+        is_first=True  (날짜 첫 번째 레코드):
+            Ctrl+N → Tab×2 → 공사번호 입력칸 진입
+
+        is_first=False (두 번째 이후 레코드):
+            Ctrl+N → Left×6 → 공사번호 입력칸 진입
+
+        이후 공통 순서:
+            typewrite(계약번호) → Enter(팝업) → Enter(첫 항목 선택)
+            → Tab×3 → 작업내용 Ctrl+V
+            → Tab   → 인원 Ctrl+V
+            → Tab×2 → 동반자 Ctrl+V
         """
         contract     = record.get('contractNumber', '').strip()
         work_content = record.get('workContent', '').strip()
@@ -402,79 +626,76 @@ class ERPMacro:
         # 동반자 이름 (공백 구분)
         workers_str = self._format_workers(leader, teammates)
 
-        # ── 헬퍼: 텍스트 입력 직전 포커스 재획득 후 입력 ──────────────────
-        def _type(text: str, is_korean: bool = False, force_keypress: bool = False):
-            """ERP 포커스 재획득 후 텍스트 입력.
+        def _paste(text: str):
+            """ERP 포커스 재획득 후 클립보드 경유 붙여넣기 (한글·숫자 모두 안전)"""
+            if not text:
+                return
+            self._refocus_erp(hwnd, win32gui)
+            self._type_korean(text, pyautogui)   # pyperclip → Ctrl+V
 
-            force_keypress=True: WM_SETTEXT 시도 없이 바로 키 입력.
-                계약번호 필드처럼 팝업을 트리거해야 하는 경우 필수.
-                (WM_SETTEXT는 텍스트를 직접 주입해 팝업이 뜨지 않음)
-            """
-            self._refocus_erp(hwnd, win32gui)      # 매 필드마다 포커스 재획득
-            time.sleep(0.1)
-            if not force_keypress:
-                focused = self._get_focused_hwnd(hwnd)
-                if focused and self._set_text_to_control(focused, text):
-                    return  # WM_SETTEXT 성공
-            # 직접 키 입력 (typewrite / pyperclip+Ctrl+V)
-            if is_korean:
-                self._type_korean(text, pyautogui)
-            else:
-                pyautogui.typewrite(text, interval=0.05)
-
-        # 1) ERP 창 포커스 확인 → 신규 행 생성
+        # ── 1) 신규 행 생성 ────────────────────────────────────────────
         self._refocus_erp(hwnd, win32gui)
         pyautogui.hotkey('ctrl', 'n')
-        time.sleep(0.5)   # 신규 행 생성 대기
+        time.sleep(0.5)
 
-        # 공사 열 커서 활성화
-        # Ctrl+N 후 그리드가 browse 모드에 머무는 ERP가 있음 → Enter로 편집 모드 진입.
-        # 편집 모드에서는 focused 자식 컨트롤(Edit)이 존재하고,
-        # browse 모드에서는 focused = 0 또는 grid 자체 HWND를 반환함.
+        # ── 2) 공사번호 입력칸 이동 ────────────────────────────────────
         self._refocus_erp(hwnd, win32gui)
-        focused_after_n = self._get_focused_hwnd(hwnd)
-        if not focused_after_n:
-            # Browse 모드 → Enter로 셀 편집 모드 진입 시도
-            self._log("  공사 열 커서 미활성 — Enter로 편집 모드 진입")
-            pyautogui.press('enter')
-            time.sleep(0.25)
+        if is_first:
+            # 첫 행: Tab×2 으로 공사번호 칸 진입
+            self._log("  공사칸 이동: Tab×2")
+            pyautogui.press('tab', presses=2, interval=0.1)
+        else:
+            # 두 번째 이후: Ctrl+N 후 Left×6 으로 공사번호 칸 진입
+            self._log("  공사칸 이동: Left×6")
+            pyautogui.press('left', presses=6, interval=0.07)
+        time.sleep(0.15)
 
-        # 2) 공사(계약번호) 필드 — 팝업 트리거를 위해 반드시 typewrite 사용
+        # ── 3) 공사번호 입력 → 팝업 호출 → 첫 항목 선택 ──────────────
+        # typewrite 대신 pyperclip→Ctrl+V 사용:
+        #   SH-YYYY-NNN-T 형식의 대문자·하이픈을 typewrite로 보내면
+        #   IME 상태나 포커스 타이밍에 따라 씹히는 문제 방지
         if contract:
-            # force_keypress=True: WM_SETTEXT 사용 안 함 (팝업이 안 뜨기 때문)
-            _type(contract, force_keypress=True)
-            time.sleep(0.8)   # 팝업 대기
+            _paste(contract)           # Ctrl+V 붙여넣기
+            time.sleep(0.15)
+
             self._refocus_erp(hwnd, win32gui)
-            pyautogui.press('enter')
+            pyautogui.press('enter')   # 공사 팝업 호출
+            time.sleep(1.0)            # 팝업 로드 대기 (1초)
+
+            # ※ _refocus_erp 호출 금지 — 팝업이 포그라운드 상태여야 Enter가 먹힘
+            #   refocus_erp를 부르면 메인 ERP 창으로 포커스가 이동해 선택 실패
+            pyautogui.press('enter')   # 팝업 첫 번째 항목 선택
             time.sleep(0.4)
 
-        # 3) 우측 방향키 3번 → 작업내용 필드
+        # ── 4) Tab×3 → 작업내용 붙여넣기 ──────────────────────────────
         self._refocus_erp(hwnd, win32gui)
-        pyautogui.press('right', presses=3, interval=0.08)
+        pyautogui.press('tab', presses=3, interval=0.08)
         if work_content:
-            _type(work_content, is_korean=True)
-            time.sleep(0.2)
+            _paste(work_content)
+            time.sleep(0.15)
 
-        # 4) 우측 방향키 1번 → 인원 필드
+        # ── 5) Tab → 인원 붙여넣기 ────────────────────────────────────
         self._refocus_erp(hwnd, win32gui)
-        pyautogui.press('right')
+        pyautogui.press('tab')
         if manpower_str and manpower_str != '0':
-            _type(manpower_str)
+            _paste(manpower_str)
             time.sleep(0.1)
 
-        # 5) 담당자 건너뜀 → 우측 방향키 2번 → 동반자 필드
+        # ── 6) Tab×2 → 동반자 붙여넣기 ───────────────────────────────
         self._refocus_erp(hwnd, win32gui)
-        pyautogui.press('right', presses=2, interval=0.08)
+        pyautogui.press('tab', presses=2, interval=0.08)
         if workers_str:
-            _type(workers_str, is_korean=True)
-            time.sleep(0.2)
+            _paste(workers_str)
+            time.sleep(0.15)
 
-        # 다음 행으로 이동
-        pyautogui.press('enter')
-        time.sleep(0.2)
+    def _save(self, pyautogui, hwnd: int = 0, win32gui=None):
+        """ERP 포커스 재획득 후 Ctrl+S 저장.
 
-    def _save(self, pyautogui):
-        """Ctrl+S로 저장"""
+        _refocus_erp 없이 호출하면 Chrome이 포커스를 가져가
+        '다른 이름으로 저장' 다이얼로그가 열리고 이후 모든 키 입력이 Chrome으로 감.
+        """
+        if hwnd and win32gui:
+            self._refocus_erp(hwnd, win32gui)
         pyautogui.hotkey('ctrl', 's')
         time.sleep(0.6)
 
@@ -608,19 +829,29 @@ class ERPMacro:
         """
         팀장 + 본공 작업자 이름을 공백 구분 문자열로 반환.
         도급(업체명(이름)) / 일당(업체명[이름]) 패턴은 제외.
+        <i>이름</i> 또는 *이름* 형식의 마크업은 이름만 추출.
         """
         try:
             from ..business.calculations import extract_names
         except ImportError:
             return ''
 
+        def _clean(name: str) -> str:
+            """HTML 태그·별표 마크업 제거 후 순수 이름 반환"""
+            # <i>이름</i> → 이름
+            name = re.sub(r'<[^>]+>', '', name)
+            # *이름* → 이름 (혹시 남아 있을 경우)
+            name = name.strip('*')
+            return name.strip()
+
         workers = []
 
         # 팀장 이름 추출
         if leader and leader.strip():
             for name, _ in extract_names(leader):
-                if name:
-                    workers.append(name)
+                clean = _clean(name)
+                if clean:
+                    workers.append(clean)
 
         # 본공 작업자만 추출 (도급 / 일당 패턴 제외)
         if teammates and teammates.strip():
@@ -628,8 +859,9 @@ class ERPMacro:
             cleaned = re.sub(r'[^,]+\([^)]*\)', '', text)
             cleaned = re.sub(r'[^,]+\[[^\]]*\]', '', cleaned)
             for name, _ in extract_names(cleaned):
-                if name:
-                    workers.append(name)
+                clean = _clean(name)
+                if clean:
+                    workers.append(clean)
 
         return ' '.join(workers)
 
