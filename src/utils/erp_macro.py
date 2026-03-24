@@ -555,18 +555,13 @@ class ERPMacro:
         row  = slot // 7
         col  = slot % 7   # 일=0, 월=1, ..., 토=6
 
-        # 달력은 항상 6행 표시 — 월 시작일이 일요일(first_dow=0)이면
-        # 물리적 row=0이 전달(前月) 마지막 주(회색)로 채워지므로
-        # 현재 월 행 전체가 +1 아래로 밀림
-        extra_row = 1 if first_dow == 0 else 0
-
         # 클릭 좌표
         x = cal_l + week_col_w + col * day_col_w + day_col_w / 2
-        y = month_top + month_hdr_h + weekday_h + (row + extra_row) * cell_h + cell_h / 2
+        y = month_top + month_hdr_h + weekday_h + row * cell_h + cell_h / 2
 
         self._log(f"  달력 클릭: ({int(x)},{int(y)}) — "
                   f"{target_date.month}월 {target_date.day}일 "
-                  f"(row={row}, col={col})")
+                  f"(row={row}, col={col}, first_dow={first_dow})")
         pyautogui.click(int(x), int(y))
         time.sleep(0.5)
 
