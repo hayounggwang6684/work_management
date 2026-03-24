@@ -513,6 +513,10 @@ class ERPMacro:
                       f"{r-l}x{b-t}, cls={best['cls'][:30]}")
             return best['hwnd']
 
+        except Exception as e:
+            self._log(f"  WinForms 달력(narrow) 탐색 오류: {e}")
+            return 0
+
     def _find_syscal32_child(self, parent_hwnd: int, win32gui) -> int:
         """
         WinForms MonthCalendar wrapper(parent_hwnd) 안에서
@@ -536,10 +540,6 @@ class ERPMacro:
         if found[0]:
             self._log(f"  SysMonthCal32 자식 발견: hwnd={found[0]}")
         return found[0]
-
-        except Exception as e:
-            self._log(f"  WinForms 달력(narrow) 탐색 오류: {e}")
-            return 0
 
     def _click_multimonth_calendar_date(self, target_date: 'datetime.date',
                                          cal_rect: tuple, pyautogui):
