@@ -311,10 +311,20 @@ class ERPMacro:
             if self._click_date_uia(target, hwnd):
                 time.sleep(0.5)
                 return
-            # 2순위: WinForms 달력 HWND + 좌표 계산 폴백
+            # 2순위: WinForms 달력 wrapper 내부 SysMonthCal32 탐색 → MCM_SETCURSEL
             wf_cal = self._find_winforms_calendar_narrow(hwnd, win32gui)
             if wf_cal:
-                self._log(f"  WinForms 달력 발견 (hwnd={wf_cal}) → 좌표 클릭 폴백")
+                # WinForms MonthCalendar wrapper 안에 SysMonthCal32 자식 탐색
+                syscal = self._find_syscal32_child(wf_cal, win32gui)
+                if syscal:
+                    ok = self._set_calendar_win32(syscal, 'SysMonthCal32', target)
+                    if ok:
+                        self._log(f"  SysMonthCal32(child) MCM_SETCURSEL 성공: {target}")
+                        time.sleep(0.5)
+                        return
+                    self._log(f"  SysMonthCal32(child) MCM 실패 → 좌표 폴백")
+                else:
+                    self._log(f"  WinForms 달력 발견 (hwnd={wf_cal}) — SysMonthCal32 자식 없음 → 좌표 클릭")
                 self._refocus_erp(hwnd, win32gui)
                 try:
                     cal_rect = win32gui.GetWindowRect(wf_cal)
@@ -503,6 +513,30 @@ class ERPMacro:
                       f"{r-l}x{b-t}, cls={best['cls'][:30]}")
             return best['hwnd']
 
+    def _find_syscal32_child(self, parent_hwnd: int, win32gui) -> int:
+        """
+        WinForms MonthCalendar wrapper(parent_hwnd) 안에서
+        SysMonthCal32 자식 컨트롤을 재귀 탐색.
+        반환: SysMonthCal32 hwnd (없으면 0)
+        """
+        found = [0]
+        def _enum(h, _):
+            try:
+                cls = win32gui.GetClassName(h)
+                if cls == 'SysMonthCal32':
+                    found[0] = h
+                    return False  # 탐색 중단
+            except Exception:
+                pass
+            return True
+        try:
+            win32gui.EnumChildWindows(parent_hwnd, _enum, None)
+        except Exception:
+            pass
+        if found[0]:
+            self._log(f"  SysMonthCal32 자식 발견: hwnd={found[0]}")
+        return found[0]
+
         except Exception as e:
             self._log(f"  WinForms 달력(narrow) 탐색 오류: {e}")
             return 0
@@ -636,9 +670,9 @@ class ERPMacro:
         # ── 2) 공사번호 입력칸 이동 ────────────────────────────────────
         self._refocus_erp(hwnd, win32gui)
         if is_first:
-            # 첫 행: Tab×2 으로 공사번호 칸 진입
-            self._log("  공사칸 이동: Tab×2")
-            pyautogui.press('tab', presses=2, interval=0.1)
+            # 첫 행: Tab×3 으로 공사번호 칸 진입
+            self._log("  공사칸 이동: Tab×3")
+            pyautogui.press('tab', presses=3, interval=0.1)
         else:
             # 두 번째 이후: Ctrl+N 후 Left×6 으로 공사번호 칸 진입
             self._log("  공사칸 이동: Left×6")
