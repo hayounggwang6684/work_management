@@ -244,9 +244,16 @@ async function loadCompanyNameList() {
 // 조회 탭 초기 기본값: DB 최신 계약번호 설정
 // ============================================================================
 
+// navigateToSearch()에서 설정 중일 때 initSearchTabDefaults가 덮어쓰지 못하도록 하는 플래그
+let _navigatingToSearch = false;
+
 async function initSearchTabDefaults() {
+    // navigateToSearch()가 계약번호를 직접 세팅하는 중이면 기본값 덮어쓰기 방지
+    if (_navigatingToSearch) return;
     try {
         const latest = await eel.get_latest_contract_number()();
+        // await 이후에도 플래그 재확인 (비동기 완료 시점에 이미 navigate 중일 수 있음)
+        if (_navigatingToSearch) return;
         if (latest) {
             const match = latest.match(/^SH-(\d{4})-(\d{3,})/i);
             if (match) {
@@ -271,7 +278,9 @@ async function initSearchTabDefaults() {
 
 function navigateToSearch(contractNumber) {
     if (!contractNumber) return;
-    // 1. 조회 탭으로 이동
+    // initSearchTabDefaults()의 덮어쓰기 방지 플래그 설정
+    _navigatingToSearch = true;
+    // 1. 조회 탭으로 이동 (내부에서 initSearchTabDefaults 호출되지만 플래그로 차단됨)
     showView('search');
     // 2. 현황 조회 서브탭 활성화
     showSearchTab('status');
@@ -281,8 +290,8 @@ function navigateToSearch(contractNumber) {
         document.getElementById('contractYear').value = match[1];
         document.getElementById('contractSeq').value = match[2];
     }
-    // 4. 자동 검색
-    searchByContract();
+    // 4. 자동 검색 후 플래그 해제
+    searchByContract().finally(() => { _navigatingToSearch = false; });
 }
 
 // ============================================================================
@@ -822,7 +831,7 @@ async function _fetchEtaSuggestion() {
         const r = await eel.estimate_completion(modal._engineModel || '', modal._workContent || '', tsVal)();
         if (r.success && r.avgDays) {
             hint.innerHTML = `📊 과거 평균: <strong>${r.avgDays}일</strong> (${r.sampleCount}건 기준)
-                ${r.suggestionEndDate ? ` &nbsp;<button onclick="document.getElementById('msTargetEnd').value='${escapeHtml(r.suggestionEndDate)}'"
+                ${r.suggestionEndDate ? ` &nbsp;<button onclick="document.getElementById('msTargetEnd').value='${escapeJs(r.suggestionEndDate)}'"
                     class="underline text-blue-700 hover:text-blue-900">적용 (${escapeHtml(r.suggestionEndDate)})</button>` : ''}`;
         } else {
             hint.textContent = '(과거 유사 작업 데이터 없음)';
@@ -2788,7 +2797,7 @@ async function saveUserSettings() {
         showCustomAlert('성공', '기본 화면이 설정되었습니다.', 'success');
     } catch (error) {
         showLoading(false);
-        showCustomAlert('오류', '설정 저장에 실패했습니다: ' + error.message, 'error');
+        showCustomAlert('오류', '설정 저장에 실패했습니다.', 'error');
     }
 }
 
