@@ -1,26 +1,55 @@
 
 // ========================================
+// 직급 제거 헬퍼
+// ========================================
+
+const _REPORT_RANKS = [
+    '사장', '부사장', '전무', '상무', '이사',
+    '부장', '차장', '과장', '대리', '주임', '사원',
+    '팀장', '반장', '수석', '선임', '책임', '연구원', '기사'
+];
+
+function stripRank(name) {
+    // HTML 태그 및 * 제거
+    let n = name.replace(/<[^>]+>/g, '').replace(/\*/g, '').trim();
+    // 앞 직급: '과장 홍길동' → '홍길동'
+    for (const rank of _REPORT_RANKS) {
+        if (n.startsWith(rank) && n.length > rank.length) {
+            const candidate = n.slice(rank.length).trim();
+            if (candidate) { n = candidate; break; }
+        }
+    }
+    // 뒤 직급: '홍길동 과장' → '홍길동'
+    for (const rank of _REPORT_RANKS) {
+        if (n.endsWith(rank) && n.length > rank.length) {
+            const candidate = n.slice(0, n.length - rank.length).trim();
+            if (candidate) { n = candidate; break; }
+        }
+    }
+    return n;
+}
+
+// ========================================
 // 본사/외주 분리 함수
 // ========================================
 
 function separateWorkers(leader, teammates) {
     const inHouseList = [];
     const outsourcedList = [];
-    
-    // 작업자(팀장) 처리
+
+    // 작업자(팀장) 처리 — 직급 제거 후 이름만
     if (leader && leader.trim()) {
-        // 기울임체 제거 (*제거)
-        const cleanLeader = leader.replace(/\*/g, '').trim();
+        const cleanLeader = stripRank(leader);
         if (cleanLeader) {
             inHouseList.push(cleanLeader);
         }
     }
-    
+
     // 동반자 처리
     if (teammates && teammates.trim()) {
         let remaining = teammates;
-        
-        // 1. 도급 패턴 추출: 업체명(직원명들)
+
+        // 1. 도급 패턴 추출: 업체명(직원명들) — 원문 그대로
         const contractRegex = /([^,]+?)\(([^)]+)\)/g;
         let match;
         while ((match = contractRegex.exec(teammates)) !== null) {
@@ -31,8 +60,8 @@ function separateWorkers(leader, teammates) {
             // 해당 부분을 remaining에서 제거
             remaining = remaining.replace(match[0], '');
         }
-        
-        // 2. 일당 패턴 추출: 업체명[직원명들]
+
+        // 2. 일당 패턴 추출: 업체명[직원명들] — 원문 그대로
         const dailyRegex = /([^,]+?)\[([^\]]+)\]/g;
         while ((match = dailyRegex.exec(remaining)) !== null) {
             const fullMatch = match[0].trim(); // "업체명[직원명들]"
@@ -42,18 +71,17 @@ function separateWorkers(leader, teammates) {
             // 해당 부분을 remaining에서 제거
             remaining = remaining.replace(match[0], '');
         }
-        
-        // 3. 남은 부분에서 본사 직원 추출
+
+        // 3. 남은 부분에서 본사 직원 추출 — 직급 제거 후 이름만
         const parts = remaining.split(',').map(p => p.trim()).filter(p => p && p.length > 0);
         parts.forEach(part => {
-            // 기울임체 제거
-            const cleanName = part.replace(/\*/g, '').trim();
+            const cleanName = stripRank(part);
             if (cleanName) {
                 inHouseList.push(cleanName);
             }
         });
     }
-    
+
     return {
         inHouse: inHouseList.length > 0 ? inHouseList.join(', ') : '-',
         outsourced: outsourcedList.length > 0 ? outsourcedList.join(', ') : '-'
@@ -185,6 +213,16 @@ async function loadDailyReport() {
             record.company || record.shipName || record.ship_name ||
             record.workContent || record.work_content
         );
+
+        // 계약번호 오름차순 정렬 (없는 레코드는 맨 뒤)
+        validRecords.sort((a, b) => {
+            const cnA = (a.contract_number || a.contractNumber || '').trim();
+            const cnB = (b.contract_number || b.contractNumber || '').trim();
+            if (!cnA && !cnB) return 0;
+            if (!cnA) return 1;
+            if (!cnB) return -1;
+            return cnA.localeCompare(cnB, 'ko');
+        });
         
         if (validRecords.length === 0) {
             tbody.innerHTML = '<tr><td colspan="8" class="border border-gray-900 p-4 text-center text-slate-500">작업 내역이 없습니다.</td></tr>';
