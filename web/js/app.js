@@ -167,7 +167,12 @@ function onDateChange() {
             return;
         }
         currentDate = new Date(dateInput.value + 'T00:00:00');
-        loadWorkRecords();
+        if (currentWorkTab === 'night') {
+            _updateNightDateDisplay();
+            loadNightRecords();
+        } else {
+            loadWorkRecords();
+        }
     }
 }
 
@@ -1275,8 +1280,9 @@ function toUpperCase(value) {
 // ============================================================================
 
 async function calculateManpowerInstant(index) {
-    const leader = workRecords[index].leader || '';
-    const teammates = workRecords[index].teammates || '';
+    const records = _getActiveRecords();
+    const leader = records[index]?.leader || '';
+    const teammates = records[index]?.teammates || '';
     
     let manpower = 0;
     
@@ -1326,12 +1332,13 @@ async function calculateManpowerInstant(index) {
         });
     }
     
-    workRecords[index].manpower = manpower;
+    if (records[index]) records[index].manpower = manpower;
     updateManpowerDisplay(index, manpower);
 }
 
 function updateManpowerDisplay(index, manpower) {
-    const tbody = document.getElementById('workRecordsTable');
+    const tableId = currentWorkTab === 'night' ? 'nightRecordsTable' : 'workRecordsTable';
+    const tbody = document.getElementById(tableId);
     if (tbody && tbody.rows[index]) {
         const manpowerCell = tbody.rows[index].cells[8];
         if (manpowerCell) {
@@ -1342,8 +1349,10 @@ function updateManpowerDisplay(index, manpower) {
 }
 
 function updateTotalManpower() {
-    const total = workRecords.reduce((sum, record) => sum + (record.manpower || 0), 0);
-    const tbody = document.getElementById('workRecordsTable');
+    const records = _getActiveRecords();
+    const total = records.reduce((sum, record) => sum + (record.manpower || 0), 0);
+    const tableId = currentWorkTab === 'night' ? 'nightRecordsTable' : 'workRecordsTable';
+    const tbody = document.getElementById(tableId);
     if (tbody && tbody.rows.length > 0) {
         const lastRow = tbody.rows[tbody.rows.length - 1];
         if (lastRow && lastRow.cells.length > 8) {
@@ -1366,7 +1375,7 @@ async function loadWorkRecords() {
         const dateStr = formatDateForInput(currentDate);
         showLoading(true);
         
-        const records = await eel.load_work_records(dateStr)();
+        const records = await eel.load_work_records(dateStr, 'day')();
         workRecords = records || [];
 
         renderTable();
@@ -1505,16 +1514,22 @@ async function forceSaveWorkRecords() {
 }
 
 async function _autoSaveWorkRecords() {
-    if (!isDirty || _isSaving) return;
+    if (!isDirty || _isSaving || _isNightSaving) return;
     if (!currentUser || !currentUser.full_name) return;
     const dailyView = document.getElementById('dailyView');
     if (!dailyView || dailyView.classList.contains('hidden')) return;
+
+    // 야간 탭 자동저장
+    if (currentWorkTab === 'night') {
+        await saveNightWorkRecords();
+        return;
+    }
 
     const dateStr = formatDateForInput(currentDate);
 
     // 충돌 감지 — 서버의 최신 저장 시각과 비교
     try {
-        const info = await eel.get_date_save_info(dateStr)();
+        const info = await eel.get_date_save_info(dateStr, 'day')();
         if (info && info.has_records && _dateLoadedAt && info.updated_at > _dateLoadedAt) {
             const who = info.updated_by || '다른 사용자';
             const when = info.updated_at ? info.updated_at.replace('T', ' ').substring(11, 16) : '';
@@ -1528,7 +1543,7 @@ async function _autoSaveWorkRecords() {
 
     _isSaving = true;
     try {
-        const result = await eel.save_work_records(dateStr, workRecords, currentUser.full_name)();
+        const result = await eel.save_work_records(dateStr, workRecords, currentUser.full_name, 'day')();
         if (result.success) {
             isDirty = false;
             _dateLoadedAt = new Date().toISOString();
@@ -1617,19 +1632,127 @@ async function loadYesterdayRecords() {
 
 // 주간/야간 탭 전환
 let currentWorkTab = 'day'; // 'day' | 'night'
+let nightWorkRecords = [];
+let _isNightSaving = false;
+let _nightDateLoadedAt = null;
 
 function showWorkTab(tab) {
     currentWorkTab = tab;
     const btnDay   = document.getElementById('btnWorkDay');
     const btnNight = document.getElementById('btnWorkNight');
+    const daySection   = document.getElementById('dayWorkSection');
+    const nightSection = document.getElementById('nightWorkSection');
     if (!btnDay || !btnNight) return;
 
     if (tab === 'day') {
         btnDay.className   = 'px-5 py-2 rounded-lg font-semibold bg-blue-600 text-white shadow';
         btnNight.className = 'px-5 py-2 rounded-lg font-semibold bg-white text-slate-600 border border-slate-300 hover:bg-slate-50';
+        daySection?.classList.remove('hidden');
+        nightSection?.classList.add('hidden');
     } else {
         btnNight.className = 'px-5 py-2 rounded-lg font-semibold bg-indigo-700 text-white shadow';
         btnDay.className   = 'px-5 py-2 rounded-lg font-semibold bg-white text-slate-600 border border-slate-300 hover:bg-slate-50';
+        daySection?.classList.add('hidden');
+        nightSection?.classList.remove('hidden');
+        loadNightRecords();
+    }
+}
+
+// 야간 날짜 표시 업데이트 (주간 dateInput과 동기화)
+function _updateNightDateDisplay() {
+    const dateInput = document.getElementById('dateInput');
+    const dispEl    = document.getElementById('nightDateDisplay');
+    const dowEl     = document.getElementById('nightDateDayOfWeek');
+    if (!dateInput || !dispEl) return;
+    const dateStr = dateInput.value;
+    if (dateStr) {
+        dispEl.textContent = dateStr;
+        if (dowEl) {
+            const d = new Date(dateStr + 'T00:00:00');
+            const days = ['일', '월', '화', '수', '목', '금', '토'];
+            dowEl.textContent = `(${days[d.getDay()]})`;
+        }
+    }
+}
+
+async function loadNightRecords() {
+    try {
+        const dateStr = document.getElementById('dateInput')?.value;
+        if (!dateStr) return;
+        _updateNightDateDisplay();
+        showLoading(true);
+        const records = await eel.load_work_records(dateStr, 'night')();
+        nightWorkRecords = records || [];
+        renderNightTable();
+        _nightDateLoadedAt = new Date().toISOString();
+        showLoading(false);
+    } catch (e) {
+        console.error('야간 레코드 로드 오류:', e);
+        showLoading(false);
+    }
+}
+
+function renderNightTable() {
+    const tbody = document.getElementById('nightRecordsTable');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+
+    while (nightWorkRecords.length < 10) {
+        nightWorkRecords.push(createEmptyRecord(nightWorkRecords.length + 1));
+    }
+
+    let totalManpower = 0;
+    nightWorkRecords.forEach((record, index) => {
+        const row = createTableRow(record, index, nightWorkRecords);
+        tbody.appendChild(row);
+        totalManpower += record.manpower || 0;
+    });
+    tbody.appendChild(createTotalRow(totalManpower));
+}
+
+async function saveNightWorkRecords() {
+    if (_isNightSaving) return;
+    _isNightSaving = true;
+    try {
+        if (!currentUser?.full_name) {
+            showCustomAlert('오류', '로그인 정보가 없습니다.', 'error');
+            return;
+        }
+        const dateStr = document.getElementById('dateInput')?.value;
+        if (!dateStr) return;
+
+        showLoading(true, '저장 중...');
+        const result = await eel.save_work_records(dateStr, nightWorkRecords, currentUser.full_name, 'night')();
+        showLoading(false);
+
+        if (result.success) {
+            _nightDateLoadedAt = new Date().toISOString();
+            showToast('야간 작업 저장되었습니다.', 'success');
+        } else {
+            showCustomAlert('실패', '저장 실패: ' + result.message, 'error');
+        }
+    } catch (e) {
+        console.error('야간 저장 오류:', e);
+        showLoading(false);
+        showCustomAlert('오류', '저장 중 오류가 발생했습니다.', 'error');
+    } finally {
+        _isNightSaving = false;
+    }
+}
+
+async function loadDayRecordsIntoNight() {
+    try {
+        const dateStr = document.getElementById('dateInput')?.value;
+        if (!dateStr) return;
+        showLoading(true);
+        const dayRec = await eel.load_work_records(dateStr, 'day')();
+        nightWorkRecords = (dayRec || []).map(r => ({ ...r, isAs: 0 }));
+        renderNightTable();
+        showLoading(false);
+        showToast('주간 작업을 불러왔습니다.', 'success');
+    } catch (e) {
+        console.error('주간→야간 복사 오류:', e);
+        showLoading(false);
     }
 }
 
@@ -1649,7 +1772,7 @@ function renderTable() {
     let totalManpower = 0;
     
     workRecords.forEach((record, index) => {
-        const row = createTableRow(record, index);
+        const row = createTableRow(record, index, workRecords);
         tbody.appendChild(row);
         totalManpower += record.manpower || 0;
     });
@@ -1660,7 +1783,7 @@ function renderTable() {
     setupKeyboardListeners();
 }
 
-function createTableRow(record, index) {
+function createTableRow(record, index, records = workRecords) {
     const tr = document.createElement('tr');
     tr.className = 'hover:bg-blue-50 group';
 
@@ -1754,7 +1877,7 @@ function createTableRow(record, index) {
     if (asCheckbox) {
         asCheckbox.checked = !!(record.isAs);
         asCheckbox.addEventListener('change', () => {
-            if (workRecords[index]) workRecords[index].isAs = asCheckbox.checked ? 1 : 0;
+            if (records[index]) records[index].isAs = asCheckbox.checked ? 1 : 0;
             isDirty = true;
         });
     }
@@ -1778,8 +1901,14 @@ function createTableRow(record, index) {
 // 행 삭제
 // ============================================================================
 
+// 현재 활성 탭의 레코드 배열 반환
+function _getActiveRecords() {
+    return currentWorkTab === 'night' ? nightWorkRecords : workRecords;
+}
+
 function deleteRow(index) {
-    const record = workRecords[index];
+    const records = _getActiveRecords();
+    const record = records[index];
     const hasData = !!(
         record.contractNumber || record.company || record.shipName ||
         record.engineModel    || record.workContent || record.location ||
@@ -1788,10 +1917,14 @@ function deleteRow(index) {
 
     if (hasData && !confirm(`${index + 1}번 행의 내용을 삭제하시겠습니까?`)) return;
 
-    workRecords.splice(index, 1);
+    records.splice(index, 1);
     isDirty = true;
-    renderTable(); // 자동으로 10행 미만이면 빈 행 추가됨
-    _applyWritePermissionUI();
+    if (currentWorkTab === 'night') {
+        renderNightTable();
+    } else {
+        renderTable();
+        _applyWritePermissionUI();
+    }
 }
 
 function createTotalRow(totalManpower) {
@@ -1980,8 +2113,9 @@ function handleItalicShortcut(event) {
 // ============================================================================
 
 function updateRecord(index, field, value) {
-    if (workRecords[index]) {
-        workRecords[index][field] = value;
+    const records = _getActiveRecords();
+    if (records[index]) {
+        records[index][field] = value;
         isDirty = true;
     }
 }

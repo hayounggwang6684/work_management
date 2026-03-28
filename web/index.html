@@ -211,7 +211,9 @@
                     <button onclick="showWorkTab('night')" id="btnWorkNight"
                             class="px-5 py-2 rounded-lg font-semibold bg-white text-slate-600 border border-slate-300 hover:bg-slate-50">야간 작업</button>
                 </div>
-                <div class="bg-white rounded-lg shadow-xl p-6">
+
+                <!-- 주간 작업 섹션 -->
+                <div id="dayWorkSection" class="bg-white rounded-lg shadow-xl p-6">
                     <div class="mb-4 flex justify-between">
                         <div class="flex gap-2 items-center">
                             <button onclick="changeDate(-1)"
@@ -283,6 +285,44 @@
                                     </td>
                                 </tr>
                             </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- 야간 작업 섹션 -->
+                <div id="nightWorkSection" class="hidden bg-white rounded-lg shadow-xl p-6">
+                    <div class="mb-4 flex justify-between">
+                        <div class="flex gap-2 items-center">
+                            <button onclick="changeDate(-1)"
+                                    class="px-3 py-2 bg-slate-200 hover:bg-slate-300 rounded-lg text-lg font-bold" title="이전일">◀</button>
+                            <span id="nightDateDisplay" class="px-4 py-2 border rounded-lg bg-slate-50 text-slate-700 font-semibold min-w-[130px] text-center"></span>
+                            <span id="nightDateDayOfWeek" class="font-bold text-lg px-1 text-indigo-700"></span>
+                            <button onclick="changeDate(1)"
+                                    class="px-3 py-2 bg-slate-200 hover:bg-slate-300 rounded-lg text-lg font-bold" title="다음일">▶</button>
+                            <button onclick="loadDayRecordsIntoNight()"
+                                    class="px-4 py-2 bg-cyan-600 text-white rounded-lg ml-2">주간 작업</button>
+                        </div>
+                        <button onclick="saveNightWorkRecords()" id="btnNightSave"
+                                class="px-6 py-2 bg-indigo-600 text-white rounded-lg font-semibold">저장</button>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full border-collapse">
+                            <thead>
+                                <tr class="bg-indigo-100">
+                                    <th class="border p-2 w-10">순번</th>
+                                    <th class="border p-2 w-32">계약번호</th>
+                                    <th class="border p-2 w-20">선사</th>
+                                    <th class="border p-2 w-20">선명</th>
+                                    <th class="border p-2 w-28">엔진모델</th>
+                                    <th class="border p-2 w-40">작업내용</th>
+                                    <th class="border p-2 w-20">장소</th>
+                                    <th class="border p-2 w-28">작업자</th>
+                                    <th class="border p-2 w-12">인원</th>
+                                    <th class="border p-2">동반자</th>
+                                    <th class="border p-2 w-10 text-center">A/S</th>
+                                </tr>
+                            </thead>
+                            <tbody id="nightRecordsTable"></tbody>
                         </table>
                     </div>
                 </div>
@@ -807,10 +847,14 @@
             <div id="reportView" class="hidden">
                 <div class="bg-white rounded-lg shadow-xl p-6">
                     <!-- 보고서 하위 탭 -->
-                    <div class="flex gap-2 mb-6 border-b pb-2">
-                        <button onclick="showReportTab('daily')" id="btnReportDaily" 
-                                class="px-6 py-2 rounded-lg bg-blue-600 text-white font-semibold">일일 보고</button>
-                        <button onclick="showReportTab('monthly')" id="btnReportMonthly" 
+                    <div class="flex gap-2 mb-6 border-b pb-2 flex-wrap">
+                        <button onclick="showReportTab('daily')" id="btnReportDaily"
+                                class="px-6 py-2 rounded-lg bg-blue-600 text-white font-semibold">일일 보고(주간)</button>
+                        <button onclick="showReportTab('night')" id="btnReportNight"
+                                class="px-6 py-2 rounded-lg bg-slate-200 font-semibold">일일 보고(야간)</button>
+                        <button onclick="showReportTab('holiday')" id="btnReportHoliday"
+                                class="px-6 py-2 rounded-lg bg-slate-200 font-semibold">일일 보고(휴일)</button>
+                        <button onclick="showReportTab('monthly')" id="btnReportMonthly"
                                 class="px-6 py-2 rounded-lg bg-slate-200 font-semibold">월간 보고</button>
                     </div>
 
@@ -853,6 +897,87 @@
                                         <!-- JavaScript로 동적 생성 -->
                                     </tbody>
                                 </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 야간 보고 -->
+                    <div id="nightReportTab" class="hidden">
+                        <div class="flex justify-end items-center mb-4">
+                            <div class="flex items-center gap-2">
+                                <button onclick="captureReport('nightReportCapture')"
+                                        class="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-semibold">📋 캡쳐</button>
+                                <button onclick="changeNightReportDate(-1)"
+                                        class="px-3 py-2 bg-slate-200 hover:bg-slate-300 rounded-lg text-lg font-bold" title="이전일">◀</button>
+                                <input type="date" id="nightReportDate" onchange="loadNightReport()"
+                                       class="px-4 py-2 border rounded-lg">
+                                <button onclick="changeNightReportDate(1)"
+                                        class="px-3 py-2 bg-slate-200 hover:bg-slate-300 rounded-lg text-lg font-bold" title="다음일">▶</button>
+                            </div>
+                        </div>
+                        <div id="nightReportCapture" class="bg-white p-4">
+                            <h2 class="text-xl font-bold text-center mb-2">선진종합 <span class="text-base font-normal">(연장)</span></h2>
+                            <div class="text-right mb-3">
+                                <span id="nightReportDateDisplay" class="text-base font-semibold"></span>
+                            </div>
+                            <div class="overflow-x-auto">
+                                <table class="w-full border-collapse border border-gray-900 text-sm">
+                                    <thead>
+                                        <tr class="bg-indigo-100">
+                                            <th class="border border-gray-900 p-2 text-center w-10">No.</th>
+                                            <th class="border border-gray-900 p-2 text-center w-16">부서</th>
+                                            <th class="border border-gray-900 p-2 text-center w-16">직책</th>
+                                            <th class="border border-gray-900 p-2 text-center w-20">이름</th>
+                                            <th class="border border-gray-900 p-2 text-center">날짜</th>
+                                            <th class="border border-gray-900 p-2 text-center">작업내용</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="nightReportTable"></tbody>
+                                </table>
+                            </div>
+                            <div class="mt-3 text-right font-semibold">
+                                총 인원: <span id="nightReportTotal" class="text-red-600 text-lg">0</span>명
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 휴일 보고 -->
+                    <div id="holidayReportTab" class="hidden">
+                        <div class="flex justify-end items-center mb-4">
+                            <div class="flex items-center gap-2">
+                                <button onclick="captureReport('holidayReportCapture')"
+                                        class="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-semibold">📋 캡쳐</button>
+                                <label class="text-sm text-slate-600">금요일 기준:</label>
+                                <input type="date" id="holidayPeriodInput" onchange="loadHolidayReport()"
+                                       class="px-4 py-2 border rounded-lg">
+                                <button onclick="saveHolidayEntries()"
+                                        class="px-4 py-2 bg-indigo-600 text-white rounded-lg font-semibold">저장</button>
+                                <button onclick="addHolidayRow()"
+                                        class="px-4 py-2 bg-slate-500 text-white rounded-lg">+ 행 추가</button>
+                            </div>
+                        </div>
+                        <div id="holidayReportCapture" class="bg-white p-4">
+                            <h2 class="text-xl font-bold text-center mb-2">선진종합 <span class="text-base font-normal">(연장/휴일근로)</span></h2>
+                            <div class="overflow-x-auto">
+                                <table class="w-full border-collapse border border-gray-900 text-sm">
+                                    <thead>
+                                        <tr class="bg-amber-100">
+                                            <th class="border border-gray-900 p-2 text-center w-10">No.</th>
+                                            <th class="border border-gray-900 p-2 text-center w-16">부서</th>
+                                            <th class="border border-gray-900 p-2 text-center w-16">직책</th>
+                                            <th class="border border-gray-900 p-2 text-center w-20">이름</th>
+                                            <th class="border border-gray-900 p-2 text-center" id="thFri">금</th>
+                                            <th class="border border-gray-900 p-2 text-center" id="thSat">토</th>
+                                            <th class="border border-gray-900 p-2 text-center" id="thSun">일</th>
+                                            <th class="border border-gray-900 p-2 text-center">작업내용</th>
+                                            <th class="border border-gray-900 p-2 text-center w-12 no-capture">편집</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="holidayReportTable"></tbody>
+                                </table>
+                            </div>
+                            <div class="mt-3 text-right font-semibold">
+                                총 인원: <span id="holidayReportTotal" class="text-red-600 text-lg font-bold">0</span>명
                             </div>
                         </div>
                     </div>

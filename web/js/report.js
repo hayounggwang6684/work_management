@@ -93,45 +93,64 @@ function separateWorkers(leader, teammates) {
 // ========================================
 
 function showReportTab(tab) {
-    const dailyTab = document.getElementById('dailyReportTab');
-    const monthlyTab = document.getElementById('monthlyReportTab');
-    const btnDaily = document.getElementById('btnReportDaily');
-    const btnMonthly = document.getElementById('btnReportMonthly');
+    const tabs = {
+        daily:   document.getElementById('dailyReportTab'),
+        night:   document.getElementById('nightReportTab'),
+        holiday: document.getElementById('holidayReportTab'),
+        monthly: document.getElementById('monthlyReportTab'),
+    };
+    const btns = {
+        daily:   document.getElementById('btnReportDaily'),
+        night:   document.getElementById('btnReportNight'),
+        holiday: document.getElementById('btnReportHoliday'),
+        monthly: document.getElementById('btnReportMonthly'),
+    };
+
+    // 모든 탭 숨기고 버튼 초기화
+    Object.entries(tabs).forEach(([key, el]) => {
+        if (!el) return;
+        if (key === tab) el.classList.remove('hidden');
+        else el.classList.add('hidden');
+    });
+    Object.entries(btns).forEach(([key, el]) => {
+        if (!el) return;
+        if (key === tab) {
+            el.classList.remove('bg-slate-200');
+            el.classList.add('bg-blue-600', 'text-white');
+        } else {
+            el.classList.remove('bg-blue-600', 'text-white');
+            el.classList.add('bg-slate-200');
+        }
+    });
+
+    const todayStr = (() => {
+        const d = new Date();
+        return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    })();
 
     if (tab === 'daily') {
-        dailyTab.classList.remove('hidden');
-        monthlyTab.classList.add('hidden');
-        btnDaily.classList.remove('bg-slate-200');
-        btnDaily.classList.add('bg-blue-600', 'text-white');
-        btnMonthly.classList.remove('bg-blue-600', 'text-white');
-        btnMonthly.classList.add('bg-slate-200');
-        
-        // 일일 보고 로드 - 날짜 기본값 설정
         const reportDate = document.getElementById('reportDate');
-        if (reportDate && !reportDate.value) {
-            // 오늘 날짜로 설정
-            const today = new Date();
-            const year = today.getFullYear();
-            const month = String(today.getMonth() + 1).padStart(2, '0');
-            const day = String(today.getDate()).padStart(2, '0');
-            reportDate.value = `${year}-${month}-${day}`;
-        }
+        if (reportDate && !reportDate.value) reportDate.value = todayStr;
         loadDailyReport();
+    } else if (tab === 'night') {
+        const nightDate = document.getElementById('nightReportDate');
+        if (nightDate && !nightDate.value) nightDate.value = todayStr;
+        loadNightReport();
+    } else if (tab === 'holiday') {
+        const holidayInput = document.getElementById('holidayPeriodInput');
+        if (holidayInput && !holidayInput.value) {
+            // 기본값: 가장 가까운 이전 금요일
+            eel.get_latest_friday()().then(fri => {
+                if (fri) { holidayInput.value = fri; loadHolidayReport(); }
+            }).catch(() => { holidayInput.value = todayStr; });
+        } else {
+            loadHolidayReport();
+        }
     } else {
-        dailyTab.classList.add('hidden');
-        monthlyTab.classList.remove('hidden');
-        btnDaily.classList.remove('bg-blue-600', 'text-white');
-        btnDaily.classList.add('bg-slate-200');
-        btnMonthly.classList.remove('bg-slate-200');
-        btnMonthly.classList.add('bg-blue-600', 'text-white');
-        
-        // 월간 보고 로드 - 날짜 기본값 설정
         const reportMonth = document.getElementById('reportMonth');
-        if (!reportMonth.value) {
-            const today = new Date();
-            const year = today.getFullYear();
-            const month = String(today.getMonth() + 1).padStart(2, '0');
-            reportMonth.value = `${year}-${month}`;
+        if (reportMonth && !reportMonth.value) {
+            const d = new Date();
+            reportMonth.value = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
         }
         loadMonthlyReport();
     }
@@ -191,7 +210,7 @@ async function loadDailyReport() {
     }
 
     try {
-        const records = await eel.load_work_records(reportDate)();
+        const records = await eel.load_work_records(reportDate, 'day')();
         
         // 날짜 표시 업데이트
         const dateObj = new Date(reportDate);
@@ -296,6 +315,214 @@ async function loadDailyReport() {
         const dailyTbody = document.getElementById('dailyReportTable');
         if (dailyTbody) dailyTbody.innerHTML = '';
         showCustomAlert('오류', '데이터를 불러오는데 실패했습니다.', 'error');
+    }
+}
+
+// ========================================
+// 야간 보고 날짜 이동
+// ========================================
+
+function changeNightReportDate(days) {
+    const el = document.getElementById('nightReportDate');
+    if (!el || !el.value) return;
+    const d = new Date(el.value + 'T00:00:00');
+    d.setDate(d.getDate() + days);
+    el.value = d.toISOString().split('T')[0];
+    loadNightReport();
+}
+
+// ========================================
+// 야간 보고 로드
+// ========================================
+
+async function loadNightReport() {
+    const dateEl = document.getElementById('nightReportDate');
+    const dateStr = dateEl?.value;
+    if (!dateStr) return;
+
+    const tbody = document.getElementById('nightReportTable');
+    const totalEl = document.getElementById('nightReportTotal');
+    const dispEl  = document.getElementById('nightReportDateDisplay');
+    if (!tbody) return;
+
+    try {
+        const records = await eel.load_work_records(dateStr, 'night')() || [];
+        const validRecords = records.filter(r =>
+            r.company || r.shipName || r.workContent || r.leader
+        );
+
+        // 날짜 라벨
+        const d = new Date(dateStr + 'T00:00:00');
+        const days = ['일', '월', '화', '수', '목', '금', '토'];
+        if (dispEl) dispEl.textContent = `${d.getMonth()+1}월 ${d.getDate()}일 (${days[d.getDay()]})`;
+
+        tbody.innerHTML = '';
+        let seq = 1;
+
+        if (validRecords.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" class="border border-gray-900 p-3 text-center text-slate-500">작업 내역이 없습니다.</td></tr>';
+            if (totalEl) totalEl.textContent = '0';
+            return;
+        }
+
+        validRecords.forEach(record => {
+            const { inHouse, outsourced } = separateWorkers(record.leader, record.teammates);
+            const dateLabel = `${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')}(${days[d.getDay()]})`;
+            const workContent = [record.engineModel, record.workContent].filter(Boolean).join(' ');
+
+            // 본사 인원 각각 한 행
+            if (inHouse) {
+                inHouse.split(',').map(n => n.trim()).filter(Boolean).forEach(name => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td class="border border-gray-900 p-2 text-center">${seq++}</td>
+                        <td class="border border-gray-900 p-2 text-center"></td>
+                        <td class="border border-gray-900 p-2 text-center">${escapeHtml(stripRank(name))}</td>
+                        <td class="border border-gray-900 p-2 text-center">${escapeHtml(stripRank(name))}</td>
+                        <td class="border border-gray-900 p-2 text-center whitespace-nowrap">${escapeHtml(dateLabel)}</td>
+                        <td class="border border-gray-900 p-2">${escapeHtml(workContent || record.shipName || '')}</td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            }
+            // 외주 인원
+            if (outsourced) {
+                outsourced.split(',').map(n => n.trim()).filter(Boolean).forEach(name => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td class="border border-gray-900 p-2 text-center">${seq++}</td>
+                        <td class="border border-gray-900 p-2 text-center">외주</td>
+                        <td class="border border-gray-900 p-2 text-center"></td>
+                        <td class="border border-gray-900 p-2 text-center">${escapeHtml(name)}</td>
+                        <td class="border border-gray-900 p-2 text-center whitespace-nowrap">${escapeHtml(dateLabel)}</td>
+                        <td class="border border-gray-900 p-2">${escapeHtml(workContent || record.shipName || '')}</td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            }
+        });
+
+        if (totalEl) totalEl.textContent = seq - 1;
+    } catch (e) {
+        console.error('야간 보고 로드 실패:', e);
+        if (tbody) tbody.innerHTML = '';
+    }
+}
+
+// ========================================
+// 휴일 보고 — 로컬 상태
+// ========================================
+
+let _holidayEntries = [];
+let _holidayPeriodDates = {};
+
+async function loadHolidayReport() {
+    const periodKey = document.getElementById('holidayPeriodInput')?.value;
+    if (!periodKey) return;
+
+    try {
+        _holidayPeriodDates = await eel.get_holiday_period_dates(periodKey)() || {};
+        _holidayEntries = await eel.load_holiday_work_entries(periodKey)() || [];
+
+        // 날짜 헤더 업데이트
+        const thFri = document.getElementById('thFri');
+        const thSat = document.getElementById('thSat');
+        const thSun = document.getElementById('thSun');
+        if (thFri) thFri.textContent = _holidayPeriodDates.friLabel || '금';
+        if (thSat) thSat.textContent = _holidayPeriodDates.satLabel || '토';
+        if (thSun) thSun.textContent = _holidayPeriodDates.sunLabel || '일';
+
+        renderHolidayTable();
+    } catch (e) {
+        console.error('휴일 보고 로드 실패:', e);
+    }
+}
+
+function renderHolidayTable() {
+    const tbody = document.getElementById('holidayReportTable');
+    const totalEl = document.getElementById('holidayReportTotal');
+    if (!tbody) return;
+
+    tbody.innerHTML = '';
+
+    if (_holidayEntries.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="9" class="border border-gray-900 p-3 text-center text-slate-500">입력된 내역이 없습니다.</td></tr>';
+        if (totalEl) totalEl.textContent = '0';
+        return;
+    }
+
+    _holidayEntries.forEach((entry, i) => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td class="border border-gray-900 p-2 text-center">${i + 1}</td>
+            <td class="border border-gray-900 p-0">
+                <input type="text" value="${escapeHtml(entry.department||'')}" class="w-full px-1 py-1 border-0 focus:bg-yellow-50 text-sm"
+                       onchange="_updateHolidayEntry(${i},'department',this.value)">
+            </td>
+            <td class="border border-gray-900 p-0">
+                <input type="text" value="${escapeHtml(entry.rank||'')}" class="w-full px-1 py-1 border-0 focus:bg-yellow-50 text-sm"
+                       onchange="_updateHolidayEntry(${i},'rank',this.value)">
+            </td>
+            <td class="border border-gray-900 p-0">
+                <input type="text" value="${escapeHtml(entry.name||'')}" class="w-full px-1 py-1 border-0 focus:bg-yellow-50 text-sm"
+                       onchange="_updateHolidayEntry(${i},'name',this.value)">
+            </td>
+            <td class="border border-gray-900 p-0">
+                <input type="text" value="${escapeHtml(entry.friWork||'-')}" class="w-20 px-1 py-1 border-0 focus:bg-yellow-50 text-sm text-center"
+                       onchange="_updateHolidayEntry(${i},'friWork',this.value)">
+            </td>
+            <td class="border border-gray-900 p-0">
+                <input type="text" value="${escapeHtml(entry.satWork||'-')}" class="w-20 px-1 py-1 border-0 focus:bg-yellow-50 text-sm text-center"
+                       onchange="_updateHolidayEntry(${i},'satWork',this.value)">
+            </td>
+            <td class="border border-gray-900 p-0">
+                <input type="text" value="${escapeHtml(entry.sunWork||'-')}" class="w-20 px-1 py-1 border-0 focus:bg-yellow-50 text-sm text-center"
+                       onchange="_updateHolidayEntry(${i},'sunWork',this.value)">
+            </td>
+            <td class="border border-gray-900 p-0">
+                <input type="text" value="${escapeHtml(entry.workContent||'')}" class="w-full px-1 py-1 border-0 focus:bg-yellow-50 text-sm"
+                       onchange="_updateHolidayEntry(${i},'workContent',this.value)">
+            </td>
+            <td class="border border-gray-900 p-1 text-center no-capture">
+                <button onclick="_deleteHolidayRow(${i})"
+                        class="px-2 py-0.5 text-red-500 hover:bg-red-50 rounded text-xs">✕</button>
+            </td>
+        `;
+        tbody.appendChild(tr);
+    });
+
+    // 총 인원 = 행 수 (각 행 = 1인)
+    if (totalEl) totalEl.textContent = _holidayEntries.length;
+}
+
+function _updateHolidayEntry(index, field, value) {
+    if (_holidayEntries[index]) _holidayEntries[index][field] = value;
+}
+
+function _deleteHolidayRow(index) {
+    _holidayEntries.splice(index, 1);
+    renderHolidayTable();
+}
+
+function addHolidayRow() {
+    _holidayEntries.push({
+        department: '', rank: '', name: '',
+        friWork: '-', satWork: '-', sunWork: '-', workContent: ''
+    });
+    renderHolidayTable();
+}
+
+async function saveHolidayEntries() {
+    const periodKey = document.getElementById('holidayPeriodInput')?.value;
+    if (!periodKey) { showCustomAlert('알림', '금요일 날짜를 선택하세요.', 'info'); return; }
+    if (!window.currentUser?.full_name) { showCustomAlert('오류', '로그인 정보가 없습니다.', 'error'); return; }
+    try {
+        const result = await eel.save_holiday_work_entries(periodKey, _holidayEntries, currentUser.full_name)();
+        if (result.success) showToast('휴일 작업 명단이 저장되었습니다.', 'success');
+        else showCustomAlert('실패', result.message || '저장 실패', 'error');
+    } catch (e) {
+        console.error('휴일 저장 오류:', e);
+        showCustomAlert('오류', '저장 중 오류가 발생했습니다.', 'error');
     }
 }
 
