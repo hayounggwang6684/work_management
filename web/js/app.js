@@ -1573,16 +1573,28 @@ function _applyWritePermissionUI() {
     const canWrite = !!(currentUser && currentUser.can_write);
     const readOnly = !canWrite;
 
-    // 입력 필드 읽기 전용 처리
-    document.querySelectorAll('#recordsBody input, #recordsBody textarea').forEach(el => {
+    // 입력 필드 읽기 전용 처리 (주간 + 야간 테이블 모두)
+    document.querySelectorAll(
+        '#workRecordsTable input, #workRecordsTable textarea,' +
+        '#nightRecordsTable input, #nightRecordsTable textarea'
+    ).forEach(el => {
         el.readOnly = readOnly;
         el.style.cursor = readOnly ? 'default' : '';
     });
 
-    // 저장 버튼 표시/숨김 (헤더 + 일일뷰 하단 모두 처리)
-    document.querySelectorAll('#btnForceSave, #btnForceSave2').forEach(btn => {
-        btn.classList.toggle('hidden', readOnly);
-    });
+    // 저장 버튼: 탭에 따라 해당 버튼만 표시/숨김
+    const btnForceSave  = document.getElementById('btnForceSave');
+    const btnForceSave2 = document.getElementById('btnForceSave2');
+    const btnNightSave  = document.getElementById('btnNightSave');
+    if (currentWorkTab === 'night') {
+        btnForceSave?.classList.add('hidden');
+        btnForceSave2?.classList.add('hidden');
+        if (btnNightSave) btnNightSave.classList.toggle('hidden', readOnly);
+    } else {
+        if (btnForceSave)  btnForceSave.classList.toggle('hidden', readOnly);
+        if (btnForceSave2) btnForceSave2.classList.toggle('hidden', readOnly);
+        btnNightSave?.classList.add('hidden');
+    }
 
     // 읽기 전용 배지 표시/숨김
     const badge = document.getElementById('readOnlyBadge');
@@ -1649,37 +1661,24 @@ function showWorkTab(tab) {
         btnNight.className = 'px-5 py-2 rounded-lg font-semibold bg-white text-slate-600 border border-slate-300 hover:bg-slate-50';
         daySection?.classList.remove('hidden');
         nightSection?.classList.add('hidden');
+        document.getElementById('btnYesterdayWork')?.classList.remove('hidden');
+        document.getElementById('btnLoadDayWork')?.classList.add('hidden');
     } else {
         btnNight.className = 'px-5 py-2 rounded-lg font-semibold bg-indigo-700 text-white shadow';
         btnDay.className   = 'px-5 py-2 rounded-lg font-semibold bg-white text-slate-600 border border-slate-300 hover:bg-slate-50';
         daySection?.classList.add('hidden');
         nightSection?.classList.remove('hidden');
+        document.getElementById('btnYesterdayWork')?.classList.add('hidden');
+        document.getElementById('btnLoadDayWork')?.classList.remove('hidden');
         loadNightRecords();
     }
-}
-
-// 야간 날짜 표시 업데이트 (주간 dateInput과 동기화)
-function _updateNightDateDisplay() {
-    const dateInput = document.getElementById('dateInput');
-    const dispEl    = document.getElementById('nightDateDisplay');
-    const dowEl     = document.getElementById('nightDateDayOfWeek');
-    if (!dateInput || !dispEl) return;
-    const dateStr = dateInput.value;
-    if (dateStr) {
-        dispEl.textContent = dateStr;
-        if (dowEl) {
-            const d = new Date(dateStr + 'T00:00:00');
-            const days = ['일', '월', '화', '수', '목', '금', '토'];
-            dowEl.textContent = `(${days[d.getDay()]})`;
-        }
-    }
+    _applyWritePermissionUI();
 }
 
 async function loadNightRecords() {
     try {
         const dateStr = document.getElementById('dateInput')?.value;
         if (!dateStr) return;
-        _updateNightDateDisplay();
         showLoading(true);
         const records = await eel.load_work_records(dateStr, 'night')();
         nightWorkRecords = records || [];
@@ -1708,6 +1707,7 @@ function renderNightTable() {
         totalManpower += record.manpower || 0;
     });
     tbody.appendChild(createTotalRow(totalManpower));
+    _applyWritePermissionUI();
 }
 
 async function saveNightWorkRecords() {

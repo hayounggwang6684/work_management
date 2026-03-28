@@ -360,8 +360,26 @@ async function loadNightReport() {
         let seq = 1;
 
         if (validRecords.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="6" class="border border-gray-900 p-3 text-center text-slate-500">작업 내역이 없습니다.</td></tr>';
-            if (totalEl) totalEl.textContent = '0';
+            // 작업 내역이 없어도 전체 직원 목록 표시
+            const allNames = await eel.get_employee_names_for_leave()() || [];
+            if (allNames.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="border border-gray-900 p-3 text-center text-slate-500">작업 내역이 없습니다.</td></tr>';
+                if (totalEl) totalEl.textContent = '0';
+                return;
+            }
+            allNames.forEach(name => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td class="border border-gray-900 p-2 text-center">${seq++}</td>
+                    <td class="border border-gray-900 p-2 text-center"></td>
+                    <td class="border border-gray-900 p-2 text-center"></td>
+                    <td class="border border-gray-900 p-2 text-center">${escapeHtml(name)}</td>
+                    <td class="border border-gray-900 p-2 text-center whitespace-nowrap">${escapeHtml(dispEl?.textContent || '')}</td>
+                    <td class="border border-gray-900 p-2"></td>
+                `;
+                tbody.appendChild(tr);
+            });
+            if (totalEl) totalEl.textContent = allNames.length;
             return;
         }
 
@@ -423,6 +441,15 @@ async function loadHolidayReport() {
     try {
         _holidayPeriodDates = await eel.get_holiday_period_dates(periodKey)() || {};
         _holidayEntries = await eel.load_holiday_work_entries(periodKey)() || [];
+
+        // 저장된 엔트리가 없으면 전체 직원 목록으로 초기화
+        if (_holidayEntries.length === 0) {
+            const allNames = await eel.get_employee_names_for_leave()() || [];
+            _holidayEntries = allNames.map(name => ({
+                department: '', rank: '', name: name,
+                friWork: '-', satWork: '-', sunWork: '-', workContent: ''
+            }));
+        }
 
         // 날짜 헤더 업데이트
         const thFri = document.getElementById('thFri');
