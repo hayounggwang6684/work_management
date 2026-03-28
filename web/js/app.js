@@ -1716,6 +1716,9 @@ function createTableRow(record, index) {
                    class="w-full px-2 py-1 border-0 focus:bg-yellow-50"
                    placeholder="홍길동, 박명수">
         </td>
+        <td class="border p-2 text-center w-10">
+            <input type="checkbox" id="isAs_${index}" class="w-4 h-4 cursor-pointer accent-orange-500">
+        </td>
     `;
 
     // DOM 생성 후 프로그래밍적으로 value 설정 (특수문자 안전)
