@@ -332,22 +332,118 @@ class DatabaseManager:
             except Exception:
                 pass  # 이미 존재하면 무시
 
+            # work_records.work_type 컬럼 마이그레이션 (주간/야간 구분)
+            try:
+                cursor.execute("ALTER TABLE work_records ADD COLUMN work_type TEXT DEFAULT 'day'")
+                logger.info("work_records.work_type 컬럼 추가 완료")
+            except Exception:
+                pass  # 이미 존재하면 무시
+
+            # UNIQUE(date, record_number) → UNIQUE(date, record_number, work_type) 마이그레이션
+            # 기존 인라인 UNIQUE 제약은 SQLite에서 직접 수정 불가 → 테이블 재생성
+            try:
+                cursor.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='work_records_old'")
+                if cursor.fetchone()[0] == 0:
+                    # work_type 컬럼이 있는데 아직 새 UNIQUE 인덱스가 없는 경우에만 실행
+                    cursor.execute("""
+                        SELECT COUNT(*) FROM sqlite_master
+                        WHERE type='index' AND name='idx_work_records_date_num_type'
+                    """)
+                    if cursor.fetchone()[0] == 0:
+                        # 1) 기존 테이블 백업
+                        cursor.execute("ALTER TABLE work_records RENAME TO work_records_old")
+                        # 2) 새 테이블 생성 (UNIQUE 제약 변경)
+                        cursor.execute('''
+                            CREATE TABLE work_records (
+                                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                date TEXT NOT NULL,
+                                record_number INTEGER NOT NULL,
+                                contract_number TEXT,
+                                company TEXT,
+                                ship_name TEXT,
+                                engine_model TEXT,
+                                work_content TEXT,
+                                location TEXT,
+                                leader TEXT,
+                                teammates TEXT,
+                                manpower REAL DEFAULT 0,
+                                is_as INTEGER DEFAULT 0,
+                                work_type TEXT DEFAULT 'day',
+                                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                                updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                                created_by TEXT,
+                                updated_by TEXT,
+                                UNIQUE(date, record_number, work_type)
+                            )
+                        ''')
+                        # 3) 기존 데이터 복사 (work_type 기본값 'day')
+                        cursor.execute('''
+                            INSERT INTO work_records (
+                                id, date, record_number, contract_number, company, ship_name,
+                                engine_model, work_content, location, leader, teammates,
+                                manpower, is_as, work_type,
+                                created_at, updated_at, created_by, updated_by
+                            )
+                            SELECT
+                                id, date, record_number, contract_number, company, ship_name,
+                                engine_model, work_content, location, leader, teammates,
+                                manpower,
+                                COALESCE(is_as, 0),
+                                COALESCE(work_type, 'day'),
+                                created_at, updated_at, created_by, updated_by
+                            FROM work_records_old
+                        ''')
+                        # 4) 기존 백업 테이블 삭제
+                        cursor.execute("DROP TABLE work_records_old")
+                        # 5) 새 인덱스 생성
+                        cursor.execute('''
+                            CREATE UNIQUE INDEX IF NOT EXISTS idx_work_records_date_num_type
+                            ON work_records(date, record_number, work_type)
+                        ''')
+                        logger.info("work_records UNIQUE 제약 (date, record_number, work_type) 마이그레이션 완료")
+            except Exception as _mig_e:
+                logger.warning(f"work_records UNIQUE 마이그레이션 실패 (무시): {_mig_e}")
+
+            # holiday_work_entries 테이블 (휴일/주말 작업 인원 보고서)
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS holiday_work_entries (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    period_key TEXT NOT NULL,
+                    seq INTEGER NOT NULL,
+                    department TEXT DEFAULT '',
+                    rank TEXT DEFAULT '',
+                    name TEXT DEFAULT '',
+                    fri_work TEXT DEFAULT '-',
+                    sat_work TEXT DEFAULT '-',
+                    sun_work TEXT DEFAULT '-',
+                    work_content TEXT DEFAULT '',
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    created_by TEXT DEFAULT '',
+                    UNIQUE(period_key, seq)
+                )
+            ''')
+
     # =========================================================================
     # 작업 레코드 관련 메서드
     # =========================================================================
     
-    def save_work_records(self, date: str, records: List[WorkRecord], username: str) -> bool:
-        """작업 레코드 저장 (날짜별 전체 레코드)"""
+    def save_work_records(self, date: str, records: List[WorkRecord],
+                          username: str, work_type: str = 'day') -> bool:
+        """작업 레코드 저장 (날짜 + work_type별)"""
         inserted_count = 0
         try:
-            logger.info(f"저장 시작: {date}, {len(records)}개 레코드")
+            logger.info(f"저장 시작: {date} [{work_type}], {len(records)}개 레코드")
             logger.info(f"DB 경로: {self.db_path}")
 
             with self.get_connection() as conn:
                 cursor = conn.cursor()
 
-                # 기존 레코드 삭제
-                cursor.execute('DELETE FROM work_records WHERE date = ?', (date,))
+                # 해당 날짜 + work_type 레코드만 삭제
+                cursor.execute(
+                    'DELETE FROM work_records WHERE date = ? AND work_type = ?',
+                    (date, work_type)
+                )
                 deleted_count = cursor.rowcount
                 logger.info(f"기존 레코드 삭제: {deleted_count}개")
 
@@ -363,6 +459,7 @@ class DatabaseManager:
                 # 새 레코드 삽입
                 for record in valid_records:
                     record.date = date
+                    record.work_type = work_type
                     record.updated_at = datetime.now().isoformat()
                     record.updated_by = username
 
@@ -374,45 +471,56 @@ class DatabaseManager:
                         INSERT INTO work_records (
                             date, record_number, contract_number, company, ship_name,
                             engine_model, work_content, location, leader, teammates,
-                            manpower, is_as, created_at, updated_at, created_by, updated_by
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            manpower, is_as, work_type,
+                            created_at, updated_at, created_by, updated_by
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ''', (
                         record.date, record.record_number, record.contract_number,
                         record.company, record.ship_name, record.engine_model,
                         record.work_content, record.location, record.leader,
-                        record.teammates, record.manpower, getattr(record, 'is_as', 0),
-                        record.created_at, record.updated_at, record.created_by, record.updated_by
+                        record.teammates, record.manpower,
+                        getattr(record, 'is_as', 0),
+                        work_type,
+                        record.created_at, record.updated_at,
+                        record.created_by, record.updated_by
                     ))
                     inserted_count += 1
 
                 logger.info(f"삽입된 레코드: {inserted_count}개")
-                logger.info(f"작업 레코드 저장 완료: {date}, {inserted_count}개")
+                logger.info(f"작업 레코드 저장 완료: {date} [{work_type}], {inserted_count}개")
             # with 블록 종료 → conn.commit() 완료, write lock 해제
             # add_activity_log는 with 블록 밖에서 호출 (안에서 호출 시 conn 중첩 → 30초 데드락)
-            self.add_activity_log(username, 'save', date, f'{inserted_count}개 레코드 저장')
+            self.add_activity_log(username, 'save', date,
+                                  f'{inserted_count}개 레코드 저장 [{work_type}]')
             return True
 
         except Exception as e:
             logger.error(f"작업 레코드 저장 실패: {e}")
             return False
-    
-    def load_work_records(self, date: str) -> List[WorkRecord]:
-        """작업 레코드 로드 (날짜별)"""
+
+    def load_work_records(self, date: str, work_type: str = 'day') -> List[WorkRecord]:
+        """작업 레코드 로드 (날짜 + work_type별)"""
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
-                    SELECT * FROM work_records 
-                    WHERE date = ? 
+                    SELECT * FROM work_records
+                    WHERE date = ? AND work_type = ?
                     ORDER BY record_number
-                ''', (date,))
-                
+                ''', (date, work_type))
+
                 rows = cursor.fetchall()
-                records = [WorkRecord(**dict(row)) for row in rows]
-                
-                logger.info(f"작업 레코드 로드 완료: {date}, {len(records)}개")
+                records = []
+                for row in rows:
+                    row_dict = dict(row)
+                    # WorkRecord 필드에 없는 컬럼 제거 (DB에 여분 컬럼 있을 경우 대비)
+                    valid_keys = {f.name for f in WorkRecord.__dataclass_fields__.values()}
+                    filtered = {k: v for k, v in row_dict.items() if k in valid_keys}
+                    records.append(WorkRecord(**filtered))
+
+                logger.info(f"작업 레코드 로드 완료: {date} [{work_type}], {len(records)}개")
                 return records
-                
+
         except Exception as e:
             logger.error(f"작업 레코드 로드 실패: {e}")
             return []
@@ -447,10 +555,62 @@ class DatabaseManager:
             logger.error(f"날짜 목록 조회 실패: {e}")
             return []
     
+    def load_holiday_work_entries(self, period_key: str) -> List[dict]:
+        """휴일 작업 인원 명단 로드 (period_key = 해당 주 금요일 날짜 YYYY-MM-DD)"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT * FROM holiday_work_entries
+                    WHERE period_key = ?
+                    ORDER BY seq
+                ''', (period_key,))
+                rows = cursor.fetchall()
+                return [dict(row) for row in rows]
+        except Exception as e:
+            logger.error(f"휴일 작업 명단 로드 실패: {e}")
+            return []
+
+    def save_holiday_work_entries(self, period_key: str,
+                                  entries: List[dict], username: str) -> bool:
+        """휴일 작업 인원 명단 저장 (전체 덮어쓰기)"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    'DELETE FROM holiday_work_entries WHERE period_key = ?',
+                    (period_key,)
+                )
+                now = datetime.now().isoformat()
+                for i, entry in enumerate(entries, 1):
+                    cursor.execute('''
+                        INSERT INTO holiday_work_entries
+                            (period_key, seq, department, rank, name,
+                             fri_work, sat_work, sun_work, work_content,
+                             created_at, updated_at, created_by)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (
+                        period_key, i,
+                        entry.get('department', ''),
+                        entry.get('rank', ''),
+                        entry.get('name', ''),
+                        entry.get('friWork') or entry.get('fri_work', '-'),
+                        entry.get('satWork') or entry.get('sat_work', '-'),
+                        entry.get('sunWork') or entry.get('sun_work', '-'),
+                        entry.get('workContent') or entry.get('work_content', ''),
+                        now, now, username
+                    ))
+            self.add_activity_log(username, 'save', period_key,
+                                  f'휴일 작업 명단 저장 {len(entries)}건')
+            return True
+        except Exception as e:
+            logger.error(f"휴일 작업 명단 저장 실패: {e}")
+            return False
+
     # =========================================================================
     # 사용자 관련 메서드
     # =========================================================================
-    
+
     def add_or_update_user(self, username: str) -> bool:
         """사용자 추가 또는 업데이트"""
         try:

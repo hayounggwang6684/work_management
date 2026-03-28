@@ -22,6 +22,7 @@ class WorkRecord:
     teammates: str = ""
     manpower: float = 0.0
     is_as: int = 0              # A/S 여부 (0=일반, 1=A/S)
+    work_type: str = 'day'      # 주간/야간 구분 ('day' | 'night')
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
     created_by: str = ""
