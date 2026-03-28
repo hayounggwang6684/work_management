@@ -2,7 +2,7 @@
 
 import eel
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 from ..business.work_record_service import work_record_service
 from ..business.calculations import separate_workers, split_manpower_by_type
@@ -475,10 +475,10 @@ def get_recent_users() -> List[Dict[str, Any]]:
 # ============================================================================
 
 @eel.expose
-def load_work_records(date: str) -> List[Dict[str, Any]]:
-    """작업 레코드 로드"""
+def load_work_records(date: str, work_type: str = 'day') -> List[Dict[str, Any]]:
+    """작업 레코드 로드 (work_type: 'day'|'night')"""
     try:
-        logger.info(f"작업 레코드 로드 요청: {date}")
+        logger.info(f"작업 레코드 로드 요청: {date} [{work_type}]")
         if not date or len(date) != 10:  # #11/#15 — 날짜 형식 기본 검증
             logger.warning(f"잘못된 날짜 형식: {date!r}")
             return []
@@ -487,7 +487,8 @@ def load_work_records(date: str) -> List[Dict[str, Any]]:
         except ValueError:
             logger.warning(f"유효하지 않은 날짜: {date!r}")
             return []
-        records = work_record_service.get_records_for_date(date)
+        wt = work_type if work_type in ('day', 'night') else 'day'
+        records = work_record_service.get_records_for_date(date, wt)
         return records
     except Exception as e:
         logger.error(f"작업 레코드 로드 오류: {e}")
@@ -495,8 +496,9 @@ def load_work_records(date: str) -> List[Dict[str, Any]]:
 
 
 @eel.expose
-def save_work_records(date: str, records: List[Dict[str, Any]], username: str) -> Dict[str, Any]:
-    """작업 레코드 저장"""
+def save_work_records(date: str, records: List[Dict[str, Any]],
+                      username: str, work_type: str = 'day') -> Dict[str, Any]:
+    """작업 레코드 저장 (work_type: 'day'|'night')"""
     try:
         # ── 쓰기 권한 검증 (admin 역할 또는 can_write=1 인 사용자만 저장 가능)
         if not username:
@@ -505,14 +507,15 @@ def save_work_records(date: str, records: List[Dict[str, Any]], username: str) -
             logger.warning(f"쓰기 권한 없는 저장 시도: {username}")
             return {'success': False, 'message': '쓰기 권한이 없습니다. 관리자에게 문의하세요.'}
 
-        logger.info(f"작업 레코드 저장 요청: {date}, 사용자: {username}")
+        logger.info(f"작업 레코드 저장 요청: {date} [{work_type}], 사용자: {username}")
         if not date or len(date) != 10:
             return {'success': False, 'message': '잘못된 날짜 형식'}
         try:
             datetime.strptime(date, '%Y-%m-%d')
         except ValueError:
             return {'success': False, 'message': '유효하지 않은 날짜'}
-        save_result = work_record_service.save_records_for_date(date, records, username)
+        wt = work_type if work_type in ('day', 'night') else 'day'
+        save_result = work_record_service.save_records_for_date(date, records, username, wt)
         success = save_result.get('success', False)
 
         # 저장 성공 시 클라우드 동기화 (백그라운드 스레드 - UI 블로킹 방지)
@@ -530,15 +533,16 @@ def save_work_records(date: str, records: List[Dict[str, Any]], username: str) -
 
 
 @eel.expose
-def get_date_save_info(date: str) -> Dict[str, Any]:
+def get_date_save_info(date: str, work_type: str = 'day') -> Dict[str, Any]:
     """날짜별 마지막 저장 정보 조회 (JS 충돌 감지용)"""
     try:
+        wt = work_type if work_type in ('day', 'night') else 'day'
         with db.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 'SELECT updated_at, updated_by FROM work_records '
-                'WHERE date = ? ORDER BY updated_at DESC LIMIT 1',
-                (date,)
+                'WHERE date = ? AND work_type = ? ORDER BY updated_at DESC LIMIT 1',
+                (date, wt)
             )
             row = cursor.fetchone()
             if row:
@@ -551,6 +555,89 @@ def get_date_save_info(date: str) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"날짜 저장 정보 조회 실패: {e}")
         return {'has_records': False, 'updated_at': '', 'updated_by': ''}
+
+
+@eel.expose
+def load_holiday_work_entries(period_key: str) -> List[Dict[str, Any]]:
+    """휴일 작업 인원 명단 로드 (period_key = 해당 주 금요일 날짜 YYYY-MM-DD)"""
+    try:
+        rows = db.load_holiday_work_entries(period_key)
+        # snake_case → camelCase 변환
+        result = []
+        for row in rows:
+            result.append({
+                'id': row.get('id'),
+                'periodKey': row.get('period_key', ''),
+                'seq': row.get('seq', 0),
+                'department': row.get('department', ''),
+                'rank': row.get('rank', ''),
+                'name': row.get('name', ''),
+                'friWork': row.get('fri_work', '-'),
+                'satWork': row.get('sat_work', '-'),
+                'sunWork': row.get('sun_work', '-'),
+                'workContent': row.get('work_content', ''),
+            })
+        return result
+    except Exception as e:
+        logger.error(f"휴일 작업 명단 로드 오류: {e}")
+        return []
+
+
+@eel.expose
+def save_holiday_work_entries(period_key: str, entries: List[Dict[str, Any]],
+                              username: str) -> Dict[str, Any]:
+    """휴일 작업 인원 명단 저장"""
+    try:
+        if not username:
+            return {'success': False, 'message': '로그인 정보가 없습니다.'}
+        if not auth_manager.get_can_write_by_fullname(username):
+            return {'success': False, 'message': '쓰기 권한이 없습니다.'}
+        if not period_key or len(period_key) != 10:
+            return {'success': False, 'message': '잘못된 기간 키'}
+        success = db.save_holiday_work_entries(period_key, entries, username)
+        return {'success': success, 'message': '저장되었습니다.' if success else '저장 실패'}
+    except Exception as e:
+        logger.error(f"휴일 작업 명단 저장 오류: {e}")
+        return {'success': False, 'message': '요청 처리 중 오류가 발생했습니다.'}
+
+
+@eel.expose
+def get_latest_friday(date_str: str = '') -> str:
+    """주어진 날짜(또는 오늘)로부터 가장 가까운 이전 금요일 반환 (YYYY-MM-DD)"""
+    try:
+        if date_str and len(date_str) == 10:
+            base = datetime.strptime(date_str, '%Y-%m-%d')
+        else:
+            base = datetime.now()
+        # isoweekday: 월=1 … 금=5 … 일=7
+        days_since_fri = (base.isoweekday() - 5) % 7
+        friday = base - timedelta(days=days_since_fri)
+        return friday.strftime('%Y-%m-%d')
+    except Exception as e:
+        logger.error(f"금요일 계산 오류: {e}")
+        return ''
+
+
+@eel.expose
+def get_holiday_period_dates(period_key: str) -> Dict[str, str]:
+    """period_key(금요일) 기준 금/토/일 날짜+라벨 dict 반환"""
+    try:
+        fri = datetime.strptime(period_key, '%Y-%m-%d')
+        sat = fri + timedelta(days=1)
+        sun = fri + timedelta(days=2)
+        weekday_labels = {0: '월', 1: '화', 2: '수', 3: '목', 4: '금', 5: '토', 6: '일'}
+        return {
+            'fri': fri.strftime('%Y-%m-%d'),
+            'sat': sat.strftime('%Y-%m-%d'),
+            'sun': sun.strftime('%Y-%m-%d'),
+            'friLabel': f"금({fri.day})",
+            'satLabel': f"토({sat.day})",
+            'sunLabel': f"일({sun.day})",
+        }
+    except Exception as e:
+        logger.error(f"휴일 기간 날짜 계산 오류: {e}")
+        return {'fri': '', 'sat': '', 'sun': '',
+                'friLabel': '금', 'satLabel': '토', 'sunLabel': '일'}
 
 
 @eel.expose

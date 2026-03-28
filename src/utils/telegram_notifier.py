@@ -438,6 +438,44 @@ class TelegramNotifier:
             self._send_message(int(user['telegram_chat_id']), text)
         logger.info(f"일일 요약 발송 완료 ({len(linked_users)}명, {len(projects)}건)")
 
+    def send_holiday_reminder(self):
+        """쓰기 권한 보유 사용자에게 휴일 작업 현황 업데이트 알림 발송 (금요일 17:30)"""
+        if not self.enabled or not self.bot_token:
+            return
+
+        from ..database.auth_manager import auth_manager
+        from ..database.db_manager import db
+
+        # can_write=1 이고 텔레그램 연결된 사용자 조회
+        try:
+            with db.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT user_id, full_name, telegram_chat_id
+                    FROM auth_users
+                    WHERE telegram_chat_id IS NOT NULL
+                      AND status = 'active'
+                      AND (can_write = 1 OR role = 'admin')
+                ''')
+                target_users = [dict(row) for row in cursor.fetchall()]
+        except Exception as e:
+            logger.error(f"휴일 알림 대상 조회 실패: {e}")
+            return
+
+        if not target_users:
+            logger.info("휴일 알림: 대상 사용자 없음")
+            return
+
+        text = (
+            "⏰ 이번 주 휴일 근로 현황을 업데이트해 주세요.\n"
+            "━━━━━━━━━━━━━━\n"
+            "📌 보고서 탭 → 일일 보고(휴일)\n"
+            "부서 / 직책 / 이름 / 근무 시간대 / 작업내용을 입력하세요."
+        )
+        for user in target_users:
+            self._send_message(int(user['telegram_chat_id']), text)
+        logger.info(f"휴일 작업 알림 발송 완료 ({len(target_users)}명)")
+
     def send_project_event(self, contract_number: str, status: str, ship_name: str = ''):
         """착공 또는 준공 이벤트를 연결된 모든 사용자에게 알림"""
         if not self.enabled or not self.bot_token:

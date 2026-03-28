@@ -87,6 +87,15 @@ class DailyScheduler:
                 else:
                     logger.info(f"일일 요약 건너뜀 (주말: {now.strftime('%A')})")
 
+        # ── 금요일 휴일 근로 현황 알림 ───────────────────────────────────────
+        if now.isoweekday() == 5:   # 금요일
+            _hol_time = self._normalize_hm(
+                config.get('telegram.holiday_reminder_time', '17:30'))
+            _hol_key = f'holiday_reminder_{today}'
+            if _hol_time and hm == _hol_time and self._ran_today.get(_hol_key) != today:
+                self._ran_today[_hol_key] = today
+                self._do_holiday_reminder()
+
     # -------------------------------------------------------------------------
     # 실행 작업
     # -------------------------------------------------------------------------
@@ -109,6 +118,14 @@ class DailyScheduler:
                 telegram_notifier.send_daily_summary(date)
         except Exception as e:
             logger.error(f"일일 요약 발송 오류: {e}")
+
+    def _do_holiday_reminder(self):
+        try:
+            from .telegram_notifier import telegram_notifier
+            if telegram_notifier.enabled and telegram_notifier.bot_token:
+                telegram_notifier.send_holiday_reminder()
+        except Exception as e:
+            logger.error(f"휴일 알림 발송 오류: {e}")
 
 
 # 싱글톤 인스턴스

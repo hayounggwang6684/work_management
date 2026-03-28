@@ -28,12 +28,12 @@ class WorkRecordService:
         """빈 레코드 생성"""
         return [WorkRecord(record_number=i+1) for i in range(count)]
     
-    def get_records_for_date(self, date: str) -> List[Dict[str, Any]]:
+    def get_records_for_date(self, date: str, work_type: str = 'day') -> List[Dict[str, Any]]:
         """
         특정 날짜의 작업 레코드 조회
         인원 자동 계산 포함
         """
-        records = self.db.load_work_records(date)
+        records = self.db.load_work_records(date, work_type)
         
         # 레코드가 없으면 빈 레코드 10개 생성
         if not records:
@@ -54,7 +54,8 @@ class WorkRecordService:
         
         return result
     
-    def save_records_for_date(self, date: str, records_data: List[Dict[str, Any]], username: str) -> dict:
+    def save_records_for_date(self, date: str, records_data: List[Dict[str, Any]],
+                              username: str, work_type: str = 'day') -> dict:
         """특정 날짜의 작업 레코드 저장.
         반환: {'success': True} 또는 {'success': False, 'message': str}
         """
@@ -65,6 +66,7 @@ class WorkRecordService:
                 record = WorkRecord(
                     record_number=i + 1,
                     date=date,
+                    work_type=work_type,
                     contract_number=data.get('contractNumber', '').upper(),  # 자동 대문자
                     company=data.get('company', ''),
                     ship_name=data.get('shipName', ''),
@@ -81,7 +83,7 @@ class WorkRecordService:
                 records.append(record)
 
             # DB에 저장
-            success = self.db.save_work_records(date, records, username)
+            success = self.db.save_work_records(date, records, username, work_type)
 
             if success:
                 logger.info(f"작업 레코드 저장 성공: {date}, 사용자: {username}")
