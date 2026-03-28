@@ -324,7 +324,14 @@ class DatabaseManager:
                                 ''', (_name, _date, _cat, _days, '일일작업현황 자동'))
             except Exception as _me:
                 logger.warning(f"vacation_records 마이그레이션 실패 (무시): {_me}")
-    
+
+            # work_records.is_as 컬럼 마이그레이션 (A/S 여부)
+            try:
+                cursor.execute("ALTER TABLE work_records ADD COLUMN is_as INTEGER DEFAULT 0")
+                logger.info("work_records.is_as 컬럼 추가 완료")
+            except Exception:
+                pass  # 이미 존재하면 무시
+
     # =========================================================================
     # 작업 레코드 관련 메서드
     # =========================================================================
@@ -367,14 +374,14 @@ class DatabaseManager:
                         INSERT INTO work_records (
                             date, record_number, contract_number, company, ship_name,
                             engine_model, work_content, location, leader, teammates,
-                            manpower, created_at, updated_at, created_by, updated_by
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            manpower, is_as, created_at, updated_at, created_by, updated_by
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ''', (
                         record.date, record.record_number, record.contract_number,
                         record.company, record.ship_name, record.engine_model,
                         record.work_content, record.location, record.leader,
-                        record.teammates, record.manpower, record.created_at,
-                        record.updated_at, record.created_by, record.updated_by
+                        record.teammates, record.manpower, getattr(record, 'is_as', 0),
+                        record.created_at, record.updated_at, record.created_by, record.updated_by
                     ))
                     inserted_count += 1
 

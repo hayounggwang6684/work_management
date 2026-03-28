@@ -1728,6 +1728,16 @@ function createTableRow(record, index) {
     tr.querySelector(`#leader_${index}`).value = displayLeader;
     tr.querySelector(`#teammates_${index}`).value = displayTeammates;
 
+    // A/S 체크박스 상태 및 이벤트 등록
+    const asCheckbox = tr.querySelector(`#isAs_${index}`);
+    if (asCheckbox) {
+        asCheckbox.checked = !!(record.isAs);
+        asCheckbox.addEventListener('change', () => {
+            if (workRecords[index]) workRecords[index].isAs = asCheckbox.checked ? 1 : 0;
+            isDirty = true;
+        });
+    }
+
     // 순번 칸 hover → 삭제 버튼 토글
     const rowNum = tr.querySelector('.row-num');
     const delBtn = tr.querySelector('.del-btn');

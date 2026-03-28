@@ -21,6 +21,7 @@ class WorkRecord:
     leader: str = ""
     teammates: str = ""
     manpower: float = 0.0
+    is_as: int = 0              # A/S 여부 (0=일반, 1=A/S)
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
     created_by: str = ""

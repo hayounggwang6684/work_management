@@ -72,7 +72,8 @@ class WorkRecordService:
                     work_content=data.get('workContent', ''),
                     location=data.get('location', ''),
                     leader=data.get('leader', ''),
-                    teammates=data.get('teammates', '')
+                    teammates=data.get('teammates', ''),
+                    is_as=int(data.get('isAs', 0))
                 )
 
                 # 인원 자동 계산
