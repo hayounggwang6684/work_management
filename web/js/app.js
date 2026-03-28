@@ -1726,6 +1726,7 @@ async function saveNightWorkRecords() {
         showLoading(false);
 
         if (result.success) {
+            isDirty = false;
             _nightDateLoadedAt = new Date().toISOString();
             showToast('야간 작업 저장되었습니다.', 'success');
         } else {
