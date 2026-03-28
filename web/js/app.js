@@ -1615,6 +1615,24 @@ async function loadYesterdayRecords() {
 // 테이블 렌더링
 // ============================================================================
 
+// 주간/야간 탭 전환
+let currentWorkTab = 'day'; // 'day' | 'night'
+
+function showWorkTab(tab) {
+    currentWorkTab = tab;
+    const btnDay   = document.getElementById('btnWorkDay');
+    const btnNight = document.getElementById('btnWorkNight');
+    if (!btnDay || !btnNight) return;
+
+    if (tab === 'day') {
+        btnDay.className   = 'px-5 py-2 rounded-lg font-semibold bg-blue-600 text-white shadow';
+        btnNight.className = 'px-5 py-2 rounded-lg font-semibold bg-white text-slate-600 border border-slate-300 hover:bg-slate-50';
+    } else {
+        btnNight.className = 'px-5 py-2 rounded-lg font-semibold bg-indigo-700 text-white shadow';
+        btnDay.className   = 'px-5 py-2 rounded-lg font-semibold bg-white text-slate-600 border border-slate-300 hover:bg-slate-50';
+    }
+}
+
 function renderTable() {
     const tbody = document.getElementById('workRecordsTable');
     if (!tbody) {

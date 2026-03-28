@@ -204,6 +204,13 @@
         <main class="container mx-auto px-6 py-8">
             <!-- 일일 작업 화면 -->
             <div id="dailyView">
+                <!-- 주간/야간 서브탭 -->
+                <div class="flex gap-2 mb-4">
+                    <button onclick="showWorkTab('day')" id="btnWorkDay"
+                            class="px-5 py-2 rounded-lg font-semibold bg-blue-600 text-white shadow">주간 작업</button>
+                    <button onclick="showWorkTab('night')" id="btnWorkNight"
+                            class="px-5 py-2 rounded-lg font-semibold bg-white text-slate-600 border border-slate-300 hover:bg-slate-50">야간 작업</button>
+                </div>
                 <div class="bg-white rounded-lg shadow-xl p-6">
                     <div class="mb-4 flex justify-between">
                         <div class="flex gap-2 items-center">
