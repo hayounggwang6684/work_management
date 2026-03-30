@@ -1702,7 +1702,7 @@ function renderNightTable() {
 
     let totalManpower = 0;
     nightWorkRecords.forEach((record, index) => {
-        const row = createTableRow(record, index, nightWorkRecords);
+        const row = createTableRow(record, index, nightWorkRecords, true);
         tbody.appendChild(row);
         totalManpower += record.manpower || 0;
     });
@@ -1784,7 +1784,7 @@ function renderTable() {
     setupKeyboardListeners();
 }
 
-function createTableRow(record, index, records = workRecords) {
+function createTableRow(record, index, records = workRecords, showEndTime = false) {
     const tr = document.createElement('tr');
     tr.className = 'hover:bg-blue-50 group';
 
@@ -1861,6 +1861,12 @@ function createTableRow(record, index, records = workRecords) {
         <td class="border p-2 text-center w-10">
             <input type="checkbox" id="isAs_${index}" class="w-4 h-4 cursor-pointer accent-orange-500">
         </td>
+        ${showEndTime ? `<td class="border p-0 w-20">
+            <input type="text" id="endTime_${index}"
+                   oninput="updateRecord(${index}, 'endTime', this.value)"
+                   class="w-full px-2 py-1 text-center border-0 focus:bg-indigo-50 outline-none text-sm"
+                   placeholder="23:30">
+        </td>` : ''}
     `;
 
     // DOM 생성 후 프로그래밍적으로 value 설정 (특수문자 안전)
@@ -1872,6 +1878,10 @@ function createTableRow(record, index, records = workRecords) {
     tr.querySelector('[data-field="location"]').value = record.location || '';
     tr.querySelector(`#leader_${index}`).value = displayLeader;
     tr.querySelector(`#teammates_${index}`).value = displayTeammates;
+
+    // 종료시간 값 설정 (야간 탭에서만 렌더링됨)
+    const endTimeEl = tr.querySelector(`#endTime_${index}`);
+    if (endTimeEl) endTimeEl.value = record.endTime || '';
 
     // A/S 체크박스 상태 및 이벤트 등록
     const asCheckbox = tr.querySelector(`#isAs_${index}`);

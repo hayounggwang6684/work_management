@@ -23,6 +23,7 @@ class WorkRecord:
     manpower: float = 0.0
     is_as: int = 0              # A/S 여부 (0=일반, 1=A/S)
     work_type: str = 'day'      # 주간/야간 구분 ('day' | 'night')
+    end_time: str = ''          # 야간 작업 종료 시간 (예: '23:30')
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
     created_by: str = ""

@@ -339,6 +339,13 @@ class DatabaseManager:
             except Exception:
                 pass  # 이미 존재하면 무시
 
+            # work_records.end_time 컬럼 마이그레이션 (야간 작업 종료 시간)
+            try:
+                cursor.execute("ALTER TABLE work_records ADD COLUMN end_time TEXT DEFAULT ''")
+                logger.info("work_records.end_time 컬럼 추가 완료")
+            except Exception:
+                pass  # 이미 존재하면 무시
+
             # UNIQUE(date, record_number) → UNIQUE(date, record_number, work_type) 마이그레이션
             # 기존 인라인 UNIQUE 제약은 SQLite에서 직접 수정 불가 → 테이블 재생성
             try:
@@ -471,9 +478,9 @@ class DatabaseManager:
                         INSERT INTO work_records (
                             date, record_number, contract_number, company, ship_name,
                             engine_model, work_content, location, leader, teammates,
-                            manpower, is_as, work_type,
+                            manpower, is_as, work_type, end_time,
                             created_at, updated_at, created_by, updated_by
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ''', (
                         record.date, record.record_number, record.contract_number,
                         record.company, record.ship_name, record.engine_model,
@@ -481,6 +488,7 @@ class DatabaseManager:
                         record.teammates, record.manpower,
                         getattr(record, 'is_as', 0),
                         work_type,
+                        getattr(record, 'end_time', ''),
                         record.created_at, record.updated_at,
                         record.created_by, record.updated_by
                     ))
