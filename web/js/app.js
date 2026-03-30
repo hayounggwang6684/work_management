@@ -1706,7 +1706,7 @@ function renderNightTable() {
         tbody.appendChild(row);
         totalManpower += record.manpower || 0;
     });
-    tbody.appendChild(createTotalRow(totalManpower));
+    tbody.appendChild(createTotalRow(totalManpower, 3)); // 야간: 동반자+A/S+종료시간
     _applyWritePermissionUI();
 }
 
@@ -1778,9 +1778,9 @@ function renderTable() {
         totalManpower += record.manpower || 0;
     });
     
-    const totalRow = createTotalRow(totalManpower);
+    const totalRow = createTotalRow(totalManpower, 2); // 주간: 동반자+A/S
     tbody.appendChild(totalRow);
-    
+
     setupKeyboardListeners();
 }
 
@@ -1938,16 +1938,16 @@ function deleteRow(index) {
     }
 }
 
-function createTotalRow(totalManpower) {
+function createTotalRow(totalManpower, trailingCols = 2) {
+    // trailingCols: 인원 칸 이후 빈 칸 수 (주간=2: 동반자+A/S, 야간=3: 동반자+A/S+종료시간)
     const tr = document.createElement('tr');
     tr.className = 'bg-green-100 font-bold';
-    
+    const emptyCells = '<td class="border"></td>'.repeat(trailingCols);
     tr.innerHTML = `
         <td colspan="8" class="border p-3 text-right text-lg">총 인원</td>
         <td class="border p-3 text-center text-blue-600 text-xl">${totalManpower}</td>
-        <td class="border p-3 text-center">저장</td>
+        ${emptyCells}
     `;
-    
     return tr;
 }
 
