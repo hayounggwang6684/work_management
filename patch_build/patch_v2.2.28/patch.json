@@ -1,0 +1,10 @@
+{
+  "version": "2.2.28",
+  "description": "v2.2.28 패치",
+  "files": [
+    {
+      "source": "web/js/app.js",
+      "target": "web/js/app.js"
+    }
+  ]
+}
