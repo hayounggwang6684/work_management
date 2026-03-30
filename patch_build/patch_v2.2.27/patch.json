@@ -1,0 +1,18 @@
+{
+  "version": "2.2.27",
+  "description": "v2.2.27 패치",
+  "files": [
+    {
+      "source": "src/web/api.py",
+      "target": "src/web/api.py"
+    },
+    {
+      "source": "web/index.html",
+      "target": "web/index.html"
+    },
+    {
+      "source": "web/js/app.js",
+      "target": "web/js/app.js"
+    }
+  ]
+}
