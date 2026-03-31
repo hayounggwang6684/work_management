@@ -22,6 +22,8 @@ def test_leader_manpower():
     # 기울임체
     assert calculate_leader_manpower("*대리 박명수*") == 0.5
     assert calculate_leader_manpower("대리 *박명수*") == 0.5
+    assert calculate_leader_manpower("<i>대리 박명수</i>") == 0.5
+    assert calculate_leader_manpower("대리 <i>박명수</i>") == 0.5
     
     # 빈 값
     assert calculate_leader_manpower("") == 0.0
@@ -41,6 +43,7 @@ def test_teammates_internal():
     assert calculate_teammates_manpower("*홍길동*") == 0.5
     assert calculate_teammates_manpower("홍길동, *박명수*") == 1.5
     assert calculate_teammates_manpower("*홍길동*, *박명수*") == 1.0
+    assert calculate_teammates_manpower("<i>홍길동</i>, 박명수") == 1.5
     
     print("✅ 본사 소속 동반자 테스트 통과")
 
@@ -66,6 +69,7 @@ def test_teammates_daily():
     assert calculate_teammates_manpower("ABC업체[*홍길동*]") == 0.5
     assert calculate_teammates_manpower("ABC업체[홍길동, *박명수*]") == 1.5
     assert calculate_teammates_manpower("ABC업체[*홍길동*, *박명수*]") == 1.0
+    assert calculate_teammates_manpower("ABC업체[<i>홍길동</i>, 박명수]") == 1.5
     
     print("✅ 외주 일당 테스트 통과")
 

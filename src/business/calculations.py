@@ -3,51 +3,72 @@
 import re
 from typing import List, Tuple
 
+_HTML_ITALIC_PATTERN = re.compile(r'<i>.+?</i>', re.IGNORECASE)
+_STAR_ITALIC_PATTERN = re.compile(r'\*[^*]+\*')
+
+
+def _has_italic_marker(text: str) -> bool:
+    """Return True when the text contains any half-manpower marker."""
+    if not text:
+        return False
+    return bool(_HTML_ITALIC_PATTERN.search(text) or _STAR_ITALIC_PATTERN.search(text))
+
+
+def _strip_italic_markup(text: str) -> str:
+    """Remove display-only italic markers while keeping the worker name."""
+    if not text:
+        return ''
+    text = re.sub(r'</?i>', '', text, flags=re.IGNORECASE)
+    return text.replace('*', '').strip()
+
 
 def extract_names(text: str) -> List[Tuple[str, bool]]:
     """
-    텍스트에서 이름 추출 및 기울임체 여부 확인
-    
+    텍스트에서 이름 추출 및 기울임체(0.5공) 여부 확인
+
+    기울임체 인식 형식 (두 가지 모두 지원):
+      - *이름*   : 별표로 양쪽 감싼 형식
+      - <i>이름</i> : HTML 이탤릭 태그 형식
+
     Args:
         text: 입력 텍스트 (쉼표로 구분된 이름들)
-    
+
     Returns:
         List of (name, is_italic) tuples
     """
     if not text or not text.strip():
         return []
-    
+
     parts = [p.strip() for p in text.split(',') if p.strip()]
-    
+
     result = []
     for part in parts:
-        # 양쪽을 *로 정확히 감싼 경우만 이탤릭(기울임체)으로 인식
-        is_italic = part.startswith('*') and part.endswith('*') and len(part) >= 3
-        # strip('*') 대신 [1:-1] 사용 — 양 끝 *만 제거, 중간 * 보존
-        name = part[1:-1].strip() if is_italic else part.strip()
+        is_italic = _has_italic_marker(part)
+        name = _strip_italic_markup(part)
         if name:
             result.append((name, is_italic))
-    
+
     return result
 
 
 def calculate_leader_manpower(leader_text: str) -> float:
     """
     작업자(팀장) 인원 계산
-    
+
+    기울임체(0.5공) 인식 형식:
+      - *이름*        : 별표 양쪽 감싼 형식
+      - <i>이름</i>   : HTML 이탤릭 태그 형식
+
     Args:
         leader_text: 작업자 텍스트
-    
+
     Returns:
         인원 수 (0, 0.5, 1.0)
     """
     if not leader_text or not leader_text.strip():
         return 0.0
-    
-    # 기울임체(*로 양쪽 감싸진 경우만) 체크 — 한쪽만 * 있으면 직영 팀장
-    stripped = leader_text.strip()
-    is_italic = stripped.startswith('*') and stripped.endswith('*') and len(stripped) >= 3
-    return 0.5 if is_italic else 1.0
+
+    return 0.5 if _has_italic_marker(leader_text.strip()) else 1.0
 
 
 def calculate_teammates_manpower(teammates_text: str) -> float:

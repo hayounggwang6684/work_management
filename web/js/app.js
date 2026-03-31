@@ -1301,6 +1301,12 @@ function toUpperCase(value) {
 // 인원 계산 (즉시 계산)
 // ============================================================================
 
+function hasHalfManpowerMarker(text) {
+    const value = (text || '').trim();
+    if (!value) return false;
+    return /<i>.*?<\/i>/i.test(value) || /\*[^*]+\*/.test(value);
+}
+
 async function calculateManpowerInstant(index) {
     const records = _getActiveRecords();
     const leader = records[index]?.leader || '';
@@ -1310,8 +1316,7 @@ async function calculateManpowerInstant(index) {
     
     // 작업자
     if (leader.trim()) {
-        const hasItalic = leader.includes('<i>') || leader.includes('</i>');
-        manpower += hasItalic ? 0.5 : 1;
+        manpower += hasHalfManpowerMarker(leader) ? 0.5 : 1;
     }
     
     // 동반자 (간단 계산)
@@ -1327,8 +1332,7 @@ async function calculateManpowerInstant(index) {
                 const namesInBracket = match.match(/\[([^\]]+)\]/)[1];
                 const names = namesInBracket.split(',').filter(n => n.trim());
                 names.forEach(name => {
-                    const hasItalic = name.includes('<i>') || name.includes('</i>');
-                    manpower += hasItalic ? 0.5 : 1;
+                    manpower += hasHalfManpowerMarker(name) ? 0.5 : 1;
                 });
             });
         }
@@ -1348,8 +1352,7 @@ async function calculateManpowerInstant(index) {
         const internalNames = remaining.split(',').filter(n => n.trim());
         internalNames.forEach(name => {
             if (name.trim()) {
-                const hasItalic = name.includes('<i>') || name.includes('</i>');
-                manpower += hasItalic ? 0.5 : 1;
+                manpower += hasHalfManpowerMarker(name) ? 0.5 : 1;
             }
         });
     }
