@@ -7,6 +7,8 @@
 let workRecords = [];
 let vacationData = { '연차': '', '반차': '', '공가': '' };
 let isDirty = false;
+let dayIsDirty = false;
+let nightIsDirty = false;
 let _isSaving = false;  // 중복 저장 방지 플래그
 let _autoSaveTimer = null;  // 자동 저장 타이머 핸들
 let _dateLoadedAt = null; // 현재 날짜 데이터 로드 시각 (충돌 감지용)
@@ -41,7 +43,7 @@ const koreanToEnglish = {
 // ============================================================================
 
 function showView(view) {
-    if (view !== 'daily' && !checkUnsavedChanges()) return;
+    if (view !== 'daily' && !checkUnsavedChanges('any')) return;
     const btnDaily = document.getElementById('btnDaily');
     const btnReport = document.getElementById('btnReport');
     const btnSearch = document.getElementById('btnSearch');
@@ -113,9 +115,31 @@ function showView(view) {
 // 미저장 변경 경고
 // ============================================================================
 
-function checkUnsavedChanges() {
-    if (!isDirty) return true;
-    return confirm('저장되지 않은 변경 사항이 있습니다.\n저장하지 않고 이동하시겠습니까?');
+function _syncDirtyState() {
+    isDirty = !!(dayIsDirty || nightIsDirty);
+}
+
+function _hasUnsavedChanges(scope = 'current') {
+    if (scope === 'any') return !!(dayIsDirty || nightIsDirty);
+    return currentWorkTab === 'night' ? !!nightIsDirty : !!dayIsDirty;
+}
+
+function _setDirtyForTab(tab, value) {
+    if (tab === 'night') {
+        nightIsDirty = !!value;
+    } else {
+        dayIsDirty = !!value;
+    }
+    _syncDirtyState();
+}
+
+function _markCurrentTabDirty() {
+    _setDirtyForTab(currentWorkTab, true);
+}
+
+function checkUnsavedChanges(scope = 'current', message = '') {
+    if (!_hasUnsavedChanges(scope)) return true;
+    return confirm(message || '저장되지 않은 변경 사항이 있습니다.\n저장하지 않고 이동하시겠습니까?');
 }
 
 // ============================================================================
@@ -1396,6 +1420,7 @@ function updateTotalManpower() {
 
 function updateVacation(category, value) {
     vacationData[category] = value;
+    _setDirtyForTab('day', true);
 }
 
 async function loadWorkRecords() {
@@ -1409,7 +1434,7 @@ async function loadWorkRecords() {
 
         renderTable();
         _applyWritePermissionUI();
-        isDirty = false;
+        _setDirtyForTab('day', false);
         _dateLoadedAt = new Date().toISOString(); // 로드 시각 기록
 
         // 휴가자 현황 로드
@@ -1499,7 +1524,7 @@ async function saveWorkRecords() {
             } catch (e) {
                 console.error('휴가자 현황 저장 오류:', e);
             }
-            isDirty = false;
+            _setDirtyForTab('day', false);
             _dateLoadedAt = new Date().toISOString(); // 저장 성공 시 로드 시각 갱신
             const _saveNow = new Date();
             const _saveEl = document.getElementById('saveStatusText');
@@ -1557,7 +1582,7 @@ async function saveCurrentWorkRecords() {
 }
 
 async function _autoSaveWorkRecords() {
-    if (!isDirty || _isSaving || _isNightSaving) return;
+    if (!dayIsDirty || _isSaving || _isNightSaving) return;
     if (!currentUser || !currentUser.full_name) return;
     const dailyView = document.getElementById('dailyView');
     if (!dailyView || dailyView.classList.contains('hidden')) return;
@@ -1588,7 +1613,7 @@ async function _autoSaveWorkRecords() {
     try {
         const result = await eel.save_work_records(dateStr, workRecords, currentUser.full_name, 'day')();
         if (result.success) {
-            isDirty = false;
+            _setDirtyForTab('day', false);
             _dateLoadedAt = new Date().toISOString();
             const now = new Date();
             const el = document.getElementById('saveStatusText');
@@ -1651,7 +1676,7 @@ async function loadYesterdayRecords() {
 
         renderTable();
         _applyWritePermissionUI();
-        isDirty = true;
+        _setDirtyForTab('day', true);
         showLoading(false);
 
         // 실제 불러온 날짜를 알림에 표시 (월요일→금요일, 연휴 다음날→연휴 전 마지막 평일)
@@ -1677,7 +1702,7 @@ async function refreshCurrentWorkRecords() {
     const dailyView = document.getElementById('dailyView');
     if (!dailyView || dailyView.classList.contains('hidden')) return;
 
-    if (isDirty) {
+    if (_hasUnsavedChanges('current')) {
         const tabLabel = currentWorkTab === 'night' ? '야간 작업' : '주간 작업';
         const proceed = confirm(
             `${tabLabel}에 저장하지 않은 내용이 있습니다.\n리프레쉬하면 현재 입력 내용이 사라집니다. 계속하시겠습니까?`
@@ -1706,6 +1731,14 @@ let _isNightSaving = false;
 let _nightDateLoadedAt = null;
 
 function showWorkTab(tab) {
+    if (tab === currentWorkTab) return;
+    if (!checkUnsavedChanges(
+        'current',
+        '현재 탭에 저장하지 않은 내용이 있습니다.\n탭을 바꾸면 입력 내용은 유지되지만 저장되지는 않습니다. 계속하시겠습니까?'
+    )) {
+        return;
+    }
+
     currentWorkTab = tab;
     const btnDay   = document.getElementById('btnWorkDay');
     const btnNight = document.getElementById('btnWorkNight');
@@ -1740,7 +1773,7 @@ async function loadNightRecords() {
         const records = await eel.load_work_records(dateStr, 'night')();
         nightWorkRecords = records || [];
         renderNightTable();
-        isDirty = false;
+        _setDirtyForTab('night', false);
         _nightDateLoadedAt = new Date().toISOString();
         showLoading(false);
         return true;
@@ -1786,7 +1819,7 @@ async function saveNightWorkRecords() {
         showLoading(false);
 
         if (result.success) {
-            isDirty = false;
+            _setDirtyForTab('night', false);
             _nightDateLoadedAt = new Date().toISOString();
             showToast('야간 작업 저장되었습니다.', 'success');
         } else {
@@ -1945,11 +1978,11 @@ function createTableRow(record, index, records = workRecords, showEndTime = fals
 
     // A/S 체크박스 상태 및 이벤트 등록
     const asCheckbox = tr.querySelector(`#isAs_${index}`);
-    if (asCheckbox) {
+        if (asCheckbox) {
         asCheckbox.checked = !!(record.isAs);
         asCheckbox.addEventListener('change', () => {
             if (records[index]) records[index].isAs = asCheckbox.checked ? 1 : 0;
-            isDirty = true;
+            _markCurrentTabDirty();
         });
     }
 
@@ -1989,7 +2022,7 @@ function deleteRow(index) {
     if (hasData && !confirm(`${index + 1}번 행의 내용을 삭제하시겠습니까?`)) return;
 
     records.splice(index, 1);
-    isDirty = true;
+    _markCurrentTabDirty();
     if (currentWorkTab === 'night') {
         renderNightTable();
     } else {
@@ -2187,7 +2220,7 @@ function updateRecord(index, field, value) {
     const records = _getActiveRecords();
     if (records[index]) {
         records[index][field] = value;
-        isDirty = true;
+        _markCurrentTabDirty();
     }
 }
 
