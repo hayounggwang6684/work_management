@@ -171,7 +171,7 @@
                     <button onclick="showView('settings')" id="btnSettings"
                             class="px-4 py-2 bg-slate-200 rounded-lg">설정</button>
                     <div class="flex flex-col items-center">
-                        <button onclick="forceSaveWorkRecords()" id="btnForceSave"
+                        <button onclick="saveCurrentWorkRecords()" id="btnForceSave"
                                 class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium">💾 저장</button>
                         <span id="saveStatusText" class="text-xs text-green-600 font-medium h-4"></span>
                     </div>
@@ -228,10 +228,11 @@
                                 class="px-4 py-2 bg-cyan-600 text-white rounded-lg ml-2 hidden">주간 작업</button>
                     </div>
                     <div class="flex items-center gap-2">
-                        <button onclick="forceSaveWorkRecords()" id="btnForceSave2"
-                                class="px-6 py-2 bg-green-600 text-white rounded-lg font-semibold">저장</button>
-                        <button onclick="saveNightWorkRecords()" id="btnNightSave"
-                                class="px-6 py-2 bg-indigo-600 text-white rounded-lg font-semibold hidden">저장</button>
+                        <button onclick="refreshCurrentWorkRecords()" id="btnRefreshRecords"
+                                class="px-4 py-2 bg-slate-200 text-slate-700 rounded-lg font-semibold hover:bg-slate-300"
+                                title="현재 탭 새로고침 (F5)">리프레쉬</button>
+                        <button onclick="saveCurrentWorkRecords()" id="btnWorkSave"
+                                class="px-6 py-2 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700">저장</button>
                         <span id="readOnlyBadge" class="hidden px-3 py-1 bg-slate-200 text-slate-600 text-sm rounded-lg">👁️ 읽기 전용</span>
                     </div>
                 </div>

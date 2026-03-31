@@ -156,7 +156,11 @@ function changeDate(days) {
     if (!checkUnsavedChanges()) return;
     currentDate.setDate(currentDate.getDate() + days);
     updateDateInput();
-    loadWorkRecords();
+    if (currentWorkTab === 'night') {
+        loadNightRecords();
+    } else {
+        loadWorkRecords();
+    }
 }
 
 function onDateChange() {
@@ -168,7 +172,6 @@ function onDateChange() {
         }
         currentDate = new Date(dateInput.value + 'T00:00:00');
         if (currentWorkTab === 'night') {
-            _updateNightDateDisplay();
             loadNightRecords();
         } else {
             loadWorkRecords();
@@ -1424,10 +1427,12 @@ async function loadWorkRecords() {
         }
 
         showLoading(false);
+        return true;
     } catch (error) {
         console.error('데이터 로드 오류:', error);
         showCustomAlert('오류', '데이터 로드 중 오류가 발생했습니다.', 'error');
         showLoading(false);
+        return false;
     }
 }
 
@@ -1539,6 +1544,18 @@ async function forceSaveWorkRecords() {
     }
 }
 
+async function saveCurrentWorkRecords() {
+    const dailyView = document.getElementById('dailyView');
+    if (!dailyView || dailyView.classList.contains('hidden')) return;
+
+    if (currentWorkTab === 'night') {
+        await saveNightWorkRecords();
+        return;
+    }
+
+    await forceSaveWorkRecords();
+}
+
 async function _autoSaveWorkRecords() {
     if (!isDirty || _isSaving || _isNightSaving) return;
     if (!currentUser || !currentUser.full_name) return;
@@ -1609,18 +1626,10 @@ function _applyWritePermissionUI() {
     });
 
     // 저장 버튼: 탭에 따라 해당 버튼만 표시/숨김
-    const btnForceSave  = document.getElementById('btnForceSave');
-    const btnForceSave2 = document.getElementById('btnForceSave2');
-    const btnNightSave  = document.getElementById('btnNightSave');
-    if (currentWorkTab === 'night') {
-        btnForceSave?.classList.add('hidden');
-        btnForceSave2?.classList.add('hidden');
-        if (btnNightSave) btnNightSave.classList.toggle('hidden', readOnly);
-    } else {
-        if (btnForceSave)  btnForceSave.classList.toggle('hidden', readOnly);
-        if (btnForceSave2) btnForceSave2.classList.toggle('hidden', readOnly);
-        btnNightSave?.classList.add('hidden');
-    }
+    const btnForceSave = document.getElementById('btnForceSave');
+    const btnWorkSave = document.getElementById('btnWorkSave');
+    if (btnForceSave) btnForceSave.classList.toggle('hidden', readOnly);
+    if (btnWorkSave) btnWorkSave.classList.toggle('hidden', readOnly);
 
     // 읽기 전용 배지 표시/숨김
     const badge = document.getElementById('readOnlyBadge');
@@ -1661,6 +1670,28 @@ async function loadYesterdayRecords() {
         console.error('어제 작업 로드 오류:', error);
         showCustomAlert('오류', '이전 작업 로드 중 오류가 발생했습니다.', 'error');
         showLoading(false);
+    }
+}
+
+async function refreshCurrentWorkRecords() {
+    const dailyView = document.getElementById('dailyView');
+    if (!dailyView || dailyView.classList.contains('hidden')) return;
+
+    if (isDirty) {
+        const tabLabel = currentWorkTab === 'night' ? '야간 작업' : '주간 작업';
+        const proceed = confirm(
+            `${tabLabel}에 저장하지 않은 내용이 있습니다.\n리프레쉬하면 현재 입력 내용이 사라집니다. 계속하시겠습니까?`
+        );
+        if (!proceed) return;
+    }
+
+    const ok = currentWorkTab === 'night'
+        ? await loadNightRecords()
+        : await loadWorkRecords();
+
+    if (ok) {
+        const tabLabel = currentWorkTab === 'night' ? '야간 작업' : '주간 작업';
+        showToast(`${tabLabel} 데이터를 새로 불러왔습니다.`, 'success');
     }
 }
 
@@ -1709,11 +1740,14 @@ async function loadNightRecords() {
         const records = await eel.load_work_records(dateStr, 'night')();
         nightWorkRecords = records || [];
         renderNightTable();
+        isDirty = false;
         _nightDateLoadedAt = new Date().toISOString();
         showLoading(false);
+        return true;
     } catch (e) {
         console.error('야간 레코드 로드 오류:', e);
         showLoading(false);
+        return false;
     }
 }
 
@@ -2933,7 +2967,16 @@ document.addEventListener('keydown', function(e) {
         const dailyView = document.getElementById('dailyView');
         if (dailyView && !dailyView.classList.contains('hidden')) {
             e.preventDefault();
-            if (typeof forceSaveWorkRecords === 'function') forceSaveWorkRecords();
+            if (typeof saveCurrentWorkRecords === 'function') saveCurrentWorkRecords();
+        }
+        return;
+    }
+
+    if (e.key === 'F5') {
+        const dailyView = document.getElementById('dailyView');
+        if (dailyView && !dailyView.classList.contains('hidden')) {
+            e.preventDefault();
+            if (typeof refreshCurrentWorkRecords === 'function') refreshCurrentWorkRecords();
         }
         return;
     }
@@ -2977,7 +3020,11 @@ document.addEventListener('keydown', function(e) {
                 if (!checkUnsavedChanges()) break;
                 currentDate = new Date();
                 updateDateInput();
-                loadWorkRecords();
+                if (currentWorkTab === 'night') {
+                    loadNightRecords();
+                } else {
+                    loadWorkRecords();
+                }
             }
             break;
         }

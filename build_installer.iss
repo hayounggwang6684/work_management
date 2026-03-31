@@ -3,12 +3,12 @@
 
 [Setup]
 AppName=금일작업현황 관리
-AppVersion=2.2.31
+AppVersion=2.2.32
 AppPublisher=Your Company
 DefaultDirName={autopf}\WorkManagement
 DefaultGroupName=금일작업현황 관리
 OutputDir=dist\installer
-OutputBaseFilename=WorkManagement_Setup_v2.2.31
+OutputBaseFilename=WorkManagement_Setup_v2.2.32
 Compression=lzma2/max
 SolidCompression=yes
 ArchitecturesAllowed=x64compatible
