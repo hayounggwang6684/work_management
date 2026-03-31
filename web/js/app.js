@@ -1377,8 +1377,9 @@ function updateTotalManpower() {
     const tbody = document.getElementById(tableId);
     if (tbody && tbody.rows.length > 0) {
         const lastRow = tbody.rows[tbody.rows.length - 1];
-        if (lastRow && lastRow.cells.length > 8) {
-            lastRow.cells[8].textContent = total;
+        // 총 인원 행: cells[0]=colspan8 "총 인원", cells[1]=공수 값
+        if (lastRow && lastRow.cells.length > 1) {
+            lastRow.cells[1].textContent = total;
         }
     }
 }
