@@ -1071,7 +1071,18 @@ function openCommentModal(contractNumber, boardProjectId, title) {
         try { await loadComments(); } catch(e) {}
     }, 10000);
 
-    loadComments();
+    // 클라우드 pull 후 댓글 로드 (실패해도 로컬 DB로 계속)
+    (async () => {
+        try {
+            const syncMode = await eel.get_cloud_sync_mode()();
+            if (syncMode && syncMode !== 'standalone') {
+                await eel.sync_from_cloud()();
+            }
+        } catch (e) {
+            console.warn('댓글 모달 sync_from_cloud 실패:', e);
+        }
+        loadComments();
+    })();
 }
 
 function closeCommentModal() {
@@ -1228,6 +1239,17 @@ async function submitComment() {
             input.value = '';
             cancelReply();
             try { await loadComments(); } catch(e) { console.warn('댓글 목록 갱신 실패:', e); }
+            // 즉시 클라우드 push (백그라운드, 실패해도 댓글은 이미 등록됨)
+            (async () => {
+                try {
+                    const syncMode = await eel.get_cloud_sync_mode()();
+                    if (syncMode && syncMode !== 'standalone') {
+                        await eel.sync_to_cloud()();
+                    }
+                } catch (e) {
+                    console.warn('댓글 작성 후 sync_to_cloud 실패:', e);
+                }
+            })();
         } else {
             showCustomAlert('오류', result.message, 'error');
         }
