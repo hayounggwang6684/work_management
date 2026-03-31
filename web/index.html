@@ -908,6 +908,8 @@
                                        class="px-4 py-2 border rounded-lg">
                                 <button onclick="changeNightReportDate(1)"
                                         class="px-3 py-2 bg-slate-200 hover:bg-slate-300 rounded-lg text-lg font-bold" title="다음일">▶</button>
+                                <button onclick="addNightRow()"
+                                        class="px-4 py-2 bg-slate-500 text-white rounded-lg">+ 행 추가</button>
                             </div>
                         </div>
                         <div id="nightReportCapture" class="bg-white p-4">
@@ -925,6 +927,7 @@
                                             <th class="border border-gray-900 p-2 text-center w-20">이름</th>
                                             <th class="border border-gray-900 p-2 text-center">날짜</th>
                                             <th class="border border-gray-900 p-2 text-center">작업내용</th>
+                                            <th class="border border-gray-900 p-2 text-center w-16 no-capture">편집</th>
                                         </tr>
                                     </thead>
                                     <tbody id="nightReportTable"></tbody>

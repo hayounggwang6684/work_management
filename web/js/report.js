@@ -53,7 +53,7 @@ function separateWorkers(leader, teammates) {
         const contractRegex = /([^,]+?)\(([^)]+)\)/g;
         let match;
         while ((match = contractRegex.exec(teammates)) !== null) {
-            const fullMatch = match[0].trim(); // "업체명(직원명들)"
+            const fullMatch = match[0].trim().replace(/<i>/gi, '').replace(/<\/i>/gi, '').replace(/\*/g, ''); // "업체명(직원명들)"
             if (fullMatch) {
                 outsourcedList.push(fullMatch);
             }
@@ -64,7 +64,7 @@ function separateWorkers(leader, teammates) {
         // 2. 일당 패턴 추출: 업체명[직원명들] — 원문 그대로
         const dailyRegex = /([^,]+?)\[([^\]]+)\]/g;
         while ((match = dailyRegex.exec(remaining)) !== null) {
-            const fullMatch = match[0].trim(); // "업체명[직원명들]"
+            const fullMatch = match[0].trim().replace(/<i>/gi, '').replace(/<\/i>/gi, '').replace(/\*/g, ''); // "업체명[직원명들]"
             if (fullMatch) {
                 outsourcedList.push(fullMatch);
             }
@@ -335,15 +335,15 @@ function changeNightReportDate(days) {
 // 야간 보고 로드
 // ========================================
 
+// 야간 보고 — 로컬 상태
+let _nightReportEntries = [];
+
 async function loadNightReport() {
     const dateEl = document.getElementById('nightReportDate');
     const dateStr = dateEl?.value;
     if (!dateStr) return;
 
-    const tbody = document.getElementById('nightReportTable');
-    const totalEl = document.getElementById('nightReportTotal');
-    const dispEl  = document.getElementById('nightReportDateDisplay');
-    if (!tbody) return;
+    const dispEl = document.getElementById('nightReportDateDisplay');
 
     try {
         const records = await eel.load_work_records(dateStr, 'night')() || [];
@@ -351,80 +351,117 @@ async function loadNightReport() {
             r.company || r.shipName || r.workContent || r.leader
         );
 
-        // 날짜 라벨
         const d = new Date(dateStr + 'T00:00:00');
         const days = ['일', '월', '화', '수', '목', '금', '토'];
         if (dispEl) dispEl.textContent = `${d.getMonth()+1}월 ${d.getDate()}일 (${days[d.getDay()]})`;
 
-        tbody.innerHTML = '';
-        let seq = 1;
+        const dateLabel = `${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')}(${days[d.getDay()]})`;
+        _nightReportEntries = [];
 
         if (validRecords.length === 0) {
-            // 작업 내역이 없어도 전체 직원 목록 표시
             const allNames = await eel.get_employee_names_for_leave()() || [];
-            if (allNames.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="6" class="border border-gray-900 p-3 text-center text-slate-500">작업 내역이 없습니다.</td></tr>';
-                if (totalEl) totalEl.textContent = '0';
-                return;
-            }
             allNames.forEach(name => {
-                const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td class="border border-gray-900 p-2 text-center">${seq++}</td>
-                    <td class="border border-gray-900 p-2 text-center"></td>
-                    <td class="border border-gray-900 p-2 text-center"></td>
-                    <td class="border border-gray-900 p-2 text-center">${escapeHtml(name)}</td>
-                    <td class="border border-gray-900 p-2 text-center whitespace-nowrap">${escapeHtml(dispEl?.textContent || '')}</td>
-                    <td class="border border-gray-900 p-2"></td>
-                `;
-                tbody.appendChild(tr);
+                _nightReportEntries.push({ dept: '', rank: '', name, dateLabel: dispEl?.textContent || '', workContent: '' });
             });
-            if (totalEl) totalEl.textContent = allNames.length;
-            return;
+        } else {
+            validRecords.forEach(record => {
+                const { inHouse, outsourced } = separateWorkers(record.leader, record.teammates);
+                const workContent = [record.engineModel, record.workContent].filter(Boolean).join(' ');
+
+                if (inHouse && inHouse !== '-') {
+                    inHouse.split(',').map(n => n.trim()).filter(Boolean).forEach(name => {
+                        _nightReportEntries.push({ dept: '', rank: '', name: stripRank(name), dateLabel, workContent: workContent || record.shipName || '' });
+                    });
+                }
+                if (outsourced && outsourced !== '-') {
+                    outsourced.split(',').map(n => n.trim()).filter(Boolean).forEach(name => {
+                        _nightReportEntries.push({ dept: '외주', rank: '', name, dateLabel, workContent: workContent || record.shipName || '' });
+                    });
+                }
+            });
         }
 
-        validRecords.forEach(record => {
-            const { inHouse, outsourced } = separateWorkers(record.leader, record.teammates);
-            const dateLabel = `${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')}(${days[d.getDay()]})`;
-            const workContent = [record.engineModel, record.workContent].filter(Boolean).join(' ');
-
-            // 본사 인원 각각 한 행
-            if (inHouse) {
-                inHouse.split(',').map(n => n.trim()).filter(Boolean).forEach(name => {
-                    const tr = document.createElement('tr');
-                    tr.innerHTML = `
-                        <td class="border border-gray-900 p-2 text-center">${seq++}</td>
-                        <td class="border border-gray-900 p-2 text-center"></td>
-                        <td class="border border-gray-900 p-2 text-center">${escapeHtml(stripRank(name))}</td>
-                        <td class="border border-gray-900 p-2 text-center">${escapeHtml(stripRank(name))}</td>
-                        <td class="border border-gray-900 p-2 text-center whitespace-nowrap">${escapeHtml(dateLabel)}</td>
-                        <td class="border border-gray-900 p-2">${escapeHtml(workContent || record.shipName || '')}</td>
-                    `;
-                    tbody.appendChild(tr);
-                });
-            }
-            // 외주 인원
-            if (outsourced) {
-                outsourced.split(',').map(n => n.trim()).filter(Boolean).forEach(name => {
-                    const tr = document.createElement('tr');
-                    tr.innerHTML = `
-                        <td class="border border-gray-900 p-2 text-center">${seq++}</td>
-                        <td class="border border-gray-900 p-2 text-center">외주</td>
-                        <td class="border border-gray-900 p-2 text-center"></td>
-                        <td class="border border-gray-900 p-2 text-center">${escapeHtml(name)}</td>
-                        <td class="border border-gray-900 p-2 text-center whitespace-nowrap">${escapeHtml(dateLabel)}</td>
-                        <td class="border border-gray-900 p-2">${escapeHtml(workContent || record.shipName || '')}</td>
-                    `;
-                    tbody.appendChild(tr);
-                });
-            }
-        });
-
-        if (totalEl) totalEl.textContent = seq - 1;
+        renderNightReportTable();
     } catch (e) {
         console.error('야간 보고 로드 실패:', e);
-        if (tbody) tbody.innerHTML = '';
+        _nightReportEntries = [];
+        renderNightReportTable();
     }
+}
+
+function renderNightReportTable() {
+    const tbody = document.getElementById('nightReportTable');
+    const totalEl = document.getElementById('nightReportTotal');
+    if (!tbody) return;
+
+    tbody.innerHTML = '';
+
+    if (_nightReportEntries.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="border border-gray-900 p-3 text-center text-slate-500">작업 내역이 없습니다.</td></tr>';
+        if (totalEl) totalEl.textContent = '0';
+        return;
+    }
+
+    _nightReportEntries.forEach((entry, i) => {
+        const isFirst = i === 0;
+        const isLast = i === _nightReportEntries.length - 1;
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td class="border border-gray-900 p-2 text-center">${i + 1}</td>
+            <td class="border border-gray-900 p-0">
+                <input type="text" value="${escapeHtml(entry.dept||'')}" class="w-full px-1 py-1 border-0 focus:bg-yellow-50 text-sm text-center"
+                       onchange="_updateNightEntry(${i},'dept',this.value)">
+            </td>
+            <td class="border border-gray-900 p-0">
+                <input type="text" value="${escapeHtml(entry.rank||'')}" class="w-full px-1 py-1 border-0 focus:bg-yellow-50 text-sm text-center"
+                       onchange="_updateNightEntry(${i},'rank',this.value)">
+            </td>
+            <td class="border border-gray-900 p-0">
+                <input type="text" value="${escapeHtml(entry.name||'')}" class="w-full px-1 py-1 border-0 focus:bg-yellow-50 text-sm text-center"
+                       onchange="_updateNightEntry(${i},'name',this.value)">
+            </td>
+            <td class="border border-gray-900 p-0">
+                <input type="text" value="${escapeHtml(entry.dateLabel||'')}" class="w-full px-1 py-1 border-0 focus:bg-yellow-50 text-sm text-center"
+                       onchange="_updateNightEntry(${i},'dateLabel',this.value)">
+            </td>
+            <td class="border border-gray-900 p-0">
+                <input type="text" value="${escapeHtml(entry.workContent||'')}" class="w-full px-1 py-1 border-0 focus:bg-yellow-50 text-sm"
+                       onchange="_updateNightEntry(${i},'workContent',this.value)">
+            </td>
+            <td class="border border-gray-900 p-1 text-center no-capture" style="white-space:nowrap">
+                <button onclick="_moveNightRow(${i},-1)" ${isFirst ? 'disabled' : ''}
+                        class="px-1 text-slate-500 hover:text-blue-600 disabled:opacity-30 text-xs">▲</button>
+                <button onclick="_moveNightRow(${i},1)" ${isLast ? 'disabled' : ''}
+                        class="px-1 text-slate-500 hover:text-blue-600 disabled:opacity-30 text-xs">▼</button>
+                <button onclick="_deleteNightRow(${i})"
+                        class="px-1 text-red-500 hover:bg-red-50 rounded text-xs">✕</button>
+            </td>
+        `;
+        tbody.appendChild(tr);
+    });
+
+    if (totalEl) totalEl.textContent = _nightReportEntries.length;
+}
+
+function _updateNightEntry(index, field, value) {
+    if (_nightReportEntries[index]) _nightReportEntries[index][field] = value;
+}
+
+function _deleteNightRow(index) {
+    _nightReportEntries.splice(index, 1);
+    renderNightReportTable();
+}
+
+function _moveNightRow(index, dir) {
+    const target = index + dir;
+    if (target < 0 || target >= _nightReportEntries.length) return;
+    [_nightReportEntries[index], _nightReportEntries[target]] = [_nightReportEntries[target], _nightReportEntries[index]];
+    renderNightReportTable();
+}
+
+function addNightRow() {
+    _nightReportEntries.push({ dept: '', rank: '', name: '', dateLabel: '', workContent: '' });
+    renderNightReportTable();
 }
 
 // ========================================
@@ -510,9 +547,13 @@ function renderHolidayTable() {
                 <input type="text" value="${escapeHtml(entry.workContent||'')}" class="w-full px-1 py-1 border-0 focus:bg-yellow-50 text-sm"
                        onchange="_updateHolidayEntry(${i},'workContent',this.value)">
             </td>
-            <td class="border border-gray-900 p-1 text-center no-capture">
+            <td class="border border-gray-900 p-1 text-center no-capture" style="white-space:nowrap">
+                <button onclick="_moveHolidayRow(${i},-1)" ${i === 0 ? 'disabled' : ''}
+                        class="px-1 text-slate-500 hover:text-blue-600 disabled:opacity-30 text-xs">▲</button>
+                <button onclick="_moveHolidayRow(${i},1)" ${i === _holidayEntries.length - 1 ? 'disabled' : ''}
+                        class="px-1 text-slate-500 hover:text-blue-600 disabled:opacity-30 text-xs">▼</button>
                 <button onclick="_deleteHolidayRow(${i})"
-                        class="px-2 py-0.5 text-red-500 hover:bg-red-50 rounded text-xs">✕</button>
+                        class="px-1 text-red-500 hover:bg-red-50 rounded text-xs">✕</button>
             </td>
         `;
         tbody.appendChild(tr);
@@ -528,6 +569,13 @@ function _updateHolidayEntry(index, field, value) {
 
 function _deleteHolidayRow(index) {
     _holidayEntries.splice(index, 1);
+    renderHolidayTable();
+}
+
+function _moveHolidayRow(index, dir) {
+    const target = index + dir;
+    if (target < 0 || target >= _holidayEntries.length) return;
+    [_holidayEntries[index], _holidayEntries[target]] = [_holidayEntries[target], _holidayEntries[index]];
     renderHolidayTable();
 }
 
