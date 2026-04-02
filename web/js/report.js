@@ -340,22 +340,22 @@ const _NIGHT_REPORT_DEFAULT_ROSTER = [
     { dept: '관리부', rank: '대리', name: '나은진' },
     { dept: '관리부', rank: '대리', name: '함선옥' },
     { dept: '관리부', rank: '주임', name: '최영금' },
-    { dept: '자재부', rank: '과장', name: '전종우' },
+    { dept: '자재부', rank: '과장', name: '전용준' },
     { dept: '자재부', rank: '대리', name: '유승주' },
     { dept: '자재부', rank: '대리', name: '김태성' },
-    { dept: '자재부', rank: '대리', name: '임유섭' },
+    { dept: '자재부', rank: '대리', name: '임요섭' },
     { dept: '기술부', rank: '팀장', name: '이태욱' },
     { dept: '기술부', rank: '차장', name: '이주호' },
     { dept: '기술부', rank: '과장', name: '허종희' },
     { dept: '기술부', rank: '과장', name: '조기상' },
-    { dept: '기술부', rank: '대리', name: '이홍종' },
+    { dept: '기술부', rank: '대리', name: '이원종' },
     { dept: '기술부', rank: '대리', name: '하영광' },
     { dept: '기술부', rank: '대리', name: '전정운' },
     { dept: '기술부', rank: '대리', name: '이성찬' },
     { dept: '기술부', rank: '사원', name: '박보성' },
     { dept: '기술부', rank: '사원', name: '반규석' },
-    { dept: '기술부', rank: '사원', name: '백나지트' },
-    { dept: '기술부', rank: '사원', name: '산자로탁' },
+    { dept: '기술부', rank: '사원', name: '백나자르' },
+    { dept: '기술부', rank: '사원', name: '산자르백' },
     { dept: '기술부', rank: '사원', name: '지마' },
 ];
 
@@ -389,31 +389,32 @@ async function loadNightReport() {
             dateLabel: '-', workContent: ''
         }));
 
-        // 작업 레코드가 있으면 이름 매핑으로 작업내용만 채우기 (야근시간은 사용자가 직접 입력)
+        // 작업 레코드가 있으면 이름 매핑으로 종료시간·작업내용 채우기
         if (validRecords.length > 0) {
             const nameWorkMap = new Map();
             validRecords.forEach(record => {
                 const { inHouse, outsourced } = separateWorkers(record.leader, record.teammates);
                 const workContent = [record.engineModel, record.workContent].filter(Boolean).join(' ');
+                const endTime = record.endTime || '-';
                 if (inHouse && inHouse !== '-') {
                     inHouse.split(',').map(n => n.trim()).filter(Boolean).forEach(name => {
-                        nameWorkMap.set(stripRank(name), workContent || record.shipName || '');
+                        nameWorkMap.set(stripRank(name), { workContent: workContent || record.shipName || '', endTime });
                     });
                 }
                 if (outsourced && outsourced !== '-') {
                     outsourced.split(',').map(n => n.trim()).filter(Boolean).forEach(name => {
-                        nameWorkMap.set(name, workContent || record.shipName || '');
+                        nameWorkMap.set(name, { workContent: workContent || record.shipName || '', endTime });
                     });
                 }
             });
             _nightReportEntries.forEach(entry => {
-                const wc = nameWorkMap.get(entry.name);
-                if (wc != null) entry.workContent = wc;
+                const work = nameWorkMap.get(entry.name);
+                if (work) { entry.dateLabel = work.endTime; entry.workContent = work.workContent; }
             });
             // 명단에 없는 외부 작업자 추가
-            nameWorkMap.forEach((wc, name) => {
+            nameWorkMap.forEach((work, name) => {
                 if (!_nightReportEntries.some(e => e.name === name)) {
-                    _nightReportEntries.push({ dept: '외주', rank: '', name, dateLabel: '-', workContent: wc });
+                    _nightReportEntries.push({ dept: '외주', rank: '', name, dateLabel: work.endTime, workContent: work.workContent });
                 }
             });
         }
