@@ -335,6 +335,30 @@ function changeNightReportDate(days) {
 // 야간 보고 로드
 // ========================================
 
+// 야간 보고 — 기본 직원 명단 (부서·직책·이름 고정)
+const _NIGHT_REPORT_DEFAULT_ROSTER = [
+    { dept: '관리부', rank: '대리', name: '나은진' },
+    { dept: '관리부', rank: '대리', name: '함선옥' },
+    { dept: '관리부', rank: '주임', name: '최영금' },
+    { dept: '자재부', rank: '과장', name: '전종우' },
+    { dept: '자재부', rank: '대리', name: '유승주' },
+    { dept: '자재부', rank: '대리', name: '김태성' },
+    { dept: '자재부', rank: '대리', name: '임유섭' },
+    { dept: '자재부', rank: '팀장', name: '이태욱' },
+    { dept: '자재부', rank: '차장', name: '이주호' },
+    { dept: '자재부', rank: '과장', name: '허종희' },
+    { dept: '자재부', rank: '과장', name: '조기상' },
+    { dept: '자재부', rank: '대리', name: '이홍종' },
+    { dept: '자재부', rank: '대리', name: '하영광' },
+    { dept: '자재부', rank: '대리', name: '전정운' },
+    { dept: '자재부', rank: '대리', name: '이성찬' },
+    { dept: '기술부', rank: '사원', name: '박보성' },
+    { dept: '기술부', rank: '사원', name: '반규석' },
+    { dept: '기술부', rank: '사원', name: '백나지트' },
+    { dept: '기술부', rank: '사원', name: '산자로탁' },
+    { dept: '기술부', rank: '사원', name: '지마' },
+];
+
 // 야간 보고 — 로컬 상태
 let _nightReportEntries = [];
 
@@ -356,27 +380,38 @@ async function loadNightReport() {
         if (dispEl) dispEl.textContent = `${d.getMonth()+1}월 ${d.getDate()}일 (${days[d.getDay()]})`;
 
         const dateLabel = `${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')}(${days[d.getDay()]})`;
-        _nightReportEntries = [];
 
-        if (validRecords.length === 0) {
-            const allNames = await eel.get_employee_names_for_leave()() || [];
-            allNames.forEach(name => {
-                _nightReportEntries.push({ dept: '', rank: '', name, dateLabel: dispEl?.textContent || '', workContent: '' });
-            });
-        } else {
+        // 항상 기본 명단으로 시작, dateLabel/workContent는 빈 값
+        _nightReportEntries = _NIGHT_REPORT_DEFAULT_ROSTER.map(r => ({
+            dept: r.dept, rank: r.rank, name: r.name,
+            dateLabel: '', workContent: ''
+        }));
+
+        // 작업 레코드가 있으면 이름 매핑으로 날짜·작업내용 채우기
+        if (validRecords.length > 0) {
+            const nameWorkMap = new Map();
             validRecords.forEach(record => {
                 const { inHouse, outsourced } = separateWorkers(record.leader, record.teammates);
                 const workContent = [record.engineModel, record.workContent].filter(Boolean).join(' ');
-
                 if (inHouse && inHouse !== '-') {
                     inHouse.split(',').map(n => n.trim()).filter(Boolean).forEach(name => {
-                        _nightReportEntries.push({ dept: '', rank: '', name: stripRank(name), dateLabel, workContent: workContent || record.shipName || '' });
+                        nameWorkMap.set(stripRank(name), { dateLabel, workContent: workContent || record.shipName || '' });
                     });
                 }
                 if (outsourced && outsourced !== '-') {
                     outsourced.split(',').map(n => n.trim()).filter(Boolean).forEach(name => {
-                        _nightReportEntries.push({ dept: '외주', rank: '', name, dateLabel, workContent: workContent || record.shipName || '' });
+                        nameWorkMap.set(name, { dateLabel, workContent: workContent || record.shipName || '' });
                     });
+                }
+            });
+            _nightReportEntries.forEach(entry => {
+                const work = nameWorkMap.get(entry.name);
+                if (work) { entry.dateLabel = work.dateLabel; entry.workContent = work.workContent; }
+            });
+            // 명단에 없는 외부 작업자 추가
+            nameWorkMap.forEach((work, name) => {
+                if (!_nightReportEntries.some(e => e.name === name)) {
+                    _nightReportEntries.push({ dept: '외주', rank: '', name, dateLabel: work.dateLabel, workContent: work.workContent });
                 }
             });
         }
@@ -402,16 +437,38 @@ function renderNightReportTable() {
         return;
     }
 
+    // 부서 rowspan 계산 (같은 부서가 연속될 때 첫 행에 rowspan 적용)
+    const deptSpans = [];
+    for (let i = 0; i < _nightReportEntries.length; i++) {
+        const dept = _nightReportEntries[i].dept || '';
+        const prevDept = i > 0 ? (_nightReportEntries[i-1].dept || '') : null;
+        if (dept !== '' && dept === prevDept) {
+            deptSpans.push(0); // 이전 행과 같은 부서 → td 생략
+        } else {
+            let span = 1;
+            if (dept !== '') {
+                for (let j = i + 1; j < _nightReportEntries.length; j++) {
+                    if ((_nightReportEntries[j].dept || '') === dept) span++;
+                    else break;
+                }
+            }
+            deptSpans.push(span);
+        }
+    }
+
     _nightReportEntries.forEach((entry, i) => {
         const isFirst = i === 0;
         const isLast = i === _nightReportEntries.length - 1;
         const tr = document.createElement('tr');
+
+        const span = deptSpans[i];
+        const deptCell = span > 0
+            ? `<td class="border border-gray-900 p-2 text-center align-middle text-sm font-medium" rowspan="${span}">${escapeHtml(entry.dept||'')}</td>`
+            : '';
+
         tr.innerHTML = `
             <td class="border border-gray-900 p-2 text-center">${i + 1}</td>
-            <td class="border border-gray-900 p-0">
-                <input type="text" value="${escapeHtml(entry.dept||'')}" class="w-full px-1 py-1 border-0 focus:bg-yellow-50 text-sm text-center"
-                       onchange="_updateNightEntry(${i},'dept',this.value)">
-            </td>
+            ${deptCell}
             <td class="border border-gray-900 p-0">
                 <input type="text" value="${escapeHtml(entry.rank||'')}" class="w-full px-1 py-1 border-0 focus:bg-yellow-50 text-sm text-center"
                        onchange="_updateNightEntry(${i},'rank',this.value)">
