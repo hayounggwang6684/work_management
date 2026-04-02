@@ -344,14 +344,14 @@ const _NIGHT_REPORT_DEFAULT_ROSTER = [
     { dept: '자재부', rank: '대리', name: '유승주' },
     { dept: '자재부', rank: '대리', name: '김태성' },
     { dept: '자재부', rank: '대리', name: '임유섭' },
-    { dept: '자재부', rank: '팀장', name: '이태욱' },
-    { dept: '자재부', rank: '차장', name: '이주호' },
-    { dept: '자재부', rank: '과장', name: '허종희' },
-    { dept: '자재부', rank: '과장', name: '조기상' },
-    { dept: '자재부', rank: '대리', name: '이홍종' },
-    { dept: '자재부', rank: '대리', name: '하영광' },
-    { dept: '자재부', rank: '대리', name: '전정운' },
-    { dept: '자재부', rank: '대리', name: '이성찬' },
+    { dept: '기술부', rank: '팀장', name: '이태욱' },
+    { dept: '기술부', rank: '차장', name: '이주호' },
+    { dept: '기술부', rank: '과장', name: '허종희' },
+    { dept: '기술부', rank: '과장', name: '조기상' },
+    { dept: '기술부', rank: '대리', name: '이홍종' },
+    { dept: '기술부', rank: '대리', name: '하영광' },
+    { dept: '기술부', rank: '대리', name: '전정운' },
+    { dept: '기술부', rank: '대리', name: '이성찬' },
     { dept: '기술부', rank: '사원', name: '박보성' },
     { dept: '기술부', rank: '사원', name: '반규석' },
     { dept: '기술부', rank: '사원', name: '백나지트' },
@@ -379,15 +379,17 @@ async function loadNightReport() {
         const days = ['일', '월', '화', '수', '목', '금', '토'];
         if (dispEl) dispEl.textContent = `${d.getMonth()+1}월 ${d.getDate()}일 (${days[d.getDay()]})`;
 
-        const dateLabel = `${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')}(${days[d.getDay()]})`;
+        // 날짜 헤더 2단: 하단에 "목(4/2)" 형식 표시
+        const headerEl = document.getElementById('nightReportDateHeader');
+        if (headerEl) headerEl.textContent = `${days[d.getDay()]}(${d.getMonth()+1}/${d.getDate()})`;
 
-        // 항상 기본 명단으로 시작, dateLabel/workContent는 빈 값
+        // 항상 기본 명단으로 시작, 야근시간 기본값 '-'
         _nightReportEntries = _NIGHT_REPORT_DEFAULT_ROSTER.map(r => ({
             dept: r.dept, rank: r.rank, name: r.name,
-            dateLabel: '', workContent: ''
+            dateLabel: '-', workContent: ''
         }));
 
-        // 작업 레코드가 있으면 이름 매핑으로 날짜·작업내용 채우기
+        // 작업 레코드가 있으면 이름 매핑으로 작업내용만 채우기 (야근시간은 사용자가 직접 입력)
         if (validRecords.length > 0) {
             const nameWorkMap = new Map();
             validRecords.forEach(record => {
@@ -395,23 +397,23 @@ async function loadNightReport() {
                 const workContent = [record.engineModel, record.workContent].filter(Boolean).join(' ');
                 if (inHouse && inHouse !== '-') {
                     inHouse.split(',').map(n => n.trim()).filter(Boolean).forEach(name => {
-                        nameWorkMap.set(stripRank(name), { dateLabel, workContent: workContent || record.shipName || '' });
+                        nameWorkMap.set(stripRank(name), workContent || record.shipName || '');
                     });
                 }
                 if (outsourced && outsourced !== '-') {
                     outsourced.split(',').map(n => n.trim()).filter(Boolean).forEach(name => {
-                        nameWorkMap.set(name, { dateLabel, workContent: workContent || record.shipName || '' });
+                        nameWorkMap.set(name, workContent || record.shipName || '');
                     });
                 }
             });
             _nightReportEntries.forEach(entry => {
-                const work = nameWorkMap.get(entry.name);
-                if (work) { entry.dateLabel = work.dateLabel; entry.workContent = work.workContent; }
+                const wc = nameWorkMap.get(entry.name);
+                if (wc != null) entry.workContent = wc;
             });
             // 명단에 없는 외부 작업자 추가
-            nameWorkMap.forEach((work, name) => {
+            nameWorkMap.forEach((wc, name) => {
                 if (!_nightReportEntries.some(e => e.name === name)) {
-                    _nightReportEntries.push({ dept: '외주', rank: '', name, dateLabel: work.dateLabel, workContent: work.workContent });
+                    _nightReportEntries.push({ dept: '외주', rank: '', name, dateLabel: '-', workContent: wc });
                 }
             });
         }
@@ -517,7 +519,7 @@ function _moveNightRow(index, dir) {
 }
 
 function addNightRow() {
-    _nightReportEntries.push({ dept: '', rank: '', name: '', dateLabel: '', workContent: '' });
+    _nightReportEntries.push({ dept: '', rank: '', name: '', dateLabel: '-', workContent: '' });
     renderNightReportTable();
 }
 
