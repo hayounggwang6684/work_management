@@ -676,6 +676,26 @@ async function captureReport(elementId) {
         return;
     }
 
+    // html2canvas는 input value를 렌더링 못하므로 캡처 전 span으로 교체
+    const replacements = [];
+    element.querySelectorAll('input, textarea').forEach(inp => {
+        const span = document.createElement('span');
+        span.textContent = inp.value;
+        // 입력 셀과 동일한 정렬/패딩 유지
+        span.style.cssText = `display:block; width:100%; text-align:${inp.style.textAlign || getComputedStyle(inp).textAlign}; padding:2px 4px; font-size:${getComputedStyle(inp).fontSize}; font-family:${getComputedStyle(inp).fontFamily};`;
+        inp.parentNode.replaceChild(span, inp);
+        replacements.push({ span, inp });
+    });
+
+    // no-capture 요소 숨기기
+    const noCapture = element.querySelectorAll('.no-capture');
+    noCapture.forEach(el => { el.dataset.origDisplay = el.style.display; el.style.display = 'none'; });
+
+    const restore = () => {
+        replacements.forEach(({ span, inp }) => span.parentNode?.replaceChild(inp, span));
+        noCapture.forEach(el => { el.style.display = el.dataset.origDisplay || ''; });
+    };
+
     try {
         const canvas = await html2canvas(element, {
             backgroundColor: '#ffffff',
@@ -683,6 +703,8 @@ async function captureReport(elementId) {
             useCORS: true,
             logging: false
         });
+
+        restore();
 
         canvas.toBlob(async (blob) => {
             try {
@@ -692,7 +714,6 @@ async function captureReport(elementId) {
                 showCustomAlert('성공', '클립보드에 이미지가 복사되었습니다.', 'success');
             } catch (clipError) {
                 console.error('클립보드 복사 실패:', clipError);
-                // 폴백: 다운로드로 대체
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
@@ -703,6 +724,7 @@ async function captureReport(elementId) {
             }
         }, 'image/png');
     } catch (error) {
+        restore();
         console.error('캡쳐 실패:', error);
         showCustomAlert('오류', '캡쳐에 실패했습니다.', 'error');
     }
