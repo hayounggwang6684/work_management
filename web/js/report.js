@@ -480,8 +480,8 @@ function renderNightReportTable() {
                 <input type="text" value="${escapeHtml(entry.name||'')}" class="w-full px-1 py-1 border-0 focus:bg-yellow-50 text-sm text-center"
                        onchange="_updateNightEntry(${i},'name',this.value)">
             </td>
-            <td class="border border-gray-900 p-0">
-                <input type="text" value="${escapeHtml(entry.dateLabel||'')}" class="w-full px-1 py-1 border-0 focus:bg-yellow-50 text-sm text-center"
+            <td class="border border-gray-900 p-0 w-20" style="max-width:80px">
+                <input type="text" value="${escapeHtml(entry.dateLabel||'')}" class="w-20 px-1 py-1 border-0 focus:bg-yellow-50 text-sm text-center"
                        onchange="_updateNightEntry(${i},'dateLabel',this.value)">
             </td>
             <td class="border border-gray-900 p-0">
