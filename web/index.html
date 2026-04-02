@@ -958,28 +958,28 @@
                                         class="px-4 py-2 bg-slate-500 text-white rounded-lg">+ 행 추가</button>
                             </div>
                         </div>
-                        <div id="holidayReportCapture" class="bg-white p-4">
+                        <div id="holidayReportCapture" class="bg-white p-4 max-w-3xl mx-auto">
                             <h2 class="text-xl font-bold text-center mb-2">선진종합 <span class="text-base font-normal">(연장/휴일근로)</span></h2>
                             <div class="overflow-x-auto">
-                                <table class="w-full border-collapse border border-gray-900 text-sm">
+                                <table class="w-full border-collapse border border-gray-900 text-sm table-fixed">
                                     <thead>
                                         <tr class="bg-amber-100">
-                                            <th class="border border-gray-900 p-2 text-center w-10">No.</th>
-                                            <th class="border border-gray-900 p-2 text-center w-16">부서</th>
-                                            <th class="border border-gray-900 p-2 text-center w-16">직책</th>
-                                            <th class="border border-gray-900 p-2 text-center w-20">이름</th>
-                                            <th class="border border-gray-900 p-2 text-center" id="thFri">금</th>
-                                            <th class="border border-gray-900 p-2 text-center" id="thSat">토</th>
-                                            <th class="border border-gray-900 p-2 text-center" id="thSun">일</th>
-                                            <th class="border border-gray-900 p-2 text-center">작업내용</th>
-                                            <th class="border border-gray-900 p-2 text-center w-12 no-capture">편집</th>
+                                            <th class="border border-gray-900 p-2 text-center w-10" rowspan="2">No.</th>
+                                            <th class="border border-gray-900 p-2 text-center w-16" rowspan="2">부서</th>
+                                            <th class="border border-gray-900 p-2 text-center w-16" rowspan="2">직책</th>
+                                            <th class="border border-gray-900 p-2 text-center w-20" rowspan="2">이름</th>
+                                            <th class="border border-gray-900 p-1 text-center text-xs" colspan="3">날짜</th>
+                                            <th class="border border-gray-900 p-2 text-center" rowspan="2">작업내용</th>
+                                            <th class="border border-gray-900 p-2 text-center w-12 no-capture" rowspan="2">편집</th>
+                                        </tr>
+                                        <tr class="bg-amber-100">
+                                            <th class="border border-gray-900 p-1 text-center w-20 text-xs" id="thFri">금</th>
+                                            <th class="border border-gray-900 p-1 text-center w-20 text-xs" id="thSat">토</th>
+                                            <th class="border border-gray-900 p-1 text-center w-20 text-xs" id="thSun">일</th>
                                         </tr>
                                     </thead>
                                     <tbody id="holidayReportTable"></tbody>
                                 </table>
-                            </div>
-                            <div class="mt-3 text-right font-semibold">
-                                총 인원: <span id="holidayReportTotal" class="text-red-600 text-lg font-bold">0</span>명
                             </div>
                         </div>
                     </div>

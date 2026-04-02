@@ -539,11 +539,10 @@ async function loadHolidayReport() {
         _holidayPeriodDates = await eel.get_holiday_period_dates(periodKey)() || {};
         _holidayEntries = await eel.load_holiday_work_entries(periodKey)() || [];
 
-        // 저장된 엔트리가 없으면 전체 직원 목록으로 초기화
+        // 저장된 엔트리가 없으면 고정 명단으로 초기화
         if (_holidayEntries.length === 0) {
-            const allNames = await eel.get_employee_names_for_leave()() || [];
-            _holidayEntries = allNames.map(name => ({
-                department: '', rank: '', name: name,
+            _holidayEntries = _NIGHT_REPORT_DEFAULT_ROSTER.map(r => ({
+                department: r.dept, rank: r.rank, name: r.name,
                 friWork: '-', satWork: '-', sunWork: '-', workContent: ''
             }));
         }
@@ -564,42 +563,62 @@ async function loadHolidayReport() {
 
 function renderHolidayTable() {
     const tbody = document.getElementById('holidayReportTable');
-    const totalEl = document.getElementById('holidayReportTotal');
     if (!tbody) return;
 
     tbody.innerHTML = '';
 
     if (_holidayEntries.length === 0) {
         tbody.innerHTML = '<tr><td colspan="9" class="border border-gray-900 p-3 text-center text-slate-500">입력된 내역이 없습니다.</td></tr>';
-        if (totalEl) totalEl.textContent = '0';
         return;
     }
 
+    // 부서 rowspan 계산
+    const deptSpans = [];
+    for (let i = 0; i < _holidayEntries.length; i++) {
+        const dept = _holidayEntries[i].department || '';
+        const prevDept = i > 0 ? (_holidayEntries[i-1].department || '') : null;
+        if (dept !== '' && dept === prevDept) {
+            deptSpans.push(0);
+        } else {
+            let span = 1;
+            if (dept !== '') {
+                for (let j = i + 1; j < _holidayEntries.length; j++) {
+                    if ((_holidayEntries[j].department || '') === dept) span++;
+                    else break;
+                }
+            }
+            deptSpans.push(span);
+        }
+    }
+
     _holidayEntries.forEach((entry, i) => {
+        const isFirst = i === 0;
+        const isLast = i === _holidayEntries.length - 1;
         const tr = document.createElement('tr');
+        const span = deptSpans[i];
+        const deptCell = span > 0
+            ? `<td class="border border-gray-900 p-2 text-center align-middle text-sm font-medium" rowspan="${span}">${escapeHtml(entry.department||'')}</td>`
+            : '';
         tr.innerHTML = `
             <td class="border border-gray-900 p-2 text-center">${i + 1}</td>
+            ${deptCell}
             <td class="border border-gray-900 p-0">
-                <input type="text" value="${escapeHtml(entry.department||'')}" class="w-full px-1 py-1 border-0 focus:bg-yellow-50 text-sm"
-                       onchange="_updateHolidayEntry(${i},'department',this.value)">
-            </td>
-            <td class="border border-gray-900 p-0">
-                <input type="text" value="${escapeHtml(entry.rank||'')}" class="w-full px-1 py-1 border-0 focus:bg-yellow-50 text-sm"
+                <input type="text" value="${escapeHtml(entry.rank||'')}" class="w-full px-1 py-1 border-0 focus:bg-yellow-50 text-sm text-center"
                        onchange="_updateHolidayEntry(${i},'rank',this.value)">
             </td>
             <td class="border border-gray-900 p-0">
-                <input type="text" value="${escapeHtml(entry.name||'')}" class="w-full px-1 py-1 border-0 focus:bg-yellow-50 text-sm"
+                <input type="text" value="${escapeHtml(entry.name||'')}" class="w-full px-1 py-1 border-0 focus:bg-yellow-50 text-sm text-center"
                        onchange="_updateHolidayEntry(${i},'name',this.value)">
             </td>
-            <td class="border border-gray-900 p-0">
+            <td class="border border-gray-900 p-0 w-20" style="max-width:80px">
                 <input type="text" value="${escapeHtml(entry.friWork||'-')}" class="w-20 px-1 py-1 border-0 focus:bg-yellow-50 text-sm text-center"
                        onchange="_updateHolidayEntry(${i},'friWork',this.value)">
             </td>
-            <td class="border border-gray-900 p-0">
+            <td class="border border-gray-900 p-0 w-20" style="max-width:80px">
                 <input type="text" value="${escapeHtml(entry.satWork||'-')}" class="w-20 px-1 py-1 border-0 focus:bg-yellow-50 text-sm text-center"
                        onchange="_updateHolidayEntry(${i},'satWork',this.value)">
             </td>
-            <td class="border border-gray-900 p-0">
+            <td class="border border-gray-900 p-0 w-20" style="max-width:80px">
                 <input type="text" value="${escapeHtml(entry.sunWork||'-')}" class="w-20 px-1 py-1 border-0 focus:bg-yellow-50 text-sm text-center"
                        onchange="_updateHolidayEntry(${i},'sunWork',this.value)">
             </td>
@@ -608,9 +627,9 @@ function renderHolidayTable() {
                        onchange="_updateHolidayEntry(${i},'workContent',this.value)">
             </td>
             <td class="border border-gray-900 p-1 text-center no-capture" style="white-space:nowrap">
-                <button onclick="_moveHolidayRow(${i},-1)" ${i === 0 ? 'disabled' : ''}
+                <button onclick="_moveHolidayRow(${i},-1)" ${isFirst ? 'disabled' : ''}
                         class="px-1 text-slate-500 hover:text-blue-600 disabled:opacity-30 text-xs">▲</button>
-                <button onclick="_moveHolidayRow(${i},1)" ${i === _holidayEntries.length - 1 ? 'disabled' : ''}
+                <button onclick="_moveHolidayRow(${i},1)" ${isLast ? 'disabled' : ''}
                         class="px-1 text-slate-500 hover:text-blue-600 disabled:opacity-30 text-xs">▼</button>
                 <button onclick="_deleteHolidayRow(${i})"
                         class="px-1 text-red-500 hover:bg-red-50 rounded text-xs">✕</button>
@@ -619,8 +638,20 @@ function renderHolidayTable() {
         tbody.appendChild(tr);
     });
 
-    // 총 인원 = 행 수 (각 행 = 1인)
-    if (totalEl) totalEl.textContent = _holidayEntries.length;
+    // 총 인원 행 (열별 카운트)
+    const friCount = _holidayEntries.filter(e => e.friWork && e.friWork !== '-').length;
+    const satCount = _holidayEntries.filter(e => e.satWork && e.satWork !== '-').length;
+    const sunCount = _holidayEntries.filter(e => e.sunWork && e.sunWork !== '-').length;
+    const totalTr = document.createElement('tr');
+    totalTr.className = 'bg-amber-50 font-semibold';
+    totalTr.innerHTML = `
+        <td class="border border-gray-900 p-2 text-center" colspan="4">총 인 원</td>
+        <td class="border border-gray-900 p-2 text-center text-red-600">${friCount || 0}</td>
+        <td class="border border-gray-900 p-2 text-center text-red-600">${satCount || 0}</td>
+        <td class="border border-gray-900 p-2 text-center text-red-600">${sunCount || 0}</td>
+        <td class="border border-gray-900 p-2" colspan="2"></td>
+    `;
+    tbody.appendChild(totalTr);
 }
 
 function _updateHolidayEntry(index, field, value) {
