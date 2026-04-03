@@ -1,0 +1,10 @@
+{
+  "version": "2.2.42",
+  "description": "v2.2.42 패치",
+  "files": [
+    {
+      "source": "src/sync/cloud_sync.py",
+      "target": "src/sync/cloud_sync.py"
+    }
+  ]
+}
