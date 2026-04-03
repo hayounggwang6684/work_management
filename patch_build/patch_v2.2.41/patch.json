@@ -1,0 +1,22 @@
+{
+  "version": "2.2.41",
+  "description": "v2.2.41 패치",
+  "files": [
+    {
+      "source": "src/web/api.py",
+      "target": "src/web/api.py"
+    },
+    {
+      "source": "src/utils/telegram_notifier.py",
+      "target": "src/utils/telegram_notifier.py"
+    },
+    {
+      "source": "src/utils/daily_scheduler.py",
+      "target": "src/utils/daily_scheduler.py"
+    },
+    {
+      "source": "web/js/report.js",
+      "target": "web/js/report.js"
+    }
+  ]
+}
