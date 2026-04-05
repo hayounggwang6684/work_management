@@ -4054,6 +4054,7 @@ function _closeNotifPanel(e) {
 let _statsYear = new Date().getFullYear();
 let _manpowerChart = null;
 let _projectCountChart = null;
+let _manpowerRatioChart = null;
 
 async function loadStatsData() {
     const label = document.getElementById('statsYearLabel');
@@ -4147,11 +4148,45 @@ async function loadStatsData() {
         kpiCards.classList.remove('hidden');
     }
 
-    // ── 월별 작업 건수 꺾은선 차트 ────────────────────────────────────
-    const pcBox = document.getElementById('projectCountChartBox');
-    const pcCtx = document.getElementById('projectCountChart');
-    if (pcCtx && data.monthlyProjectCount) {
-        pcBox?.classList.remove('hidden');
+    // ── 본공/외주 도넛 차트 + 월별 작업 건수 꺾은선 차트 ─────────────
+    const ratioBox = document.getElementById('ratioAndCountChartBox');
+    const ratioCtx = document.getElementById('manpowerRatioChart');
+    const pcCtx    = document.getElementById('projectCountChart');
+    const hasRatio = data.inHouseTotal !== undefined && (data.inHouseTotal + data.outsourcedTotal) > 0;
+    const hasCount = data.monthlyProjectCount;
+    if (ratioBox && (hasRatio || hasCount)) ratioBox.classList.remove('hidden');
+
+    if (ratioCtx && hasRatio) {
+        if (_manpowerRatioChart) { _manpowerRatioChart.destroy(); _manpowerRatioChart = null; }
+        _manpowerRatioChart = new Chart(ratioCtx, {
+            type: 'doughnut',
+            data: {
+                labels: ['본공', '외주'],
+                datasets: [{
+                    data: [data.inHouseTotal || 0, data.outsourcedTotal || 0],
+                    backgroundColor: ['rgba(59,130,246,0.8)', 'rgba(234,88,12,0.8)'],
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: { position: 'bottom' },
+                    tooltip: {
+                        callbacks: {
+                            label: (item) => {
+                                const total = item.dataset.data.reduce((a, b) => a + b, 0);
+                                const pct = total > 0 ? (item.raw / total * 100).toFixed(1) : 0;
+                                return ` ${item.label}: ${item.raw}공 (${pct}%)`;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    if (pcCtx && hasCount) {
         if (_projectCountChart) { _projectCountChart.destroy(); _projectCountChart = null; }
         _projectCountChart = new Chart(pcCtx, {
             type: 'line',

@@ -657,10 +657,16 @@
                                 <div class="text-xs text-slate-400">공</div>
                             </div>
                         </div>
-                        <!-- 월별 작업 건수 꺾은선 차트 -->
-                        <div id="projectCountChartBox" class="hidden bg-slate-50 rounded-lg p-4 mb-4">
-                            <h3 class="font-semibold mb-3 text-slate-700">월별 작업 건수</h3>
-                            <canvas id="projectCountChart" height="60"></canvas>
+                        <!-- 본공/외주 비율 도넛 차트 + 월별 작업 건수 꺾은선 차트 -->
+                        <div id="ratioAndCountChartBox" class="hidden grid grid-cols-2 gap-4 mb-4">
+                            <div class="bg-slate-50 rounded-lg p-4 flex flex-col items-center">
+                                <h3 class="font-semibold mb-3 text-slate-700 self-start">연간 본공 / 외주 비율</h3>
+                                <canvas id="manpowerRatioChart" height="180"></canvas>
+                            </div>
+                            <div class="bg-slate-50 rounded-lg p-4">
+                                <h3 class="font-semibold mb-3 text-slate-700">월별 작업 건수</h3>
+                                <canvas id="projectCountChart" height="180"></canvas>
+                            </div>
                         </div>
                         <!-- 2컬럼: 회사별 / 계약별 -->
                         <div class="grid grid-cols-2 gap-4">

@@ -162,7 +162,7 @@ function showReportTab(tab) {
 
 function changeReportDate(days) {
     const reportDate = document.getElementById('reportDate');
-    if (!reportDate.value) {
+    if (!reportDate?.value) {
         const today = new Date();
         reportDate.value = today.toISOString().split('T')[0];
     }
@@ -203,7 +203,9 @@ document.addEventListener('DOMContentLoaded', function() {
 // ========================================
 
 async function loadDailyReport() {
-    const reportDate = document.getElementById('reportDate').value;
+    const reportDateEl = document.getElementById('reportDate');
+    if (!reportDateEl) return;
+    const reportDate = reportDateEl.value;
     if (!reportDate) {
         showCustomAlert('알림', '날짜를 선택해주세요.', 'info');
         return;
@@ -424,6 +426,7 @@ async function loadNightReport() {
         console.error('야간 보고 로드 실패:', e);
         _nightReportEntries = [];
         renderNightReportTable();
+        showCustomAlert('오류', '야간 보고를 불러오지 못했습니다.', 'error');
     }
 }
 
@@ -558,6 +561,7 @@ async function loadHolidayReport() {
         renderHolidayTable();
     } catch (e) {
         console.error('휴일 보고 로드 실패:', e);
+        showCustomAlert('오류', '휴일 보고를 불러오지 못했습니다.', 'error');
     }
 }
 
