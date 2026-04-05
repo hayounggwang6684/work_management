@@ -1095,7 +1095,7 @@ function openCommentModal(contractNumber, boardProjectId, title) {
     // T2c: 자동 폴링 시작 (10초 주기)
     clearInterval(_commentPollTimer);
     _commentPollTimer = setInterval(async () => {
-        try { await loadComments(); } catch(e) {}
+        try { await loadComments(); } catch(e) { console.warn('댓글 자동 갱신 실패:', e); }
     }, 10000);
 
     // 클라우드 pull 후 댓글 로드 (실패해도 로컬 DB로 계속)
@@ -2165,7 +2165,7 @@ function handleTeammatesInput(index, input) {
     if (normalized !== raw) {
         const curPos = Math.max(0, (input.selectionStart || 0) - (raw.length - normalized.length));
         input.value = normalized;
-        try { input.setSelectionRange(curPos, curPos); } catch(e) {}
+        try { input.setSelectionRange(curPos, curPos); } catch(e) { /* 일부 브라우저에서 미지원 */ }
     }
     const displayValue = input.value;
     const storedValue = displayValue.replace(/\*(.*?)\*/g, '<i>$1</i>');
@@ -3166,7 +3166,7 @@ async function loadLeaveMonthlyReport() {
         // 제외 목록 파싱
         _leaveExcluded = [];
         if (excludedResult && excludedResult.excluded) {
-            try { _leaveExcluded = JSON.parse(excludedResult.excluded); } catch(e) {}
+            try { _leaveExcluded = JSON.parse(excludedResult.excluded); } catch(e) { console.warn('연차 제외자 파싱 실패:', e); }
         }
         if (result && result.success) {
             let data = result.data || [];
@@ -3975,7 +3975,7 @@ async function loadNotifications() {
                 action: () => { if (typeof showUpdateModal === 'function') showUpdateModal(); }
             });
         }
-    } catch (_) {}
+    } catch (_) { console.warn('알림: 업데이트 확인 실패'); }
 
     // 2) 미승인 사용자 (관리자 전용)
     if (currentUser && currentUser.role === 'admin') {
@@ -3989,7 +3989,7 @@ async function loadNotifications() {
                     action: () => { if (typeof showAdminApp === 'function') showAdminApp(); }
                 });
             }
-        } catch (_) {}
+        } catch (_) { console.warn('알림: 승인 대기 조회 실패'); }
     }
 
     _renderNotifBadge();

@@ -99,7 +99,7 @@ function applyDefaultView(fullView) {
                 search:    typeof showSearchTab    !== 'undefined' ? showSearchTab    : null,
             };
             if (subFns[view]) subFns[view](subtab);
-        } catch(e) {}
+        } catch(e) { console.warn('뷰 전환 실패:', e); }
     }
 }
 
@@ -253,7 +253,7 @@ function handleLogout() {
         // 자동 로그인 토큰 서버에서 비활성화
         const token = localStorage.getItem('autoLoginToken');
         if (token) {
-            try { eel.clear_remember_token(token)(); } catch(e) {}
+            try { eel.clear_remember_token(token)(); } catch(e) { console.warn('토큰 삭제 실패:', e); }
         }
         _clearLocalAutoLogin();
 
@@ -1049,13 +1049,13 @@ async function importExcelData() {
                 </div>`;
             showCustomAlert('성공', `엑셀 데이터 ${result.total_records}건이 저장되었습니다.`, 'success');
         } else {
-            resultDiv.innerHTML = `<p class="text-red-600 text-sm">오류: ${result.message || '알 수 없는 오류'}</p>`;
+            if (resultDiv) resultDiv.innerHTML = `<p class="text-red-600 text-sm">오류: ${escapeHtml(result.message || '알 수 없는 오류')}</p>`;
             showCustomAlert('실패', result.message || '불러오기 실패', 'error');
         }
     } catch (error) {
         showLoading(false);
         console.error('엑셀 불러오기 오류:', error);
-        resultDiv.innerHTML = `<p class="text-red-600 text-sm">오류: ${error.message}</p>`;
+        if (resultDiv) resultDiv.innerHTML = `<p class="text-red-600 text-sm">오류가 발생했습니다.</p>`;
         showCustomAlert('오류', '엑셀 불러오기 중 오류가 발생했습니다.', 'error');
     }
 }
@@ -1078,7 +1078,7 @@ async function clearAllRecords() {
             if (resultDiv) resultDiv.innerHTML = '<p class="text-green-600 text-sm font-semibold">전체 삭제 완료</p>';
             showCustomAlert('성공', result.message, 'success');
         } else {
-            if (resultDiv) resultDiv.innerHTML = '<p class="text-red-600 text-sm">오류: ' + result.message + '</p>';
+            if (resultDiv) resultDiv.innerHTML = '<p class="text-red-600 text-sm">오류: ' + escapeHtml(result.message) + '</p>';
             showCustomAlert('실패', result.message, 'error');
         }
     } catch (error) {
@@ -1126,26 +1126,26 @@ async function notifyLoginSuccess() {
         if (info && info.version && currentUser) {
             eel.update_client_version(currentUser.user_id, info.version)();
         }
-    } catch(_) {}
+    } catch(_) { console.warn('클라이언트 버전 등록 실패'); }
     window._errorReporterEnabled = true;
     if (typeof startAutoSave === 'function') startAutoSave();
 
     // 트레이 모드 설정 Python 동기화
     try {
         eel.set_python_tray_mode(currentUser.tray_mode || false)();
-    } catch(_) {}
+    } catch(_) { console.warn('트레이 모드 동기화 실패'); }
 
     // 연차 월별 보고 편집 권한에 따라 버튼 표시/숨김
     try {
         const addBtn = document.getElementById('btnAddLeaveReportRow');
         if (addBtn) addBtn.classList.toggle('hidden', !currentUser.leave_report_edit);
-    } catch(_) {}
+    } catch(_) { console.warn('연차 보고 버튼 표시 실패'); }
 
     // 월별 보고 탭 버튼 표시/숨김 (leave_report_edit 권한 기반)
     try {
         const leaveReportTabBtn = document.getElementById('btnEmployeeLeaveReport');
         if (leaveReportTabBtn) leaveReportTabBtn.classList.toggle('hidden', !currentUser.leave_report_edit);
-    } catch(_) {}
+    } catch(_) { console.warn('연차 보고 탭 버튼 표시 실패'); }
 }
 
 function showRestartNotification(count) {

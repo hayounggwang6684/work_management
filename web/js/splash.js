@@ -75,8 +75,10 @@
     // =========================================================
     // eel 패치 결과 조회 후 splashReady 호출
     // =========================================================
+    let _checkUpdateAttempts = 0;
     function checkUpdateAndClose() {
         if (typeof eel === 'undefined' || typeof eel.get_startup_patch_result !== 'function') {
+            if (++_checkUpdateAttempts > 20) { window.splashReady(); return; }
             setTimeout(checkUpdateAndClose, 400);
             return;
         }
@@ -216,7 +218,7 @@
                     }
                 }
             });
-        } catch(e) {}
+        } catch(e) { console.warn('앱 정보 조회 실패:', e); }
     }
 
     // =========================================================
