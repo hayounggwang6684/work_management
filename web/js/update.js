@@ -133,7 +133,8 @@ function showUpdateModal() {
     
     // 릴리즈 노트 표시 (Markdown을 간단한 HTML로 변환)
     const releaseNotes = updateInfo.release_notes || '릴리즈 노트가 없습니다.';
-    document.getElementById('releaseNotes').innerHTML = formatReleaseNotes(releaseNotes);
+    const releaseNotesEl = document.getElementById('releaseNotes');
+    if (releaseNotesEl) releaseNotesEl.innerHTML = formatReleaseNotes(releaseNotes);
 }
 
 function closeUpdateModal() {
