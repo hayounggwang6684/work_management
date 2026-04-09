@@ -2,6 +2,10 @@
 
 ## Bug Fixes Applied
 
+- 2026-04-10: Split holiday OT metadata into `ownerCompany` and `vendorCompany` so holiday entries no longer overload a single `company` field with both 선사 and 외주 업체 meanings; holiday company searches now match the vendor company while search results continue to show the owner company in the 선사 column.
+- 2026-04-10: Tightened holiday OT metadata inference so in-house workers no longer inherit owner-company names as vendor companies, ambiguous duplicate-name matches are left unresolved instead of auto-filling the first project, and morning reminders are marked as shown only after the popup is actually rendered.
+- 2026-04-10: Corrected legacy holiday vendor inference so old rows that stored the owner-company alias in `company` now recover the real `vendorCompany`, and the morning reminder is only suppressed for the day when the user explicitly clicks `오늘은 닫기`.
+- 2026-04-10: Added 관리자 > DB 관리 subtabs for `엑셀`, `선사 목록`, and `외주 목록`; the owner catalog now combines recorded work with registered `board_projects`, and the vendor catalog supports multi-select right-click name merges across stored DB records.
 - 2026-04-09: Extended search-tab aggregation to include both night OT from `work_records` and holiday OT from `holiday_work_entries`, added OT summaries/columns to contract, ship, and company search results, and rendered holiday OT as synthetic rows without affecting outsource manpower totals.
 - 2026-04-09: Added persistent `contractNumber`, `company`, and `shipName` metadata to holiday work entries so holiday OT can round-trip through save/load and be matched correctly by contract, ship, and company searches.
 - 2026-04-09: Added a morning write-user reminder popup after login that appears once per day between 06:00 and 12:00 and jumps directly to yesterday's day work, night report, or holiday OT input screens.

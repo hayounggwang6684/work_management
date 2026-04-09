@@ -346,6 +346,15 @@ function _clearLocalAutoLogin() {
 // 관리자 기능
 // ============================================================================
 
+const _adminDbState = {
+    subtab: 'excel',
+    owners: [],
+    selectedOwner: '',
+    vendors: [],
+    selectedVendor: '',
+    selectedVendorWorkers: new Set(),
+};
+
 function showAdminTab(tab) {
     const tabs = ['users', 'settings', 'db', 'telegram', 'status', 'activity'];
     const activeClass = 'px-6 py-3 font-medium border-b-2 border-blue-600 text-blue-600';
@@ -365,7 +374,277 @@ function showAdminTab(tab) {
     if (tab === 'activity') {
         loadActivityLogTab();
     }
+    if (tab === 'db') {
+        showAdminDbSubtab(_adminDbState.subtab || 'excel');
+    }
 }
+
+function showAdminDbSubtab(tab) {
+    _adminDbState.subtab = tab;
+    const config = {
+        excel: { btn: 'btnAdminDbExcel', panel: 'adminDbExcelSubtab' },
+        owners: { btn: 'btnAdminDbOwners', panel: 'adminDbOwnersSubtab' },
+        vendors: { btn: 'btnAdminDbVendors', panel: 'adminDbVendorsSubtab' },
+    };
+    Object.entries(config).forEach(([key, value]) => {
+        const btn = document.getElementById(value.btn);
+        const panel = document.getElementById(value.panel);
+        if (btn) {
+            btn.className = key === tab
+                ? 'px-4 py-2 rounded-t-lg bg-blue-600 text-white font-semibold'
+                : 'px-4 py-2 rounded-t-lg bg-slate-100 text-slate-600 font-semibold hover:bg-slate-200';
+        }
+        if (panel) panel.classList.toggle('hidden', key !== tab);
+    });
+    closeAdminVendorWorkerContextMenu();
+    if (tab === 'owners') loadAdminOwnerCompanyCatalog();
+    if (tab === 'vendors') loadAdminVendorCompanyCatalog();
+}
+
+async function loadAdminOwnerCompanyCatalog(force = false) {
+    if (!force && _adminDbState.owners.length > 0) {
+        renderAdminOwnerCompanyList();
+        return;
+    }
+    try {
+        const result = await eel.admin_get_owner_company_catalog(currentUser?.user_id || '')();
+        if (!result || !result.success) {
+            showCustomAlert('오류', result?.message || '선사 목록을 불러오지 못했습니다.', 'error');
+            return;
+        }
+        _adminDbState.owners = result.owners || [];
+        if (!_adminDbState.selectedOwner && _adminDbState.owners.length > 0) {
+            _adminDbState.selectedOwner = _adminDbState.owners[0].name;
+        }
+        if (_adminDbState.selectedOwner && !_adminDbState.owners.some(o => o.name === _adminDbState.selectedOwner)) {
+            _adminDbState.selectedOwner = _adminDbState.owners[0]?.name || '';
+        }
+        renderAdminOwnerCompanyList();
+    } catch (error) {
+        console.error('선사 목록 로드 오류:', error);
+        showCustomAlert('오류', '선사 목록을 불러오지 못했습니다.', 'error');
+    }
+}
+
+function renderAdminOwnerCompanyList() {
+    const listEl = document.getElementById('adminOwnerCompanyList');
+    const detailEl = document.getElementById('adminOwnerCompanyDetail');
+    if (!listEl || !detailEl) return;
+
+    if (_adminDbState.owners.length === 0) {
+        listEl.innerHTML = '<p class="text-sm text-slate-400 p-3">등록된 선사가 없습니다.</p>';
+        detailEl.innerHTML = '<p class="text-sm text-slate-400">선사를 선택하면 선박과 장비가 표시됩니다.</p>';
+        return;
+    }
+
+    listEl.innerHTML = _adminDbState.owners.map(owner => {
+        const active = owner.name === _adminDbState.selectedOwner;
+        return `
+            <button onclick="selectAdminOwnerCompany('${escapeJs(owner.name)}')"
+                    class="w-full text-left rounded-lg border px-3 py-3 transition ${active ? 'bg-blue-50 border-blue-300 text-blue-700' : 'bg-white hover:bg-slate-100 border-slate-200'}">
+                <div class="font-semibold">${escapeHtml(owner.name)}</div>
+                <div class="text-xs text-slate-500 mt-1">선박 ${owner.shipCount}척 · 작업 ${owner.workRecordCount + owner.holidayCount}건 · 등록 ${owner.projectCount}건</div>
+            </button>`;
+    }).join('');
+
+    const owner = _adminDbState.owners.find(item => item.name === _adminDbState.selectedOwner) || _adminDbState.owners[0];
+    _adminDbState.selectedOwner = owner?.name || '';
+    if (!owner) {
+        detailEl.innerHTML = '<p class="text-sm text-slate-400">선사를 선택하면 선박과 장비가 표시됩니다.</p>';
+        return;
+    }
+
+    detailEl.innerHTML = `
+        <div class="mb-4">
+            <div class="text-lg font-bold text-slate-800">${escapeHtml(owner.name)}</div>
+            <div class="text-sm text-slate-500 mt-1">선박 ${owner.shipCount}척 · 작업 ${owner.workRecordCount + owner.holidayCount}건 · 등록 ${owner.projectCount}건</div>
+        </div>
+        <div class="space-y-3">
+            ${owner.ships.map(ship => `
+                <div class="border border-slate-200 rounded-xl p-4 bg-slate-50">
+                    <div class="flex items-center justify-between gap-4 mb-2">
+                        <div class="font-semibold text-slate-800">${escapeHtml(ship.shipName)}</div>
+                        <div class="text-xs text-slate-500">작업 ${ship.workRecordCount + ship.holidayCount}건 · 등록 ${ship.projectCount}건</div>
+                    </div>
+                    <div class="flex flex-wrap gap-2">
+                        ${ship.engineModels.length > 0
+                            ? ship.engineModels.map(model => `<span class="px-2 py-1 bg-white border border-slate-200 rounded-full text-xs text-slate-700">${escapeHtml(model)}</span>`).join('')
+                            : '<span class="text-xs text-slate-400">등록된 장비 없음</span>'}
+                    </div>
+                </div>
+            `).join('')}
+        </div>`;
+}
+
+function selectAdminOwnerCompany(ownerName) {
+    _adminDbState.selectedOwner = ownerName;
+    renderAdminOwnerCompanyList();
+}
+
+async function loadAdminVendorCompanyCatalog(force = false) {
+    if (!force && _adminDbState.vendors.length > 0) {
+        renderAdminVendorCompanyList();
+        return;
+    }
+    try {
+        const result = await eel.admin_get_vendor_company_catalog(currentUser?.user_id || '')();
+        if (!result || !result.success) {
+            showCustomAlert('오류', result?.message || '외주 목록을 불러오지 못했습니다.', 'error');
+            return;
+        }
+        _adminDbState.vendors = result.vendors || [];
+        if (!_adminDbState.selectedVendor && _adminDbState.vendors.length > 0) {
+            _adminDbState.selectedVendor = _adminDbState.vendors[0].name;
+        }
+        if (_adminDbState.selectedVendor && !_adminDbState.vendors.some(v => v.name === _adminDbState.selectedVendor)) {
+            _adminDbState.selectedVendor = _adminDbState.vendors[0]?.name || '';
+        }
+        _adminDbState.selectedVendorWorkers = new Set();
+        renderAdminVendorCompanyList();
+    } catch (error) {
+        console.error('외주 목록 로드 오류:', error);
+        showCustomAlert('오류', '외주 목록을 불러오지 못했습니다.', 'error');
+    }
+}
+
+function renderAdminVendorCompanyList() {
+    const listEl = document.getElementById('adminVendorCompanyList');
+    const detailEl = document.getElementById('adminVendorWorkerDetail');
+    if (!listEl || !detailEl) return;
+
+    if (_adminDbState.vendors.length === 0) {
+        listEl.innerHTML = '<p class="text-sm text-slate-400 p-3">등록된 외주 업체가 없습니다.</p>';
+        detailEl.innerHTML = '<p class="text-sm text-slate-400">외주 업체를 선택하면 소속 직원명이 표시됩니다.</p>';
+        return;
+    }
+
+    listEl.innerHTML = _adminDbState.vendors.map(vendor => {
+        const active = vendor.name === _adminDbState.selectedVendor;
+        return `
+            <button onclick="selectAdminVendorCompany('${escapeJs(vendor.name)}')"
+                    class="w-full text-left rounded-lg border px-3 py-3 transition ${active ? 'bg-blue-50 border-blue-300 text-blue-700' : 'bg-white hover:bg-slate-100 border-slate-200'}">
+                <div class="font-semibold">${escapeHtml(vendor.name)}</div>
+                <div class="text-xs text-slate-500 mt-1">직원 ${vendor.workerCount}명 · 작업 ${vendor.workRecordCount}건 · 휴일 ${vendor.holidayCount}건</div>
+            </button>`;
+    }).join('');
+
+    const vendor = _adminDbState.vendors.find(item => item.name === _adminDbState.selectedVendor) || _adminDbState.vendors[0];
+    _adminDbState.selectedVendor = vendor?.name || '';
+    if (!vendor) {
+        detailEl.innerHTML = '<p class="text-sm text-slate-400">외주 업체를 선택하면 소속 직원명이 표시됩니다.</p>';
+        return;
+    }
+
+    detailEl.innerHTML = `
+        <div class="mb-4 flex items-start justify-between gap-4">
+            <div>
+                <div class="text-lg font-bold text-slate-800">${escapeHtml(vendor.name)}</div>
+                <div class="text-sm text-slate-500 mt-1">직원 ${vendor.workerCount}명 · 작업 ${vendor.workRecordCount}건 · 휴일 ${vendor.holidayCount}건</div>
+            </div>
+            <div class="text-xs text-slate-400">Ctrl+클릭 선택 후 우클릭</div>
+        </div>
+        <div class="flex flex-wrap gap-2">
+            ${vendor.workers.map(worker => {
+                const selected = _adminDbState.selectedVendorWorkers.has(worker.name);
+                return `
+                    <button
+                        onclick="handleAdminVendorWorkerClick('${escapeJs(worker.name)}', event)"
+                        oncontextmenu="handleAdminVendorWorkerContextMenu('${escapeJs(worker.name)}', event)"
+                        class="px-3 py-2 rounded-lg border text-left transition ${selected ? 'bg-blue-100 border-blue-300 text-blue-800' : 'bg-slate-50 border-slate-200 hover:bg-slate-100'}">
+                        <div class="font-semibold text-sm">${escapeHtml(worker.name)}</div>
+                        <div class="text-[11px] text-slate-500 mt-1">총 ${worker.totalCount} · 작업 ${worker.workCount} · 휴일 ${worker.holidayCount}</div>
+                    </button>`;
+            }).join('')}
+        </div>`;
+}
+
+function selectAdminVendorCompany(vendorName) {
+    _adminDbState.selectedVendor = vendorName;
+    _adminDbState.selectedVendorWorkers = new Set();
+    closeAdminVendorWorkerContextMenu();
+    renderAdminVendorCompanyList();
+}
+
+function handleAdminVendorWorkerClick(workerName, event) {
+    closeAdminVendorWorkerContextMenu();
+    const multi = !!(event && (event.ctrlKey || event.metaKey));
+    if (multi) {
+        if (_adminDbState.selectedVendorWorkers.has(workerName)) _adminDbState.selectedVendorWorkers.delete(workerName);
+        else _adminDbState.selectedVendorWorkers.add(workerName);
+    } else {
+        _adminDbState.selectedVendorWorkers = new Set([workerName]);
+    }
+    renderAdminVendorCompanyList();
+}
+
+function handleAdminVendorWorkerContextMenu(workerName, event) {
+    event.preventDefault();
+    if (!_adminDbState.selectedVendorWorkers.has(workerName)) {
+        _adminDbState.selectedVendorWorkers = new Set([workerName]);
+        renderAdminVendorCompanyList();
+    }
+    if (_adminDbState.selectedVendorWorkers.size < 2) {
+        closeAdminVendorWorkerContextMenu();
+        return;
+    }
+    const menu = document.getElementById('adminVendorWorkerContextMenu');
+    if (!menu) return;
+    const parentRect = menu.parentElement?.getBoundingClientRect();
+    const offsetX = parentRect ? event.clientX - parentRect.left : event.clientX;
+    const offsetY = parentRect ? event.clientY - parentRect.top : event.clientY;
+    menu.style.left = `${offsetX}px`;
+    menu.style.top = `${offsetY}px`;
+    menu.classList.remove('hidden');
+}
+
+function closeAdminVendorWorkerContextMenu() {
+    document.getElementById('adminVendorWorkerContextMenu')?.classList.add('hidden');
+}
+
+async function promptMergeSelectedVendorWorkers() {
+    closeAdminVendorWorkerContextMenu();
+    const selected = [..._adminDbState.selectedVendorWorkers];
+    if (!_adminDbState.selectedVendor || selected.length < 2) {
+        showToast('병합할 직원을 2명 이상 선택하세요.', 'warning');
+        return;
+    }
+    const targetName = prompt(
+        `대표 이름을 입력하세요.\n\n업체: ${_adminDbState.selectedVendor}\n선택: ${selected.join(', ')}`,
+        selected[0]
+    );
+    if (!targetName || !targetName.trim()) return;
+    if (!confirm(`"${selected.join(', ')}" 을(를) "${targetName.trim()}" 으로 병합하시겠습니까?`)) return;
+
+    try {
+        const result = await eel.admin_merge_vendor_workers(
+            _adminDbState.selectedVendor,
+            selected,
+            targetName.trim(),
+            currentUser?.user_id || ''
+        )();
+        if (!result || !result.success) {
+            showCustomAlert('오류', result?.message || '병합에 실패했습니다.', 'error');
+            return;
+        }
+        showToast(result.message || '병합이 완료되었습니다.', 'success');
+        _adminDbState.selectedVendorWorkers = new Set();
+        await loadAdminVendorCompanyCatalog(true);
+    } catch (error) {
+        console.error('외주 직원 병합 오류:', error);
+        showCustomAlert('오류', '외주 직원 병합 중 오류가 발생했습니다.', 'error');
+    }
+}
+
+document.addEventListener('click', (event) => {
+    const menu = document.getElementById('adminVendorWorkerContextMenu');
+    if (!menu || menu.classList.contains('hidden')) return;
+    if (menu.contains(event.target)) return;
+    closeAdminVendorWorkerContextMenu();
+});
+
+document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') closeAdminVendorWorkerContextMenu();
+});
 
 async function loadAdminData() {
     await loadPendingUsers();
@@ -1179,7 +1458,6 @@ async function maybeShowMorningRecordReminder() {
     const todayKey = _formatDateKey(new Date());
     const storageKey = `morning-record-reminder:${currentUser.user_id}:${todayKey}`;
     if (localStorage.getItem(storageKey)) return;
-    localStorage.setItem(storageKey, 'shown');
 
     const yesterdayStr = _getYesterdayDateStr();
     const yesterday = new Date(yesterdayStr + 'T00:00:00');
@@ -1197,10 +1475,11 @@ async function maybeShowMorningRecordReminder() {
         yesterdayStr,
         holidayPeriodKey,
         showHolidayButton: !!holidayPeriodKey,
+        storageKey,
     });
 }
 
-function showMorningRecordReminder({ yesterdayStr, holidayPeriodKey, showHolidayButton }) {
+function showMorningRecordReminder({ yesterdayStr, holidayPeriodKey, showHolidayButton, storageKey }) {
     closeMorningRecordReminder();
 
     const div = document.createElement('div');
@@ -1226,7 +1505,10 @@ function showMorningRecordReminder({ yesterdayStr, holidayPeriodKey, showHoliday
     document.body.appendChild(div);
     div.addEventListener('click', (e) => { if (e.target === div) closeMorningRecordReminder(); });
     document.getElementById('btnCloseMorningReminder')?.addEventListener('click', closeMorningRecordReminder);
-    document.getElementById('btnMorningDismiss')?.addEventListener('click', closeMorningRecordReminder);
+    document.getElementById('btnMorningDismiss')?.addEventListener('click', () => {
+        if (storageKey) localStorage.setItem(storageKey, 'shown');
+        closeMorningRecordReminder();
+    });
     document.getElementById('btnMorningDaily')?.addEventListener('click', () => {
         closeMorningRecordReminder();
         if (typeof openDailyWorkInputForDate === 'function') openDailyWorkInputForDate(yesterdayStr);

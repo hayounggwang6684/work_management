@@ -120,10 +120,14 @@ work_records (
     engine_model, work_content, location, leader, teammates,
     manpower, created_at, updated_at, created_by, updated_by
 )
+board_projects (
+    id, contract_number, company, ship_name, engine_model,
+    work_content, status, created_at, updated_at, ...
+)
 holiday_work_entries (
     id, period_key, seq, department, rank, name,
     fri_work, sat_work, sun_work, work_content,
-    contract_number, company, ship_name,
+    contract_number, company, owner_company, vendor_company, ship_name,
     created_at, updated_at, created_by
 )
 users (id, username, full_name, password_hash, role, ...)

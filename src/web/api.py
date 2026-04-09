@@ -370,6 +370,291 @@ def admin_get_settings(admin_id: str = '') -> Dict[str, Any]:
         return {}
 
 
+def _get_admin_user(admin_id: str = '') -> Optional[Dict[str, Any]]:
+    user = auth_manager.get_user(admin_id) if admin_id else None
+    if not user or user.get('role') != 'admin':
+        return None
+    return user
+
+
+@eel.expose
+def admin_get_owner_company_catalog(admin_id: str = '') -> Dict[str, Any]:
+    """선사(owner_company) 목록과 선박/장비 요약 조회"""
+    try:
+        if not _get_admin_user(admin_id):
+            return {'success': False, 'message': '관리자 권한이 필요합니다.', 'owners': []}
+
+        owner_map: Dict[str, Dict[str, Any]] = {}
+
+        def _ensure_owner(owner_name: str) -> Dict[str, Any]:
+            return owner_map.setdefault(owner_name, {
+                'name': owner_name,
+                'workRecordCount': 0,
+                'holidayCount': 0,
+                'projectCount': 0,
+                'ships': {},
+            })
+
+        def _ensure_ship(owner: Dict[str, Any], ship_name: str) -> Dict[str, Any]:
+            return owner['ships'].setdefault(ship_name, {
+                'shipName': ship_name,
+                'workRecordCount': 0,
+                'holidayCount': 0,
+                'projectCount': 0,
+                'engineModels': set(),
+            })
+
+        with db.get_connection() as conn:
+            work_rows = conn.execute('''
+                SELECT company, ship_name, engine_model
+                FROM work_records
+                WHERE company IS NOT NULL AND company != ''
+            ''').fetchall()
+            board_rows = conn.execute('''
+                SELECT company, ship_name, engine_model
+                FROM board_projects
+                WHERE company IS NOT NULL AND company != ''
+            ''').fetchall()
+            holiday_rows = conn.execute('''
+                SELECT owner_company, ship_name
+                FROM holiday_work_entries
+                WHERE owner_company IS NOT NULL AND owner_company != ''
+            ''').fetchall()
+
+        for row in work_rows:
+            owner_name = str(row['company'] or '').strip()
+            if not owner_name:
+                continue
+            owner = _ensure_owner(owner_name)
+            ship_name = str(row['ship_name'] or '').strip() or '(선박 미입력)'
+            ship = _ensure_ship(owner, ship_name)
+            engine_model = str(row['engine_model'] or '').strip()
+            if engine_model:
+                ship['engineModels'].add(engine_model)
+            ship['workRecordCount'] += 1
+            owner['workRecordCount'] += 1
+
+        for row in board_rows:
+            owner_name = str(row['company'] or '').strip()
+            if not owner_name:
+                continue
+            owner = _ensure_owner(owner_name)
+            ship_name = str(row['ship_name'] or '').strip() or '(선박 미입력)'
+            ship = _ensure_ship(owner, ship_name)
+            engine_model = str(row['engine_model'] or '').strip()
+            if engine_model:
+                ship['engineModels'].add(engine_model)
+            ship['projectCount'] += 1
+            owner['projectCount'] += 1
+
+        for row in holiday_rows:
+            owner_name = str(row['owner_company'] or '').strip()
+            if not owner_name:
+                continue
+            owner = _ensure_owner(owner_name)
+            ship_name = str(row['ship_name'] or '').strip() or '(선박 미입력)'
+            ship = _ensure_ship(owner, ship_name)
+            ship['holidayCount'] += 1
+            owner['holidayCount'] += 1
+
+        owners = []
+        for owner_name, owner in owner_map.items():
+            ships = []
+            for ship_name, ship in owner['ships'].items():
+                ships.append({
+                    'shipName': ship_name,
+                    'workRecordCount': ship['workRecordCount'],
+                    'holidayCount': ship['holidayCount'],
+                    'projectCount': ship['projectCount'],
+                    'totalCount': ship['workRecordCount'] + ship['holidayCount'] + ship['projectCount'],
+                    'engineModels': sorted(list(ship['engineModels']), key=_mixed_locale_sort_key),
+                })
+            ships.sort(key=lambda item: _mixed_locale_sort_key(item['shipName']))
+            owners.append({
+                'name': owner_name,
+                'workRecordCount': owner['workRecordCount'],
+                'holidayCount': owner['holidayCount'],
+                'projectCount': owner['projectCount'],
+                'totalCount': owner['workRecordCount'] + owner['holidayCount'] + owner['projectCount'],
+                'shipCount': len(ships),
+                'ships': ships,
+            })
+
+        owners.sort(key=lambda item: _mixed_locale_sort_key(item['name']))
+        return {'success': True, 'owners': owners}
+    except Exception as e:
+        logger.error(f"선사 목록 조회 오류: {e}")
+        return {'success': False, 'message': '선사 목록 조회 중 오류가 발생했습니다.', 'owners': []}
+
+
+@eel.expose
+def admin_get_vendor_company_catalog(admin_id: str = '') -> Dict[str, Any]:
+    """외주 업체 목록과 소속 인원 집계 조회"""
+    try:
+        if not _get_admin_user(admin_id):
+            return {'success': False, 'message': '관리자 권한이 필요합니다.', 'vendors': []}
+
+        vendor_map: Dict[str, Dict[str, Any]] = {}
+        with db.get_connection() as conn:
+            work_rows = conn.execute('''
+                SELECT teammates
+                FROM work_records
+                WHERE teammates IS NOT NULL AND teammates != ''
+            ''').fetchall()
+            holiday_rows = conn.execute('''
+                SELECT name, vendor_company, company
+                FROM holiday_work_entries
+                WHERE name IS NOT NULL AND name != ''
+            ''').fetchall()
+
+        for row in work_rows:
+            vendor_workers = _extract_vendor_workers_from_teammates(row['teammates'] or '')
+            for vendor_name, worker_names in vendor_workers.items():
+                vendor = vendor_map.setdefault(vendor_name, {
+                    'name': vendor_name,
+                    'workRecordCount': 0,
+                    'holidayCount': 0,
+                    'workers': {},
+                })
+                vendor['workRecordCount'] += 1
+                for worker_name in worker_names:
+                    worker = vendor['workers'].setdefault(worker_name, {
+                        'name': worker_name,
+                        'workCount': 0,
+                        'holidayCount': 0,
+                    })
+                    worker['workCount'] += 1
+
+        for row in holiday_rows:
+            vendor_name = str(row['vendor_company'] or row['company'] or '').strip()
+            worker_name = _normalize_holiday_worker_name(row['name'] or '')
+            if not vendor_name or not worker_name:
+                continue
+            vendor = vendor_map.setdefault(vendor_name, {
+                'name': vendor_name,
+                'workRecordCount': 0,
+                'holidayCount': 0,
+                'workers': {},
+            })
+            vendor['holidayCount'] += 1
+            worker = vendor['workers'].setdefault(worker_name, {
+                'name': worker_name,
+                'workCount': 0,
+                'holidayCount': 0,
+            })
+            worker['holidayCount'] += 1
+
+        vendors = []
+        for vendor_name, vendor in vendor_map.items():
+            workers = []
+            for worker_name, worker in vendor['workers'].items():
+                workers.append({
+                    'name': worker_name,
+                    'workCount': worker['workCount'],
+                    'holidayCount': worker['holidayCount'],
+                    'totalCount': worker['workCount'] + worker['holidayCount'],
+                })
+            workers.sort(key=lambda item: _mixed_locale_sort_key(item['name']))
+            vendors.append({
+                'name': vendor_name,
+                'workRecordCount': vendor['workRecordCount'],
+                'holidayCount': vendor['holidayCount'],
+                'workerCount': len(workers),
+                'workers': workers,
+            })
+
+        vendors.sort(key=lambda item: _mixed_locale_sort_key(item['name']))
+        return {'success': True, 'vendors': vendors}
+    except Exception as e:
+        logger.error(f"외주 업체 목록 조회 오류: {e}")
+        return {'success': False, 'message': '외주 업체 목록 조회 중 오류가 발생했습니다.', 'vendors': []}
+
+
+@eel.expose
+def admin_merge_vendor_workers(vendor_company: str, source_names: List[str],
+                               target_name: str, admin_id: str = '') -> Dict[str, Any]:
+    """특정 외주 업체 소속 직원명을 하나의 대표 이름으로 병합"""
+    try:
+        if not _get_admin_user(admin_id):
+            return {'success': False, 'message': '관리자 권한이 필요합니다.'}
+
+        vendor_display = str(vendor_company or '').strip()
+        target_display = str(target_name or '').strip()
+        normalized_sources = sorted({
+            _normalize_holiday_worker_name(name)
+            for name in (source_names or [])
+            if _normalize_holiday_worker_name(name)
+        })
+        if not vendor_display:
+            return {'success': False, 'message': '외주 업체명을 선택하세요.'}
+        if len(normalized_sources) < 2:
+            return {'success': False, 'message': '병합할 직원명을 2개 이상 선택하세요.'}
+        if not target_display:
+            return {'success': False, 'message': '대표 이름을 입력하세요.'}
+
+        now = datetime.now().isoformat()
+        work_updates = 0
+        holiday_updates = 0
+        vendor_key = _normalize_company_label(vendor_display)
+
+        with db.get_connection() as conn:
+            cursor = conn.cursor()
+            work_rows = cursor.execute('''
+                SELECT id, teammates
+                FROM work_records
+                WHERE teammates IS NOT NULL AND teammates != ''
+            ''').fetchall()
+            for row in work_rows:
+                new_teammates, changed = _replace_vendor_worker_names_in_teammates(
+                    row['teammates'] or '',
+                    vendor_display,
+                    normalized_sources,
+                    target_display,
+                )
+                if not changed:
+                    continue
+                cursor.execute('''
+                    UPDATE work_records
+                    SET teammates = ?, updated_at = ?
+                    WHERE id = ?
+                ''', (new_teammates, now, row['id']))
+                work_updates += 1
+
+            holiday_rows = cursor.execute('''
+                SELECT id, name, vendor_company, company
+                FROM holiday_work_entries
+                WHERE name IS NOT NULL AND name != ''
+            ''').fetchall()
+            for row in holiday_rows:
+                row_vendor = str(row['vendor_company'] or row['company'] or '').strip()
+                if _normalize_company_label(row_vendor) != vendor_key:
+                    continue
+                if _normalize_holiday_worker_name(row['name'] or '') not in normalized_sources:
+                    continue
+                cursor.execute('''
+                    UPDATE holiday_work_entries
+                    SET name = ?, vendor_company = ?, company = ?, updated_at = ?
+                    WHERE id = ?
+                ''', (target_display, vendor_display, vendor_display, now, row['id']))
+                holiday_updates += 1
+
+        db.add_activity_log(
+            admin_id,
+            'merge_vendor_workers',
+            vendor_display,
+            f"{', '.join(normalized_sources)} -> {target_display} (work={work_updates}, holiday={holiday_updates})"
+        )
+        return {
+            'success': True,
+            'message': f'병합 완료: 작업 {work_updates}건, 휴일 {holiday_updates}건 수정',
+            'workUpdates': work_updates,
+            'holidayUpdates': holiday_updates,
+        }
+    except Exception as e:
+        logger.error(f"외주 직원 병합 오류: {e}")
+        return {'success': False, 'message': '외주 직원 병합 중 오류가 발생했습니다.'}
+
+
 @eel.expose
 def admin_update_local_db_path(new_path: str, admin_id: str) -> Dict[str, Any]:
     """로컬 DB 경로 변경 (관리자 전용)"""
@@ -566,6 +851,7 @@ def load_holiday_work_entries(period_key: str) -> List[Dict[str, Any]]:
         # snake_case → camelCase 변환
         result = []
         for row in rows:
+            vendor_company = row.get('vendor_company', '') or row.get('company', '')
             result.append({
                 'id': row.get('id'),
                 'periodKey': row.get('period_key', ''),
@@ -578,7 +864,9 @@ def load_holiday_work_entries(period_key: str) -> List[Dict[str, Any]]:
                 'sunWork': row.get('sun_work', '-'),
                 'workContent': row.get('work_content', ''),
                 'contractNumber': row.get('contract_number', ''),
-                'company': row.get('company', ''),
+                'company': vendor_company,
+                'ownerCompany': row.get('owner_company', ''),
+                'vendorCompany': vendor_company,
                 'shipName': row.get('ship_name', ''),
             })
         return result
@@ -916,14 +1204,155 @@ def _normalize_holiday_worker_name(name: Any) -> str:
     return text
 
 
-def _add_holiday_meta_candidate(meta_map: Dict[str, Dict[str, str]], raw_name: Any,
+def _normalize_company_label(name: Any) -> str:
+    return _normalize_holiday_worker_name(name).lower()
+
+
+def _mixed_locale_sort_key(name: Any):
+    text = str(name or '').strip()
+    if not text:
+        return (2, '', '')
+    first = text[0]
+    code = ord(first)
+    if 0xAC00 <= code <= 0xD7A3:
+        group = 0  # 한글 우선
+    elif ('A' <= first <= 'Z') or ('a' <= first <= 'z'):
+        group = 1  # 영문 다음
+    else:
+        group = 2
+    return (group, text.lower(), text)
+
+
+def _iter_vendor_segments(teammates: str):
+    text = str(teammates or '')
+    patterns = [
+        ('contract', re.compile(r'([^,\[\]()\n]+?)\(([^)]+)\)'), '(', ')'),
+        ('daily', re.compile(r'([^,\[\]()\n]+?)\[([^\]]+)\]'), '[', ']'),
+    ]
+    for _kind, pattern, open_ch, close_ch in patterns:
+        for match in pattern.finditer(text):
+            yield {
+                'company': _normalize_holiday_worker_name(match.group(1)),
+                'raw_company': match.group(1),
+                'names_blob': match.group(2),
+                'open_ch': open_ch,
+                'close_ch': close_ch,
+                'full_match': match.group(0),
+            }
+
+
+def _preserve_worker_style(original_name: str, target_name: str) -> str:
+    raw = str(original_name or '').strip()
+    if raw.lower().startswith('<i>') and raw.lower().endswith('</i>'):
+        return f"<i>{target_name}</i>"
+    if raw.startswith('*') and raw.endswith('*') and len(raw) >= 2:
+        return f"*{target_name}*"
+    return target_name
+
+
+def _replace_vendor_worker_names_in_teammates(teammates: str, vendor_company: str,
+                                              source_names: List[str], target_name: str):
+    target_vendor_key = _normalize_company_label(vendor_company)
+    source_keys = {_normalize_holiday_worker_name(name) for name in (source_names or []) if str(name or '').strip()}
+    if not target_vendor_key or not source_keys:
+        return teammates, False
+
+    changed = False
+
+    def _rewrite_names_blob(names_blob: str) -> str:
+        nonlocal changed
+        tokens = [token.strip() for token in str(names_blob or '').split(',')]
+        new_tokens = []
+        seen = set()
+        local_changed = False
+        for token in tokens:
+            if not token:
+                continue
+            normalized = _normalize_holiday_worker_name(token)
+            if normalized in source_keys:
+                token = _preserve_worker_style(token, target_name)
+                normalized = _normalize_holiday_worker_name(token)
+                local_changed = True
+            if not normalized or normalized in seen:
+                continue
+            seen.add(normalized)
+            new_tokens.append(token)
+        if local_changed:
+            changed = True
+        return ', '.join(new_tokens)
+
+    def _replace_with_pattern(text: str, pattern, open_ch: str, close_ch: str) -> str:
+        def _repl(match):
+            company_raw = match.group(1)
+            if _normalize_company_label(company_raw) != target_vendor_key:
+                return match.group(0)
+            rewritten_blob = _rewrite_names_blob(match.group(2))
+            return f"{company_raw.strip()}{open_ch}{rewritten_blob}{close_ch}"
+        return pattern.sub(_repl, text)
+
+    updated = str(teammates or '')
+    updated = _replace_with_pattern(updated, re.compile(r'([^,\[\]()\n]+?)\(([^)]+)\)'), '(', ')')
+    updated = _replace_with_pattern(updated, re.compile(r'([^,\[\]()\n]+?)\[([^\]]+)\]'), '[', ']')
+    return updated, changed and updated != str(teammates or '')
+
+
+def _extract_vendor_workers_from_teammates(teammates: str) -> Dict[str, List[str]]:
+    vendor_map: Dict[str, List[str]] = {}
+    for segment in _iter_vendor_segments(teammates):
+        company = segment['company']
+        if not company:
+            continue
+        if company not in vendor_map:
+            vendor_map[company] = []
+        for raw_name in str(segment['names_blob'] or '').split(','):
+            clean_name = _normalize_holiday_worker_name(raw_name)
+            if clean_name:
+                vendor_map[company].append(clean_name)
+    return vendor_map
+
+
+def _normalize_holiday_meta(meta: Dict[str, str]) -> Dict[str, str]:
+    return {
+        'contract_number': str(meta.get('contract_number', '') or '').strip(),
+        'owner_company': str(meta.get('owner_company', '') or '').strip(),
+        'vendor_company': str(meta.get('vendor_company', '') or '').strip(),
+        'ship_name': str(meta.get('ship_name', '') or '').strip(),
+        'work_content': str(meta.get('work_content', '') or '').strip(),
+        'worker_type': str(meta.get('worker_type', '') or '').strip(),
+    }
+
+
+def _add_holiday_meta_candidate(meta_map: Dict[str, Dict[str, Dict[str, str]]], raw_name: Any,
                                 meta: Dict[str, str]) -> None:
     clean_name = _normalize_holiday_worker_name(raw_name)
-    if clean_name and clean_name not in meta_map:
-        meta_map[clean_name] = meta
+    if not clean_name:
+        return
+    normalized_meta = _normalize_holiday_meta(meta)
+    signature = '|'.join([
+        normalized_meta['contract_number'],
+        normalized_meta['owner_company'],
+        normalized_meta['vendor_company'],
+        normalized_meta['ship_name'],
+        normalized_meta['work_content'],
+        normalized_meta['worker_type'],
+    ])
+    if clean_name not in meta_map:
+        meta_map[clean_name] = {}
+    meta_map[clean_name][signature] = normalized_meta
 
 
-def _build_holiday_meta_map_for_period(period_key: str) -> Dict[str, Dict[str, str]]:
+def _resolve_holiday_meta_candidate(meta_map: Dict[str, Dict[str, Dict[str, str]]],
+                                    raw_name: Any) -> Optional[Dict[str, str]]:
+    clean_name = _normalize_holiday_worker_name(raw_name)
+    if not clean_name:
+        return None
+    candidates = meta_map.get(clean_name, {})
+    if len(candidates) != 1:
+        return None
+    return next(iter(candidates.values()))
+
+
+def _build_holiday_meta_map_for_period(period_key: str) -> Dict[str, Dict[str, Dict[str, str]]]:
     try:
         fri_dt = datetime.strptime(period_key, '%Y-%m-%d')
     except Exception:
@@ -943,7 +1372,7 @@ def _build_holiday_meta_map_for_period(period_key: str) -> Dict[str, Dict[str, s
         cursor.execute(sql, tuple(date_keys))
         rows = cursor.fetchall()
 
-    meta_map: Dict[str, Dict[str, str]] = {}
+    meta_map: Dict[str, Dict[str, Dict[str, str]]] = {}
     contract_pattern = re.compile(r'([^,\[\]()\n]+?)\(([^)]+)\)')
     daily_pattern = re.compile(r'([^,\[\]()\n]+?)\[([^\]]+)\]')
 
@@ -956,9 +1385,11 @@ def _build_holiday_meta_map_for_period(period_key: str) -> Dict[str, Dict[str, s
         teammates = row['teammates'] or ''
         in_house_meta = {
             'contract_number': contract_number,
-            'company': owner_company,
+            'owner_company': owner_company,
+            'vendor_company': '',
             'ship_name': ship_name,
             'work_content': work_content,
+            'worker_type': 'inhouse',
         }
 
         _add_holiday_meta_candidate(meta_map, leader, in_house_meta)
@@ -969,9 +1400,11 @@ def _build_holiday_meta_map_for_period(period_key: str) -> Dict[str, Dict[str, s
             for worker_name in match.group(2).split(','):
                 _add_holiday_meta_candidate(meta_map, worker_name, {
                     'contract_number': contract_number,
-                    'company': vendor_company,
+                    'owner_company': owner_company,
+                    'vendor_company': vendor_company,
                     'ship_name': ship_name,
                     'work_content': work_content,
+                    'worker_type': 'vendor',
                 })
             remaining = remaining.replace(match.group(0), '')
 
@@ -980,9 +1413,11 @@ def _build_holiday_meta_map_for_period(period_key: str) -> Dict[str, Dict[str, s
             for worker_name in match.group(2).split(','):
                 _add_holiday_meta_candidate(meta_map, worker_name, {
                     'contract_number': contract_number,
-                    'company': vendor_company,
+                    'owner_company': owner_company,
+                    'vendor_company': vendor_company,
                     'ship_name': ship_name,
                     'work_content': work_content,
+                    'worker_type': 'vendor',
                 })
             remaining = remaining.replace(match.group(0), '')
 
@@ -993,11 +1428,12 @@ def _build_holiday_meta_map_for_period(period_key: str) -> Dict[str, Dict[str, s
 
 
 def _enrich_holiday_entry_metadata(row: Dict[str, Any],
-                                   period_meta_cache: Dict[str, Dict[str, Dict[str, str]]]) -> Dict[str, Any]:
+                                   period_meta_cache: Dict[str, Dict[str, Dict[str, Dict[str, str]]]]) -> Dict[str, Any]:
     enriched = dict(row)
-    if enriched.get('contract_number') and enriched.get('company') and enriched.get('ship_name'):
-        return enriched
-
+    enriched['owner_company'] = str(enriched.get('owner_company', '') or '').strip()
+    enriched['vendor_company'] = str(
+        enriched.get('vendor_company', '') or enriched.get('company', '') or ''
+    ).strip()
     period_key = enriched.get('period_key', '')
     if not period_key:
         return enriched
@@ -1007,14 +1443,29 @@ def _enrich_holiday_entry_metadata(row: Dict[str, Any],
         meta_map = _build_holiday_meta_map_for_period(period_key)
         period_meta_cache[period_key] = meta_map
 
-    meta = meta_map.get(_normalize_holiday_worker_name(enriched.get('name', '')))
-    if not meta:
+    meta = _resolve_holiday_meta_candidate(meta_map, enriched.get('name', ''))
+    if meta:
+        existing_vendor_company = str(enriched.get('vendor_company') or '').strip()
+        owner_company = str(meta.get('owner_company', '') or '').strip()
+        worker_type = str(meta.get('worker_type', '') or '').strip()
+        if not enriched.get('owner_company'):
+            enriched['owner_company'] = owner_company
+        if worker_type == 'inhouse':
+            if not existing_vendor_company or (owner_company and existing_vendor_company == owner_company):
+                enriched['vendor_company'] = ''
+        elif (not existing_vendor_company) or (owner_company and existing_vendor_company == owner_company):
+            enriched['vendor_company'] = meta.get('vendor_company', '')
+
+        enriched['contract_number'] = enriched.get('contract_number') or meta.get('contract_number', '')
+        enriched['ship_name'] = enriched.get('ship_name') or meta.get('ship_name', '')
+        enriched['work_content'] = enriched.get('work_content') or meta.get('work_content', '')
+
+    enriched['company'] = enriched.get('vendor_company', '')
+    if enriched.get('contract_number') and enriched.get('ship_name'):
         return enriched
 
-    enriched['contract_number'] = enriched.get('contract_number') or meta.get('contract_number', '')
-    enriched['company'] = enriched.get('company') or meta.get('company', '')
-    enriched['ship_name'] = enriched.get('ship_name') or meta.get('ship_name', '')
-    enriched['work_content'] = enriched.get('work_content') or meta.get('work_content', '')
+    if not meta:
+        return enriched
     return enriched
 
 
@@ -1041,7 +1492,9 @@ def _build_holiday_ot_records(rows) -> List[Dict[str, Any]]:
                 'recordNumber': int(row['seq'] or 0),
                 'contractNumber': row['contract_number'] or '',
                 'contract_number': row['contract_number'] or '',
-                'company': row['company'] or '',
+                'company': row['owner_company'] or '',
+                'ownerCompany': row['owner_company'] or '',
+                'vendorCompany': row['vendor_company'] or row['company'] or '',
                 'shipName': row['ship_name'] or '',
                 'ship_name': row['ship_name'] or '',
                 'engineModel': '',
@@ -1050,7 +1503,7 @@ def _build_holiday_ot_records(rows) -> List[Dict[str, Any]]:
                 'work_content': work_content,
                 'leader': row['name'] or '',
                 'manpower': 0.0,
-                'teammates': '',
+                'teammates': row['vendor_company'] or row['company'] or '',
                 'workType': 'holiday',
                 'endTime': '',
                 'ot': ot,
@@ -1066,7 +1519,7 @@ def _query_holiday_ot_records(search_type: str, query_text: str) -> List[Dict[st
         return []
     sql = '''
         SELECT period_key, seq, name, fri_work, sat_work, sun_work, work_content,
-               contract_number, company, ship_name
+               contract_number, company, owner_company, vendor_company, ship_name
         FROM holiday_work_entries
         ORDER BY period_key, seq
     '''
@@ -1074,7 +1527,7 @@ def _query_holiday_ot_records(search_type: str, query_text: str) -> List[Dict[st
         cursor = conn.cursor()
         cursor.execute(sql)
         rows = cursor.fetchall()
-    period_meta_cache: Dict[str, Dict[str, Dict[str, str]]] = {}
+    period_meta_cache: Dict[str, Dict[str, Dict[str, Dict[str, str]]]] = {}
     normalized_query = str(query_text or '').strip()
     normalized_query_upper = normalized_query.upper()
     normalized_query_lower = normalized_query.lower()
@@ -1083,12 +1536,12 @@ def _query_holiday_ot_records(search_type: str, query_text: str) -> List[Dict[st
         row = _enrich_holiday_entry_metadata(dict(raw_row), period_meta_cache)
         contract_number = str(row.get('contract_number') or '').strip().upper()
         ship_name = str(row.get('ship_name') or '').strip().upper()
-        company = str(row.get('company') or '').strip().lower()
+        vendor_company = str(row.get('vendor_company') or row.get('company') or '').strip().lower()
         if search_type == 'contract' and contract_number != normalized_query_upper:
             continue
         if search_type == 'ship' and normalized_query_upper not in ship_name:
             continue
-        if search_type == 'company' and normalized_query_lower not in company:
+        if search_type == 'company' and normalized_query_lower not in vendor_company:
             continue
         filtered_rows.append(row)
     return _build_holiday_ot_records(filtered_rows)

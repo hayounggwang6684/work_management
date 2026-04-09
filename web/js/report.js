@@ -547,7 +547,8 @@ function _createHolidayDefaultEntry(base = {}) {
         sunWork: '-',
         workContent: '',
         contractNumber: '',
-        company: '',
+        ownerCompany: '',
+        vendorCompany: '',
         shipName: '',
     };
 }
@@ -555,7 +556,28 @@ function _createHolidayDefaultEntry(base = {}) {
 function _addHolidayMetaCandidate(metaMap, rawName, meta) {
     const cleanName = stripRank(String(rawName || '').replace(/\*/g, '').trim());
     if (!cleanName) return;
-    if (!metaMap.has(cleanName)) metaMap.set(cleanName, meta);
+    const normalizedMeta = {
+        contractNumber: String(meta.contractNumber || '').trim(),
+        ownerCompany: String(meta.ownerCompany || '').trim(),
+        vendorCompany: String(meta.vendorCompany || '').trim(),
+        shipName: String(meta.shipName || '').trim(),
+        workContent: String(meta.workContent || '').trim(),
+        workerType: String(meta.workerType || '').trim(),
+    };
+    const signature = JSON.stringify(normalizedMeta);
+    if (!metaMap.has(cleanName)) {
+        metaMap.set(cleanName, new Map());
+    }
+    const candidateMap = metaMap.get(cleanName);
+    if (!candidateMap.has(signature)) candidateMap.set(signature, normalizedMeta);
+}
+
+function _resolveHolidayMetaCandidate(metaMap, rawName) {
+    const cleanName = stripRank(String(rawName || '').replace(/\*/g, '').trim());
+    if (!cleanName || !metaMap.has(cleanName)) return null;
+    const candidateMap = metaMap.get(cleanName);
+    if (!candidateMap || candidateMap.size !== 1) return null;
+    return [...candidateMap.values()][0];
 }
 
 function _buildHolidayMetaMapFromRecords(records) {
@@ -567,7 +589,14 @@ function _buildHolidayMetaMapFromRecords(records) {
         const workContent = rec.workContent || rec.work_content || '';
         const leader = rec.leader || '';
         const teammates = rec.teammates || '';
-        const inHouseMeta = { contractNumber, company: ownerCompany, shipName, workContent };
+        const inHouseMeta = {
+            contractNumber,
+            ownerCompany,
+            vendorCompany: '',
+            shipName,
+            workContent,
+            workerType: 'inhouse',
+        };
 
         _addHolidayMetaCandidate(metaMap, leader, inHouseMeta);
 
@@ -579,9 +608,11 @@ function _buildHolidayMetaMapFromRecords(records) {
             match[2].split(',').forEach(name => {
                 _addHolidayMetaCandidate(metaMap, name, {
                     contractNumber,
-                    company: vendorCompany,
+                    ownerCompany,
+                    vendorCompany,
                     shipName,
                     workContent,
+                    workerType: 'vendor',
                 });
             });
             remaining = remaining.replace(match[0], '');
@@ -593,9 +624,11 @@ function _buildHolidayMetaMapFromRecords(records) {
             match[2].split(',').forEach(name => {
                 _addHolidayMetaCandidate(metaMap, name, {
                     contractNumber,
-                    company: vendorCompany,
+                    ownerCompany,
+                    vendorCompany,
                     shipName,
                     workContent,
+                    workerType: 'vendor',
                 });
             });
             remaining = remaining.replace(match[0], '');
@@ -624,7 +657,8 @@ async function loadHolidayReport() {
                 ..._createHolidayDefaultEntry(e),
                 ...e,
                 contractNumber: e.contractNumber || '',
-                company: e.company || '',
+                ownerCompany: e.ownerCompany || '',
+                vendorCompany: e.vendorCompany || e.company || '',
                 shipName: e.shipName || '',
             }));
         }
@@ -650,18 +684,27 @@ async function loadHolidayReport() {
         } catch (_se) { /* 선명 조회 실패 시 무시 */ }
 
         _holidayEntries.forEach(entry => {
-            const cleanName = stripRank(String(entry.name || '').replace(/\*/g, '').trim());
-            const meta = holidayMetaMap.get(cleanName);
+            const meta = _resolveHolidayMetaCandidate(holidayMetaMap, entry.name);
             if (!meta) return;
+            const ownerCompany = String(meta.ownerCompany || '').trim();
+            const currentVendorCompany = String(entry.vendorCompany || '').trim();
+            if (!entry.ownerCompany) entry.ownerCompany = ownerCompany;
+            if (meta.workerType === 'inhouse') {
+                if (!currentVendorCompany || (ownerCompany && currentVendorCompany === ownerCompany)) {
+                    entry.vendorCompany = '';
+                }
+            } else if (!entry.vendorCompany || (ownerCompany && currentVendorCompany === ownerCompany)) {
+                entry.vendorCompany = meta.vendorCompany || '';
+            }
             if (!entry.contractNumber) entry.contractNumber = meta.contractNumber || '';
-            if (!entry.company) entry.company = meta.company || '';
             if (!entry.shipName) entry.shipName = meta.shipName || '';
             if (!entry.workContent) entry.workContent = meta.workContent || '';
         });
 
         _holidayEntries.forEach(entry => {
             if (!entry.contractNumber) entry.contractNumber = '';
-            if (!entry.company) entry.company = '';
+            if (!entry.ownerCompany) entry.ownerCompany = '';
+            if (!entry.vendorCompany) entry.vendorCompany = '';
             if (!entry.shipName) entry.shipName = '';
             if (!entry.workContent) entry.workContent = '';
         });
@@ -747,9 +790,12 @@ function renderHolidayTable() {
                     <input type="text" value="${escapeHtml(entry.contractNumber||'')}" placeholder="계약번호"
                            class="w-full px-1 py-1 border-0 border-b border-gray-100 focus:bg-yellow-50 text-xs font-mono"
                            onchange="_updateHolidayEntry(${i},'contractNumber',this.value)">
-                    <input type="text" value="${escapeHtml(entry.company||'')}" placeholder="업체명"
+                    <input type="text" value="${escapeHtml(entry.ownerCompany||'')}" placeholder="선사"
                            class="w-full px-1 py-1 border-0 border-b border-gray-100 focus:bg-yellow-50 text-xs"
-                           onchange="_updateHolidayEntry(${i},'company',this.value)">
+                           onchange="_updateHolidayEntry(${i},'ownerCompany',this.value)">
+                    <input type="text" value="${escapeHtml(entry.vendorCompany||'')}" placeholder="외주 업체명"
+                           class="w-full px-1 py-1 border-0 border-b border-gray-100 focus:bg-yellow-50 text-xs"
+                           onchange="_updateHolidayEntry(${i},'vendorCompany',this.value)">
                     <input type="text" value="${escapeHtml(entry.shipName||'')}" placeholder="선명"
                            class="w-full px-1 py-1 border-0 focus:bg-yellow-50 text-xs text-blue-700"
                            onchange="_updateHolidayEntry(${i},'shipName',this.value)">
