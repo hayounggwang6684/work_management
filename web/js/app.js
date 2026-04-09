@@ -2528,10 +2528,13 @@ function renderCompanyMonthView(container) {
             }
             const workers = extractCompanyWorkers(record.teammates || '', _companySearchName);
             const workersDisplay = workers.length > 0 ? workers.join(', ') : '-';
+            const workTypeBadge = record.work_type === 'night'
+                ? '<span class="text-xs bg-purple-100 text-purple-700 rounded px-1 ml-1">야간</span>'
+                : '';
 
             html += `
                 <tr class="hover:bg-blue-50">
-                    <td class="border p-2 text-center">${escapeHtml(dateDisplay)}</td>
+                    <td class="border p-2 text-center">${escapeHtml(dateDisplay)}${workTypeBadge}</td>
                     <td class="border p-2 text-center">${escapeHtml(record.company || '-')}</td>
                     <td class="border p-2 text-center">${escapeHtml(record.ship_name || '-')}</td>
                     <td class="border p-2 text-center">${escapeHtml(record.engine_model || '-')}</td>
@@ -3109,12 +3112,14 @@ function returnToAdminPanel() {
 
 function showEmployeeTab(tab) {
     const tabMap = {
-        leave: document.getElementById('employeeLeaveTab'),
-        leaveReport: document.getElementById('employeeLeaveReportTab')
+        leave:      document.getElementById('employeeLeaveTab'),
+        leaveReport: document.getElementById('employeeLeaveReportTab'),
+        workhours:  document.getElementById('employeeWorkHoursTab')
     };
     const btnMap = {
-        leave: document.getElementById('btnEmployeeLeave'),
-        leaveReport: document.getElementById('btnEmployeeLeaveReport')
+        leave:      document.getElementById('btnEmployeeLeave'),
+        leaveReport: document.getElementById('btnEmployeeLeaveReport'),
+        workhours:  document.getElementById('btnEmployeeWorkHours')
     };
     // 모든 탭 패널 숨김
     Object.values(tabMap).forEach(t => t && t.classList.add('hidden'));
@@ -3132,6 +3137,7 @@ function showEmployeeTab(tab) {
     });
     if (tabMap[tab]) tabMap[tab].classList.remove('hidden');
     if (tab === 'leaveReport') loadLeaveMonthlyReport();
+    if (tab === 'workhours') _initWorkHoursSelectors();
 }
 
 // ============================================================================
@@ -3475,6 +3481,7 @@ async function loadLeaveEmployeeList() {
     try {
         const names = await eel.get_employee_names_for_leave()();
         const datalist = document.getElementById('leaveEmployeeList');
+        const workHoursSelect = document.getElementById('workHoursEmployeeInput');
         if (!datalist) return;
         datalist.innerHTML = '';
         (names || []).forEach(name => {
@@ -3482,6 +3489,19 @@ async function loadLeaveEmployeeList() {
             opt.value = name;
             datalist.appendChild(opt);
         });
+        if (workHoursSelect) {
+            const currentValue = workHoursSelect.value;
+            workHoursSelect.innerHTML = '<option value="">직원 선택</option>';
+            (names || []).forEach(name => {
+                const opt = document.createElement('option');
+                opt.value = name;
+                opt.textContent = name;
+                workHoursSelect.appendChild(opt);
+            });
+            if ((names || []).includes(currentValue)) {
+                workHoursSelect.value = currentValue;
+            }
+        }
     } catch (e) {
         console.error('직원 목록 로드 실패:', e);
     }
@@ -4470,5 +4490,220 @@ async function installErpDeps() {
         showToast('오류가 발생했습니다.', 'error');
         if (btn) { btn.disabled = false; btn.textContent = '📦 필수 라이브러리 설치'; }
     }
+}
+
+// ============================================================================
+// 근로 시간 관리
+// ============================================================================
+
+function _initWorkHoursSelectors() {
+    const employeeSel = document.getElementById('workHoursEmployeeInput');
+    const yearSel = document.getElementById('workHoursYear');
+    const monthSel = document.getElementById('workHoursMonth');
+    if (!employeeSel || !yearSel || !monthSel) return;
+    if (!yearSel.options.length) {
+        const curYear = new Date().getFullYear();
+        for (let y = curYear; y >= curYear - 3; y--) {
+            const opt = document.createElement('option');
+            opt.value = y; opt.textContent = y + '년';
+            yearSel.appendChild(opt);
+        }
+    }
+    if (!monthSel.options.length) {
+        for (let m = 1; m <= 12; m++) {
+            const opt = document.createElement('option');
+            opt.value = m; opt.textContent = m + '월';
+            monthSel.appendChild(opt);
+        }
+        monthSel.value = new Date().getMonth() + 1;
+    }
+    if (!employeeSel.dataset.autoSearchBound) {
+        [employeeSel, yearSel, monthSel].forEach(el => {
+            el.addEventListener('change', () => { triggerWorkHoursSearch(); });
+        });
+        employeeSel.dataset.autoSearchBound = 'true';
+    }
+}
+
+function triggerWorkHoursSearch() {
+    const name = document.getElementById('workHoursEmployeeInput')?.value?.trim();
+    const year = parseInt(document.getElementById('workHoursYear')?.value || 0);
+    const month = parseInt(document.getElementById('workHoursMonth')?.value || 0);
+    if (!name || !year || !month) return false;
+    return searchWorkHours({ silent: true });
+}
+
+async function searchWorkHours(options = {}) {
+    const name  = document.getElementById('workHoursEmployeeInput')?.value?.trim();
+    const year  = parseInt(document.getElementById('workHoursYear')?.value || 0);
+    const month = parseInt(document.getElementById('workHoursMonth')?.value || 0);
+    const resultDiv = document.getElementById('workHoursResult');
+    const silent = !!options.silent;
+
+    if (!name) {
+        if (!silent) showCustomAlert('알림', '직원명을 선택하세요.', 'info');
+        return false;
+    }
+    if (!year || !month) {
+        if (!silent) showCustomAlert('알림', '연도와 월을 선택하세요.', 'info');
+        return false;
+    }
+    if (resultDiv) resultDiv.innerHTML = '<p class="text-slate-400">조회 중...</p>';
+
+    try {
+        // 항상 meal_deduct=false로 원본 OT 조회, 석식 공제는 클라이언트 per-day 적용
+        const res = await eel.get_work_hours_by_month(name, year, month, false)();
+        if (!res || !res.success) {
+            if (resultDiv) resultDiv.innerHTML = `<p class="text-red-500">${escapeHtml(res?.message || '조회 실패')}</p>`;
+            return;
+        }
+        // 새 조회 시 석식 공제 초기화
+        if (resultDiv) resultDiv._mealDeductDays = new Set();
+        renderWorkHoursCalendar(res, resultDiv);
+        return true;
+    } catch (e) {
+        console.error('근로 시간 조회 오류:', e);
+        if (resultDiv) resultDiv.innerHTML = '<p class="text-red-500">오류가 발생했습니다.</p>';
+        return false;
+    }
+}
+
+function _toggleMealDeduct(dateStr, containerId) {
+    const container = document.getElementById(containerId);
+    if (!container || !container._whData) return;
+    if (!container._mealDeductDays) container._mealDeductDays = new Set();
+    if (container._mealDeductDays.has(dateStr)) {
+        container._mealDeductDays.delete(dateStr);
+    } else {
+        container._mealDeductDays.add(dateStr);
+    }
+    renderWorkHoursCalendar(container._whData, container);
+}
+
+function renderWorkHoursCalendar(data, container) {
+    if (!container) return;
+    // 데이터·상태 보존 (innerHTML 재렌더 후에도 유지)
+    container._whData = data;
+    if (!container._mealDeductDays) container._mealDeductDays = new Set();
+    const mealDeductDays = container._mealDeductDays;
+
+    const { days } = data;
+    const containerId = container.id || 'workHoursResult';
+
+    // per-day 석식 공제 적용 후 유효 OT 계산
+    let totalRegular = 0, totalOt = 0;
+    const effectiveDays = {};
+    for (const [dateStr, d] of Object.entries(days)) {
+        const isMealDeducted = mealDeductDays.has(dateStr);
+        const ot = isMealDeducted ? Math.max(0, (d.ot || 0) - 1) : (d.ot || 0);
+        effectiveDays[dateStr] = { ...d, ot, meal_deducted: isMealDeducted };
+        if (d.is_current_month) {
+            totalRegular += d.regular || 0;
+            totalOt += ot;
+        }
+    }
+    const dateEntries = Object.entries(effectiveDays).sort(([a], [b]) => a.localeCompare(b));
+
+    const leaveColors = {
+        '연차': 'bg-blue-100 text-blue-700',
+        '반차': 'bg-purple-100 text-purple-700',
+        '공가': 'bg-slate-100 text-slate-500'
+    };
+    const dayLabels = ['일', '월', '화', '수', '목', '금', '토'];
+
+    let html = `
+    <div class="space-y-4">
+      <div class="grid grid-cols-3 gap-3">
+        <div class="bg-slate-50 border border-slate-200 rounded-xl p-3 text-center">
+          <p class="text-xs text-slate-500 mb-1">정규 근로시간</p>
+          <p class="text-2xl font-bold text-blue-600">${totalRegular.toFixed(1)}h</p>
+        </div>
+        <div class="bg-slate-50 border border-slate-200 rounded-xl p-3 text-center">
+          <p class="text-xs text-slate-500 mb-1">연장 근로시간</p>
+          <p class="text-2xl font-bold text-orange-500">${totalOt.toFixed(1)}h</p>
+        </div>
+        <div class="bg-slate-50 border border-slate-200 rounded-xl p-3 text-center">
+          <p class="text-xs text-slate-500 mb-1">총 근로시간</p>
+          <p class="text-2xl font-bold text-slate-700">${(totalRegular + totalOt).toFixed(1)}h</p>
+        </div>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full border-collapse text-sm">
+          <thead><tr>`;
+
+    dayLabels.forEach((lbl, i) => {
+        const cls = i === 0 ? 'text-red-600' : i === 6 ? 'text-blue-600' : 'text-slate-700';
+        html += `<th class="border border-slate-200 p-1 text-center text-xs font-semibold ${cls} bg-slate-50 w-14">${lbl}</th>`;
+    });
+    html += `<th class="border border-slate-200 p-1 text-center text-xs font-semibold text-slate-500 bg-slate-100 w-16">주 계</th>`;
+    html += `</tr></thead><tbody>`;
+
+    for (let rowStart = 0; rowStart < dateEntries.length; rowStart += 7) {
+        const weekEntries = dateEntries.slice(rowStart, rowStart + 7);
+        html += '<tr>';
+        let weekRegular = 0, weekOt = 0;
+
+        weekEntries.forEach(([dateStr, dayData], col) => {
+            const isWeekend = dayData.is_weekend || col === 0 || col === 6;
+            const isOutsideMonth = !dayData.is_current_month;
+            const lt = dayData.leave_type;
+            const leaveBadge = lt ? `<span class="inline-block mt-0.5 px-1 text-xs rounded ${leaveColors[lt] || 'bg-slate-100'}">${lt}</span>` : '';
+            const dayNum = parseInt(dateStr.slice(-2), 10);
+
+            weekRegular += dayData.regular || 0;
+            weekOt += dayData.ot || 0;
+
+            const cellBg = isOutsideMonth
+                ? (isWeekend ? 'bg-slate-100' : 'bg-slate-50')
+                : (isWeekend ? 'bg-slate-100' : 'bg-white hover:bg-blue-50');
+            const dayNumColor = isOutsideMonth
+                ? (col === 0 ? 'text-red-400' : col === 6 ? 'text-blue-400' : 'text-slate-400')
+                : (col === 0 ? 'text-red-600' : col === 6 ? 'text-blue-600' : 'text-slate-700');
+            const regularDisplay = dayData.regular > 0
+                ? `<span class="text-blue-700 font-medium">${dayData.regular.toFixed(1)}h</span>`
+                : '<span class="text-slate-300">-</span>';
+            const otDisplay = dayData.ot > 0
+                ? `<span class="text-orange-500 font-medium">+${dayData.ot.toFixed(1)}h</span>`
+                : '';
+            const mealBadge = dayData.meal_deducted
+                ? `<div class="text-xs text-amber-600 leading-tight">-석식</div>` : '';
+
+            // 야간 근무일(원본 OT > 0)에만 더블클릭 허용
+            const hasRawOt = (days[dateStr]?.ot || 0) > 0;
+            const dblAttr = (!isWeekend && hasRawOt)
+                ? `ondblclick="_toggleMealDeduct('${dateStr}','${containerId}')" style="cursor:pointer" title="더블클릭: 석식 공제 ${dayData.meal_deducted ? '해제' : '적용'}"`
+                : '';
+            const mealRing = dayData.meal_deducted ? ' ring-2 ring-inset ring-amber-300' : '';
+
+            html += `
+            <td class="border border-slate-200 p-1 align-top ${cellBg}${mealRing} h-16 select-none" style="min-width:56px" ${dblAttr}>
+              <div class="text-xs font-semibold ${dayNumColor} mb-0.5">${dayNum}</div>
+              ${leaveBadge}
+              <div class="text-xs leading-tight">${regularDisplay}</div>
+              ${otDisplay ? `<div class="text-xs leading-tight">${otDisplay}</div>` : ''}
+              ${mealBadge}
+            </td>`;
+        });
+
+        // 주 계 열은 인접 월 표시분도 함께 합산
+        const weekTotal = weekRegular + weekOt;
+        html += `
+            <td class="border border-slate-200 p-1 align-middle bg-slate-50 h-16 text-center" style="min-width:56px">
+              <div class="text-xs font-bold text-slate-700">${weekTotal.toFixed(1)}h</div>
+              ${weekOt > 0 ? `<div class="text-xs text-orange-500 mt-0.5">+${weekOt.toFixed(1)}</div>` : ''}
+            </td>`;
+        html += '</tr>';
+    }
+
+    html += `
+        </tbody></table>
+      </div>
+      <p class="text-xs text-slate-400">* 야간 근무일 더블클릭 → 석식 공제(1h) 적용/해제 &nbsp;|&nbsp; 주황 테두리 = 석식 공제 적용</p>
+    </div>`;
+
+    container.innerHTML = html;
+    // innerHTML 이후 상태 복원
+    container._whData = data;
+    container._mealDeductDays = mealDeductDays;
 }
 

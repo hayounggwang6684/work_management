@@ -1044,6 +1044,170 @@ def get_employee_names_for_leave() -> List[str]:
 
 
 @eel.expose
+def get_work_hours_by_month(name: str, year: int, month: int,
+                             meal_deduct: bool = True) -> Dict[str, Any]:
+    """직원 월별 근로 시간 조회 (달력용)
+
+    Args:
+        name: 직원 이름
+        year: 연도
+        month: 월
+        meal_deduct: 석식 공제 여부 (True=17시+근무 시 1시간 공제)
+
+    Returns:
+        {success, name, year, month, days: {YYYY-MM-DD: {regular, ot, leave_type, is_weekend}}}
+    """
+    try:
+        import calendar as _cal
+
+        if not name or not name.strip():
+            return {'success': False, 'message': '직원명을 입력하세요.'}
+        name = name.strip()
+        year = int(year)
+        month = int(month)
+        if not (1 <= month <= 12) or year < 2000:
+            return {'success': False, 'message': '유효하지 않은 연도/월입니다.'}
+
+        import datetime as _dt
+        days_in_month = _cal.monthrange(year, month)[1]
+        first_day = _dt.date(year, month, 1)
+        last_day = _dt.date(year, month, days_in_month)
+        first_day_sunday_index = (first_day.weekday() + 1) % 7
+        last_day_sunday_index = (last_day.weekday() + 1) % 7
+        calendar_start = first_day - _dt.timedelta(days=first_day_sunday_index)
+        calendar_end = last_day + _dt.timedelta(days=(6 - last_day_sunday_index))
+        range_start = calendar_start.strftime('%Y-%m-%d')
+        range_end = calendar_end.strftime('%Y-%m-%d')
+
+        # ── 1. 달력에 표시할 주 범위 전체 휴가 사용 내역 ──
+        leave_rows = db.execute_query(
+            "SELECT use_date, leave_type, days FROM employee_leave_usage "
+            "WHERE employee_name = ? AND use_date BETWEEN ? AND ? ORDER BY use_date",
+            (name, range_start, range_end)
+        ) or []
+        # date → {leave_type, days}
+        leave_map: Dict[str, Any] = {}
+        for row in leave_rows:
+            d, lt, dy = row[0], row[1], float(row[2]) if row[2] else 1.0
+            if d not in leave_map:
+                leave_map[d] = {'leave_type': lt, 'days': dy}
+
+        # ── 2. 달력에 표시할 주 범위 전체 야간 근무 레코드 (work_type='night') ──
+        night_rows = db.execute_query(
+            "SELECT date, end_time FROM work_records "
+            "WHERE work_type = 'night' AND date BETWEEN ? AND ? "
+            "AND (leader LIKE ? OR teammates LIKE ?) "
+            "ORDER BY date",
+            (range_start, range_end, f'%{name}%', f'%{name}%')
+        ) or []
+        # date → max end_time (한 날에 여러 레코드 가능)
+        night_map: Dict[str, str] = {}
+        for row in night_rows:
+            d, et = row[0], row[1] or ''
+            if d not in night_map or et > night_map[d]:
+                night_map[d] = et
+
+        # ── 3. 달력에 표시할 주 범위 전체 휴일 근무 (holiday_work_entries) ──
+        holiday_ot_map: Dict[str, float] = {}  # date → OT hours
+        try:
+            # 해당 주 범위에 걸친 금/토/일을 모두 포함하도록 period_key 후보를 넉넉히 수집
+            check_start = calendar_start - _dt.timedelta(days=6)
+            check_end = calendar_end + _dt.timedelta(days=6)
+            candidate_fridays = []
+            d = check_start
+            while d <= check_end:
+                if d.weekday() == 4:  # 금요일
+                    candidate_fridays.append(d.strftime('%Y-%m-%d'))
+                d += _dt.timedelta(days=1)
+
+            for fri_key in candidate_fridays:
+                hrows = db.execute_query(
+                    "SELECT name, fri_work, sat_work, sun_work "
+                    "FROM holiday_work_entries WHERE period_key = ?",
+                    (fri_key,)
+                ) or []
+                for hr in hrows:
+                    hname, fw, sw, sunw = hr[0], hr[1] or '-', hr[2] or '-', hr[3] or '-'
+                    if hname != name:
+                        continue
+                    # 금요일 = fri_key, 토=+1, 일=+2
+                    fri_dt = _dt.date.fromisoformat(fri_key)
+                    for offset, val in [(0, fw), (1, sw), (2, sunw)]:
+                        work_date = fri_dt + _dt.timedelta(days=offset)
+                        if not (calendar_start <= work_date <= calendar_end):
+                            continue
+                        if val and val != '-':
+                            ds = work_date.strftime('%Y-%m-%d')
+                            holiday_ot_map[ds] = holiday_ot_map.get(ds, 0.0) + 8.0
+        except Exception as he:
+            logger.warning(f"휴일 근무 조회 오류 (무시): {he}")
+
+        # ── OT 계산 헬퍼 ──
+        def _parse_ot(end_time: str) -> float:
+            """end_time 문자열(HH:MM)에서 17:00 기준 OT 시간 계산"""
+            try:
+                parts = end_time.strip().split(':')
+                h, m = int(parts[0]), int(parts[1]) if len(parts) > 1 else 0
+                total_min = h * 60 + m
+                ot_min = total_min - 17 * 60  # 17:00 이후
+                if ot_min <= 0:
+                    return 0.0
+                ot_hours = ot_min / 60.0
+                if meal_deduct:
+                    ot_hours = max(0.0, ot_hours - 1.0)  # 석식 1시간 공제
+                return round(ot_hours, 2)
+            except Exception:
+                return 0.0
+
+        # ── 일별 계산 ──
+        result_days: Dict[str, Any] = {}
+        current_day = calendar_start
+        while current_day <= calendar_end:
+            date_str = current_day.strftime('%Y-%m-%d')
+            wd = current_day.weekday()  # 0=월, 6=일
+            is_weekend = wd >= 5  # 토(5), 일(6)
+
+            leave_info = leave_map.get(date_str)
+            leave_type = leave_info['leave_type'] if leave_info else None
+
+            if is_weekend:
+                regular = 0.0
+            elif leave_type == '연차':
+                regular = max(0.0, 8.0 - 8.0 * leave_info['days'])
+            elif leave_type == '반차':
+                regular = 4.0
+            else:
+                regular = 8.0
+
+            ot = 0.0
+            if date_str in night_map:
+                ot += _parse_ot(night_map[date_str])
+            if date_str in holiday_ot_map:
+                ot += holiday_ot_map[date_str]
+
+            result_days[date_str] = {
+                'regular': regular,
+                'ot': round(ot, 2),
+                'leave_type': leave_type,
+                'is_weekend': is_weekend,
+                'is_current_month': current_day.month == month
+            }
+            current_day += _dt.timedelta(days=1)
+
+        return {
+            'success': True,
+            'name': name,
+            'year': year,
+            'month': month,
+            'meal_deduct': meal_deduct,
+            'days': result_days
+        }
+    except Exception as e:
+        logger.error(f"근로 시간 조회 오류: {e}")
+        return {'success': False, 'message': '요청 처리 중 오류가 발생했습니다.'}
+
+
+@eel.expose
 def search_records_by_ship(ship_name: str) -> List[Dict[str, Any]]:
     """선명으로 작업 내역 조회"""
     try:
@@ -1092,13 +1256,12 @@ def search_records_by_company(company_name: str) -> List[Dict[str, Any]]:
             return []
 
         name = company_name.strip()
+        # work_content 필터 제거 — 야간(work_type='night') 레코드도 포함
         query = '''
             SELECT date, company, ship_name, engine_model, work_content,
-                   leader, manpower, teammates
+                   leader, manpower, teammates, work_type
             FROM work_records
             WHERE (teammates LIKE ? OR teammates LIKE ?)
-            AND work_content IS NOT NULL
-            AND work_content != ''
             ORDER BY date, record_number
         '''
         params = (f'%{name}(%', f'%{name}[%')
@@ -1117,7 +1280,8 @@ def search_records_by_company(company_name: str) -> List[Dict[str, Any]]:
                 'work_content': row[4] or '',
                 'leader': row[5] or '',
                 'manpower': float(row[6]) if row[6] else 0.0,
-                'teammates': row[7] or ''
+                'teammates': row[7] or '',
+                'work_type': row[8] or 'day'
             })
 
         return records

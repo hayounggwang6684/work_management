@@ -413,6 +413,8 @@
                                 class="px-6 py-2 rounded-lg bg-blue-600 text-white font-semibold">연차 관리</button>
                         <button onclick="showEmployeeTab('leaveReport')" id="btnEmployeeLeaveReport"
                                 class="px-6 py-2 rounded-lg bg-white text-slate-600 font-semibold border border-slate-300 hover:bg-slate-50 hidden">월별 보고</button>
+                        <button onclick="showEmployeeTab('workhours')" id="btnEmployeeWorkHours"
+                                class="px-6 py-2 rounded-lg bg-white text-slate-600 font-semibold border border-slate-300 hover:bg-slate-50">근로 시간 관리</button>
                     </div>
 
                     <!-- 연차 관리 탭 패널 -->
@@ -455,6 +457,26 @@
                         </div>
                         <div id="leaveReportTableContainer" class="overflow-x-auto">
                             <p class="text-slate-400 text-sm">연도를 선택하고 조회 버튼을 클릭하세요.</p>
+                        </div>
+                    </div>
+
+                    <!-- 근로 시간 관리 탭 패널 -->
+                    <div id="employeeWorkHoursTab" class="hidden">
+                        <h2 class="text-2xl font-bold mb-4">근로 시간 관리</h2>
+                        <div class="flex gap-2 mb-6 items-center flex-wrap">
+                            <label class="font-semibold text-slate-700">직원명:</label>
+                            <select id="workHoursEmployeeInput"
+                                    class="px-4 py-2 border rounded-lg w-40">
+                                <option value="">직원 선택</option>
+                            </select>
+                            <select id="workHoursYear" class="px-3 py-2 border rounded-lg text-sm"></select>
+                            <select id="workHoursMonth" class="px-3 py-2 border rounded-lg text-sm"></select>
+                        </div>
+                        <div class="mb-2 text-xs text-slate-400">
+                            * 정규: 기본 8h (연차 -8h / 반차 -4h 적용) &nbsp;|&nbsp; 연장: 17시 이후 야간·휴일 근무 &nbsp;|&nbsp; 야간 근무일 더블클릭 → 석식 공제(1h) 적용/해제
+                        </div>
+                        <div id="workHoursResult">
+                            <p class="text-slate-400">직원명과 월을 선택하면 자동으로 조회됩니다.</p>
                         </div>
                     </div>
                 </div>
