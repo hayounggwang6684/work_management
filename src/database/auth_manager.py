@@ -824,7 +824,8 @@ class AuthManager:
             logger.info(f"자동 로그인 토큰 검증 성공: {uid}")
             return {'user_id': uid, 'full_name': full_name, 'role': role,
                     'tray_mode': tray_mode, 'leave_report_edit': leave_report_edit,
-                    'can_write': can_write, 'erp_input': erp_input}
+                    'can_write': can_write, 'erp_input': erp_input,
+                    'client_version': user.get('client_version', '')}
         except Exception as e:
             logger.error(f"Remember token 검증 실패: {e}")
             return None

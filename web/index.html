@@ -1362,14 +1362,21 @@
 
                 <div id="adminDbOwnersSubtab" class="hidden">
                     <div class="mb-4 flex items-center justify-between">
-                        <p class="text-sm text-slate-500">지금까지 기록된 선사를 오름차순으로 보여주고, 선택한 선사의 선박과 장비를 오른쪽에 표시합니다.</p>
+                        <p class="text-sm text-slate-500">지금까지 기록된 선사를 오름차순으로 보여주고, 선택한 선사의 선박과 장비를 오른쪽에 표시합니다. `Ctrl` 선택 후 우클릭으로 선사명을 병합할 수 있습니다.</p>
                         <button onclick="loadAdminOwnerCompanyCatalog(true)"
                                 class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 rounded text-sm">새로고침</button>
                     </div>
                     <div class="grid grid-cols-12 gap-4">
-                        <div class="col-span-4 border rounded-xl bg-slate-50 min-h-[420px]">
+                        <div class="col-span-4 border rounded-xl bg-slate-50 min-h-[420px] relative">
                             <div class="px-4 py-3 border-b bg-white rounded-t-xl font-semibold">선사 목록</div>
                             <div id="adminOwnerCompanyList" class="max-h-[520px] overflow-y-auto p-2 space-y-2"></div>
+                            <div id="adminOwnerCompanyContextMenu"
+                                 class="hidden absolute z-50 bg-white border border-slate-200 rounded-lg shadow-xl py-1 min-w-[140px]">
+                                <button onclick="promptMergeSelectedOwnerCompanies()"
+                                        class="w-full text-left px-4 py-2 text-sm hover:bg-slate-100">
+                                    병합
+                                </button>
+                            </div>
                         </div>
                         <div class="col-span-8 border rounded-xl bg-white min-h-[420px]">
                             <div class="px-4 py-3 border-b font-semibold">선박 / 장비</div>
@@ -1574,6 +1581,23 @@
                         class="px-4 py-2 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 text-sm">취소</button>
                 <button onclick="confirmAddLeaveRow()"
                         class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-semibold">추가</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 패치 노트 모달 -->
+    <div id="patchNotesModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60] p-4">
+        <div class="bg-white rounded-2xl shadow-2xl p-8 max-w-2xl w-full">
+            <div class="text-center mb-6">
+                <div class="text-5xl mb-3">📝</div>
+                <h2 class="text-2xl font-bold text-slate-800">패치 노트</h2>
+                <p id="patchNotesVersionRange" class="text-sm text-slate-500 mt-2"></p>
+            </div>
+            <div id="patchNotesSummary" class="bg-slate-50 p-4 rounded-lg max-h-72 overflow-y-auto text-sm text-slate-700 space-y-2"></div>
+            <div class="mt-6 flex justify-end">
+                <button onclick="closePatchNotesModal()" class="px-5 py-2.5 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700">
+                    확인
+                </button>
             </div>
         </div>
     </div>

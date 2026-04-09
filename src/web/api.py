@@ -123,6 +123,7 @@ def authenticate(user_id: str, password: str) -> Dict[str, Any]:
                 'user_id': result['user_id'],
                 'full_name': result['full_name'],
                 'role': result['role'],
+                'client_version': result.get('client_version', ''),
                 'tray_mode': bool(result.get('tray_mode', 0)),
                 'leave_report_edit': bool(result.get('leave_report_edit', 0)),
                 'can_write': bool(result.get('can_write', 0)),
@@ -653,6 +654,98 @@ def admin_merge_vendor_workers(vendor_company: str, source_names: List[str],
     except Exception as e:
         logger.error(f"외주 직원 병합 오류: {e}")
         return {'success': False, 'message': '외주 직원 병합 중 오류가 발생했습니다.'}
+
+
+@eel.expose
+def admin_merge_owner_companies(source_names: List[str], target_name: str,
+                                admin_id: str = '') -> Dict[str, Any]:
+    """중복 선사명을 하나의 대표 이름으로 병합"""
+    try:
+        if not _get_admin_user(admin_id):
+            return {'success': False, 'message': '관리자 권한이 필요합니다.'}
+
+        target_display = str(target_name or '').strip()
+        normalized_sources = sorted({
+            _normalize_holiday_worker_name(name)
+            for name in (source_names or [])
+            if _normalize_holiday_worker_name(name)
+        })
+        source_keys = {_normalize_company_label(name) for name in normalized_sources}
+
+        if len(normalized_sources) < 2:
+            return {'success': False, 'message': '병합할 선사를 2개 이상 선택하세요.'}
+        if not target_display:
+            return {'success': False, 'message': '대표 선사명을 입력하세요.'}
+
+        now = datetime.now().isoformat()
+        work_updates = 0
+        project_updates = 0
+        holiday_updates = 0
+
+        with db.get_connection() as conn:
+            cursor = conn.cursor()
+
+            work_rows = cursor.execute('''
+                SELECT id, company
+                FROM work_records
+                WHERE company IS NOT NULL AND company != ''
+            ''').fetchall()
+            for row in work_rows:
+                if _normalize_company_label(row['company'] or '') not in source_keys:
+                    continue
+                cursor.execute('''
+                    UPDATE work_records
+                    SET company = ?, updated_at = ?
+                    WHERE id = ?
+                ''', (target_display, now, row['id']))
+                work_updates += 1
+
+            board_rows = cursor.execute('''
+                SELECT id, company
+                FROM board_projects
+                WHERE company IS NOT NULL AND company != ''
+            ''').fetchall()
+            for row in board_rows:
+                if _normalize_company_label(row['company'] or '') not in source_keys:
+                    continue
+                cursor.execute('''
+                    UPDATE board_projects
+                    SET company = ?, updated_at = ?
+                    WHERE id = ?
+                ''', (target_display, now, row['id']))
+                project_updates += 1
+
+            holiday_rows = cursor.execute('''
+                SELECT id, owner_company
+                FROM holiday_work_entries
+                WHERE owner_company IS NOT NULL AND owner_company != ''
+            ''').fetchall()
+            for row in holiday_rows:
+                if _normalize_company_label(row['owner_company'] or '') not in source_keys:
+                    continue
+                cursor.execute('''
+                    UPDATE holiday_work_entries
+                    SET owner_company = ?, updated_at = ?
+                    WHERE id = ?
+                ''', (target_display, now, row['id']))
+                holiday_updates += 1
+
+        db.add_activity_log(
+            admin_id,
+            'merge_owner_companies',
+            target_display,
+            f"{', '.join(normalized_sources)} -> {target_display} (work={work_updates}, project={project_updates}, holiday={holiday_updates})"
+        )
+        return {
+            'success': True,
+            'message': f'병합 완료: 작업 {work_updates}건, 등록 {project_updates}건, 휴일 {holiday_updates}건 수정',
+            'workUpdates': work_updates,
+            'projectUpdates': project_updates,
+            'holidayUpdates': holiday_updates,
+        }
+    except Exception as e:
+        logger.error(f"선사 병합 오류: {e}")
+        return {'success': False, 'message': '선사 병합 중 오류가 발생했습니다.'}
 
 
 @eel.expose
@@ -3671,6 +3764,124 @@ def get_release_notes_for_version(version_tag: str) -> Dict[str, Any]:
             'success': False,
             'error': '요청 처리 중 오류가 발생했습니다.'
         }
+
+
+def _normalize_patch_note_line(text: str) -> str:
+    """릴리즈 노트 중복 제거용 정규화 문자열 생성."""
+    if not text:
+        return ''
+    return ''.join(ch.casefold() for ch in str(text) if ch.isalnum())
+
+
+def _extract_compact_patch_note_lines(body: str) -> List[str]:
+    """릴리즈 본문에서 간단 패치 노트 줄만 추출."""
+    if not body:
+        return []
+
+    summary_lines: List[str] = []
+    seen: set[str] = set()
+
+    for raw_line in re.split(r'[\r\n]+', str(body)):
+        line = str(raw_line or '').strip()
+        if not line:
+            continue
+
+        line = re.sub(r'^\s{0,3}(?:[-*+]|\d+\.)\s*', '', line)
+        line = re.sub(r'^#{1,6}\s*', '', line)
+        line = re.sub(r'`+', '', line).strip(' -:\t')
+        if not line:
+            continue
+        if re.fullmatch(r'v?\d+(?:\.\d+){1,3}', line, re.IGNORECASE):
+            continue
+
+        normalized = _normalize_patch_note_line(line)
+        if len(normalized) < 4 or normalized in seen:
+            continue
+
+        seen.add(normalized)
+        summary_lines.append(line)
+
+        if len(summary_lines) >= 8:
+            break
+
+    return summary_lines
+
+
+@eel.expose
+def get_compact_patch_notes(from_version: str, to_version: str = '') -> Dict[str, Any]:
+    """버전 범위의 릴리즈 노트를 간략 요약으로 반환"""
+    try:
+        from packaging import version as pkg_version
+
+        start_ver = str(from_version or '').strip().lstrip('v')
+        end_ver = str(to_version or config.version or '').strip().lstrip('v')
+        if not end_ver:
+            return {'success': False, 'message': '현재 버전을 확인할 수 없습니다.'}
+
+        try:
+            end_parsed = pkg_version.parse(end_ver)
+            start_parsed = pkg_version.parse(start_ver) if start_ver else None
+        except Exception:
+            return {'success': False, 'message': '버전 형식이 올바르지 않습니다.'}
+
+        page = 1
+        matched = []
+        while page <= 5:
+            releases = update_manager.get_all_releases(page=page, per_page=50) or []
+            if not releases:
+                break
+            stop_scan = False
+            for release in releases:
+                tag_name = str(release.get('tag_name') or '').strip()
+                if not tag_name:
+                    continue
+                try:
+                    release_ver = pkg_version.parse(tag_name.lstrip('v'))
+                except Exception:
+                    continue
+                if release_ver > end_parsed:
+                    continue
+                if start_parsed and release_ver <= start_parsed:
+                    stop_scan = True
+                    continue
+                matched.append({
+                    'tag': tag_name,
+                    'version': str(release_ver),
+                    'body': str(release.get('body') or '').strip(),
+                })
+            if stop_scan or len(releases) < 50:
+                break
+            page += 1
+
+        matched.sort(key=lambda item: pkg_version.parse(item['version']))
+
+        summary_lines = []
+        summary_seen = set()
+        for item in matched:
+            for line in _extract_compact_patch_note_lines(item['body']):
+                normalized = _normalize_patch_note_line(line)
+                if not normalized or normalized in summary_seen:
+                    continue
+                summary_seen.add(normalized)
+                summary_lines.append(line)
+                if len(summary_lines) >= 8:
+                    break
+            if len(summary_lines) >= 8:
+                break
+
+        if not summary_lines:
+            summary_lines = ['기능 개선 및 안정화 패치가 적용되었습니다.']
+
+        return {
+            'success': True,
+            'fromVersion': start_ver,
+            'toVersion': end_ver,
+            'versions': [item['tag'] for item in matched],
+            'notes': summary_lines,
+        }
+    except Exception as e:
+        logger.error(f"패치 노트 요약 조회 오류: {e}")
+        return {'success': False, 'message': '패치 노트를 불러오는 중 오류가 발생했습니다.'}
 
 
 # ============================================================================

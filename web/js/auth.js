@@ -350,6 +350,7 @@ const _adminDbState = {
     subtab: 'excel',
     owners: [],
     selectedOwner: '',
+    selectedOwners: new Set(),
     vendors: [],
     selectedVendor: '',
     selectedVendorWorkers: new Set(),
@@ -396,6 +397,7 @@ function showAdminDbSubtab(tab) {
         }
         if (panel) panel.classList.toggle('hidden', key !== tab);
     });
+    closeAdminOwnerCompanyContextMenu();
     closeAdminVendorWorkerContextMenu();
     if (tab === 'owners') loadAdminOwnerCompanyCatalog();
     if (tab === 'vendors') loadAdminVendorCompanyCatalog();
@@ -420,12 +422,19 @@ async function loadAdminOwnerCompanyCatalog(force = false) {
         if (_adminDbState.selectedOwner && !_adminDbState.owners.some(o => o.name === _adminDbState.selectedOwner)) {
             _adminDbState.selectedOwner = _adminDbState.owners[0]?.name || '';
         }
+        _adminDbState.selectedOwners = new Set(
+            [..._adminDbState.selectedOwners].filter(name => _adminDbState.owners.some(o => o.name === name))
+        );
+        if (_adminDbState.selectedOwners.size === 0 && _adminDbState.selectedOwner) {
+            _adminDbState.selectedOwners = new Set([_adminDbState.selectedOwner]);
+        }
         renderAdminOwnerCompanyList();
     } catch (error) {
         console.error('선사 목록 로드 오류:', error);
         showCustomAlert('오류', '선사 목록을 불러오지 못했습니다.', 'error');
     }
 }
+window.loadAdminOwnerCompanyCatalog = loadAdminOwnerCompanyCatalog;
 
 function renderAdminOwnerCompanyList() {
     const listEl = document.getElementById('adminOwnerCompanyList');
@@ -440,9 +449,11 @@ function renderAdminOwnerCompanyList() {
 
     listEl.innerHTML = _adminDbState.owners.map(owner => {
         const active = owner.name === _adminDbState.selectedOwner;
+        const selected = _adminDbState.selectedOwners.has(owner.name);
         return `
-            <button onclick="selectAdminOwnerCompany('${escapeJs(owner.name)}')"
-                    class="w-full text-left rounded-lg border px-3 py-3 transition ${active ? 'bg-blue-50 border-blue-300 text-blue-700' : 'bg-white hover:bg-slate-100 border-slate-200'}">
+            <button onclick="handleAdminOwnerCompanyClick('${escapeJs(owner.name)}', event)"
+                    oncontextmenu="handleAdminOwnerCompanyContextMenu('${escapeJs(owner.name)}', event)"
+                    class="w-full text-left rounded-lg border px-3 py-3 transition ${(active || selected) ? 'bg-blue-50 border-blue-300 text-blue-700' : 'bg-white hover:bg-slate-100 border-slate-200'}">
                 <div class="font-semibold">${escapeHtml(owner.name)}</div>
                 <div class="text-xs text-slate-500 mt-1">선박 ${owner.shipCount}척 · 작업 ${owner.workRecordCount + owner.holidayCount}건 · 등록 ${owner.projectCount}건</div>
             </button>`;
@@ -479,9 +490,89 @@ function renderAdminOwnerCompanyList() {
 
 function selectAdminOwnerCompany(ownerName) {
     _adminDbState.selectedOwner = ownerName;
+    _adminDbState.selectedOwners = new Set([ownerName]);
     renderAdminOwnerCompanyList();
 }
 window.selectAdminOwnerCompany = selectAdminOwnerCompany;
+
+function handleAdminOwnerCompanyClick(ownerName, event) {
+    closeAdminOwnerCompanyContextMenu();
+    const multi = !!(event && (event.ctrlKey || event.metaKey));
+    _adminDbState.selectedOwner = ownerName;
+    if (multi) {
+        if (_adminDbState.selectedOwners.has(ownerName)) _adminDbState.selectedOwners.delete(ownerName);
+        else _adminDbState.selectedOwners.add(ownerName);
+        if (_adminDbState.selectedOwners.size === 0) {
+            _adminDbState.selectedOwners = new Set([ownerName]);
+        }
+    } else {
+        _adminDbState.selectedOwners = new Set([ownerName]);
+    }
+    renderAdminOwnerCompanyList();
+}
+window.handleAdminOwnerCompanyClick = handleAdminOwnerCompanyClick;
+
+function handleAdminOwnerCompanyContextMenu(ownerName, event) {
+    event.preventDefault();
+    _adminDbState.selectedOwner = ownerName;
+    if (!_adminDbState.selectedOwners.has(ownerName)) {
+        _adminDbState.selectedOwners = new Set([ownerName]);
+        renderAdminOwnerCompanyList();
+    }
+    if (_adminDbState.selectedOwners.size < 2) {
+        closeAdminOwnerCompanyContextMenu();
+        return;
+    }
+    const menu = document.getElementById('adminOwnerCompanyContextMenu');
+    if (!menu) return;
+    const parentRect = menu.parentElement?.getBoundingClientRect();
+    const offsetX = parentRect ? event.clientX - parentRect.left : event.clientX;
+    const offsetY = parentRect ? event.clientY - parentRect.top : event.clientY;
+    menu.style.left = `${offsetX}px`;
+    menu.style.top = `${offsetY}px`;
+    menu.classList.remove('hidden');
+}
+window.handleAdminOwnerCompanyContextMenu = handleAdminOwnerCompanyContextMenu;
+
+function closeAdminOwnerCompanyContextMenu() {
+    document.getElementById('adminOwnerCompanyContextMenu')?.classList.add('hidden');
+}
+window.closeAdminOwnerCompanyContextMenu = closeAdminOwnerCompanyContextMenu;
+
+async function promptMergeSelectedOwnerCompanies() {
+    closeAdminOwnerCompanyContextMenu();
+    const selected = [..._adminDbState.selectedOwners];
+    if (selected.length < 2) {
+        showToast('병합할 선사를 2개 이상 선택하세요.', 'warning');
+        return;
+    }
+    const targetName = prompt(
+        `대표 선사명을 입력하세요.\n\n선택: ${selected.join(', ')}`,
+        _adminDbState.selectedOwner || selected[0]
+    );
+    if (!targetName || !targetName.trim()) return;
+    if (!confirm(`"${selected.join(', ')}" 을(를) "${targetName.trim()}" 으로 병합하시겠습니까?`)) return;
+
+    try {
+        const result = await eel.admin_merge_owner_companies(
+            selected,
+            targetName.trim(),
+            currentUser?.user_id || ''
+        )();
+        if (!result || !result.success) {
+            showCustomAlert('오류', result?.message || '선사 병합에 실패했습니다.', 'error');
+            return;
+        }
+        showToast(result.message || '선사 병합이 완료되었습니다.', 'success');
+        _adminDbState.selectedOwner = targetName.trim();
+        _adminDbState.selectedOwners = new Set([targetName.trim()]);
+        await loadAdminOwnerCompanyCatalog(true);
+    } catch (error) {
+        console.error('선사 병합 오류:', error);
+        showCustomAlert('오류', '선사 병합 중 오류가 발생했습니다.', 'error');
+    }
+}
+window.promptMergeSelectedOwnerCompanies = promptMergeSelectedOwnerCompanies;
 
 async function loadAdminVendorCompanyCatalog(force = false) {
     if (!force && _adminDbState.vendors.length > 0) {
@@ -508,6 +599,7 @@ async function loadAdminVendorCompanyCatalog(force = false) {
         showCustomAlert('오류', '외주 목록을 불러오지 못했습니다.', 'error');
     }
 }
+window.loadAdminVendorCompanyCatalog = loadAdminVendorCompanyCatalog;
 
 function renderAdminVendorCompanyList() {
     const listEl = document.getElementById('adminVendorCompanyList');
@@ -643,6 +735,10 @@ async function promptMergeSelectedVendorWorkers() {
 window.promptMergeSelectedVendorWorkers = promptMergeSelectedVendorWorkers;
 
 document.addEventListener('click', (event) => {
+    const ownerMenu = document.getElementById('adminOwnerCompanyContextMenu');
+    if (ownerMenu && !ownerMenu.classList.contains('hidden')) {
+        if (!ownerMenu.contains(event.target)) closeAdminOwnerCompanyContextMenu();
+    }
     const menu = document.getElementById('adminVendorWorkerContextMenu');
     if (!menu || menu.classList.contains('hidden')) return;
     if (menu.contains(event.target)) return;
@@ -650,7 +746,10 @@ document.addEventListener('click', (event) => {
 });
 
 document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape') closeAdminVendorWorkerContextMenu();
+    if (event.key === 'Escape') {
+        closeAdminOwnerCompanyContextMenu();
+        closeAdminVendorWorkerContextMenu();
+    }
 });
 
 async function loadAdminData() {
@@ -1379,6 +1478,21 @@ async function clearAllRecords() {
 // ============================================================================
 
 async function notifyLoginSuccess() {
+    let appInfo = null;
+    try {
+        appInfo = await eel.get_app_info()();
+    } catch(_) {}
+
+    try {
+        if (appInfo && appInfo.version && currentUser) {
+            eel.update_client_version(currentUser.user_id, appInfo.version)();
+        }
+    } catch(_) { console.warn('클라이언트 버전 등록 실패'); }
+
+    try {
+        await maybeShowVersionPatchNotes(appInfo?.version || '');
+    } catch(_) { console.warn('패치 노트 표시 실패'); }
+
     try {
         // 시작 시 자동 적용된 패치 결과 확인
         const patchResult = await eel.get_startup_patch_result()();
@@ -1406,13 +1520,6 @@ async function notifyLoginSuccess() {
         setTimeout(loadNotifications, 2000);
     }
 
-    // v1.8.6: 클라이언트 버전 서버 등록 + JS 전역 오류 핸들러 활성화
-    try {
-        const info = await eel.get_app_info()();
-        if (info && info.version && currentUser) {
-            eel.update_client_version(currentUser.user_id, info.version)();
-        }
-    } catch(_) { console.warn('클라이언트 버전 등록 실패'); }
     window._errorReporterEnabled = true;
     if (typeof startAutoSave === 'function') startAutoSave();
 
@@ -1436,6 +1543,78 @@ async function notifyLoginSuccess() {
     try {
         await maybeShowMorningRecordReminder();
     } catch(_) { console.warn('아침 기록 팝업 표시 실패'); }
+}
+
+function closePatchNotesModal() {
+    document.getElementById('patchNotesModal')?.classList.add('hidden');
+    if (window._patchNotesResolver) {
+        const resolver = window._patchNotesResolver;
+        window._patchNotesResolver = null;
+        resolver();
+    }
+}
+window.closePatchNotesModal = closePatchNotesModal;
+
+function showPatchNotesModal(data) {
+    const modal = document.getElementById('patchNotesModal');
+    const rangeEl = document.getElementById('patchNotesVersionRange');
+    const notesEl = document.getElementById('patchNotesSummary');
+    if (!modal || !rangeEl || !notesEl) return Promise.resolve();
+
+    const versions = Array.isArray(data?.versions) ? data.versions : [];
+    const notes = Array.isArray(data?.notes) ? data.notes : [];
+    rangeEl.textContent = versions.length > 0
+        ? `${versions.join(', ')} 반영`
+        : `v${data?.fromVersion || ''} → v${data?.toVersion || ''}`;
+    notesEl.innerHTML = notes.map(note => `
+        <div class="flex items-start gap-2">
+            <span class="text-blue-600 mt-0.5">•</span>
+            <span>${escapeHtml(note)}</span>
+        </div>
+    `).join('');
+
+    modal.classList.remove('hidden');
+    return new Promise(resolve => {
+        window._patchNotesResolver = resolve;
+    });
+}
+
+async function maybeShowVersionPatchNotes(currentVersion) {
+    if (!currentUser || currentUser.role === 'admin') return;
+    const versionText = String(currentVersion || '').trim();
+    if (!versionText) return;
+
+    const storageKey = `seen-app-version:${currentUser.user_id}`;
+    const previousVersion = localStorage.getItem(storageKey)
+        || String(currentUser.client_version || '').trim()
+        || '';
+    if (!previousVersion) {
+        localStorage.setItem(storageKey, versionText);
+        currentUser.client_version = versionText;
+        return;
+    }
+    if (previousVersion === versionText) {
+        currentUser.client_version = versionText;
+        return;
+    }
+
+    let notesResult = null;
+    try {
+        notesResult = await eel.get_compact_patch_notes(previousVersion, versionText)();
+    } catch (_) { /* ignore */ }
+
+    const payload = notesResult && notesResult.success
+        ? notesResult
+        : {
+            fromVersion: previousVersion,
+            toVersion: versionText,
+            versions: [`v${versionText}`],
+            notes: ['기능 개선 및 안정화 패치가 적용되었습니다.'],
+        };
+
+    await showPatchNotesModal(payload);
+    localStorage.setItem(storageKey, versionText);
+    currentUser.client_version = versionText;
 }
 
 function _formatDateKey(date) {
