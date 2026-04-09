@@ -400,6 +400,7 @@ function showAdminDbSubtab(tab) {
     if (tab === 'owners') loadAdminOwnerCompanyCatalog();
     if (tab === 'vendors') loadAdminVendorCompanyCatalog();
 }
+window.showAdminDbSubtab = showAdminDbSubtab;
 
 async function loadAdminOwnerCompanyCatalog(force = false) {
     if (!force && _adminDbState.owners.length > 0) {
@@ -480,6 +481,7 @@ function selectAdminOwnerCompany(ownerName) {
     _adminDbState.selectedOwner = ownerName;
     renderAdminOwnerCompanyList();
 }
+window.selectAdminOwnerCompany = selectAdminOwnerCompany;
 
 async function loadAdminVendorCompanyCatalog(force = false) {
     if (!force && _adminDbState.vendors.length > 0) {
@@ -564,6 +566,7 @@ function selectAdminVendorCompany(vendorName) {
     closeAdminVendorWorkerContextMenu();
     renderAdminVendorCompanyList();
 }
+window.selectAdminVendorCompany = selectAdminVendorCompany;
 
 function handleAdminVendorWorkerClick(workerName, event) {
     closeAdminVendorWorkerContextMenu();
@@ -576,6 +579,7 @@ function handleAdminVendorWorkerClick(workerName, event) {
     }
     renderAdminVendorCompanyList();
 }
+window.handleAdminVendorWorkerClick = handleAdminVendorWorkerClick;
 
 function handleAdminVendorWorkerContextMenu(workerName, event) {
     event.preventDefault();
@@ -596,10 +600,12 @@ function handleAdminVendorWorkerContextMenu(workerName, event) {
     menu.style.top = `${offsetY}px`;
     menu.classList.remove('hidden');
 }
+window.handleAdminVendorWorkerContextMenu = handleAdminVendorWorkerContextMenu;
 
 function closeAdminVendorWorkerContextMenu() {
     document.getElementById('adminVendorWorkerContextMenu')?.classList.add('hidden');
 }
+window.closeAdminVendorWorkerContextMenu = closeAdminVendorWorkerContextMenu;
 
 async function promptMergeSelectedVendorWorkers() {
     closeAdminVendorWorkerContextMenu();
@@ -634,6 +640,7 @@ async function promptMergeSelectedVendorWorkers() {
         showCustomAlert('오류', '외주 직원 병합 중 오류가 발생했습니다.', 'error');
     }
 }
+window.promptMergeSelectedVendorWorkers = promptMergeSelectedVendorWorkers;
 
 document.addEventListener('click', (event) => {
     const menu = document.getElementById('adminVendorWorkerContextMenu');
