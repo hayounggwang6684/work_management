@@ -12,7 +12,7 @@ let nightIsDirty = false;
 let _isSaving = false;  // 중복 저장 방지 플래그
 let _autoSaveTimer = null;  // 자동 저장 타이머 핸들
 let _dateLoadedAt = null; // 현재 날짜 데이터 로드 시각 (충돌 감지용)
-let _searchSortState = { records: [], container: null, term: '', type: '', key: 'date', dir: -1 }; // 검색 결과 정렬 상태
+let _searchSortState = { records: [], container: null, term: '', type: '', key: 'date', dir: -1, summary: null }; // 검색 결과 정렬 상태
 
 // 아카이브 달 네비게이션 상태
 let _archiveAllData = [];
@@ -24,6 +24,7 @@ let _companySearchRecords = [];
 let _companySearchName    = '';
 let _companySearchMonths  = []; // 정렬된 YYYY-MM 배열
 let _companySearchMonthIdx = 0;
+let _companySearchSummary = null;
 
 // 한글→영문 변환 매핑
 const koreanToEnglish = {
@@ -2352,6 +2353,10 @@ document.addEventListener('DOMContentLoaded', function() {
     setupContractWheelNavigation();
 });
 
+async function searchRecordsWithOt(searchType, query) {
+    return await eel.search_records_with_ot(searchType, query)();
+}
+
 async function searchByContract() {
     const resultDiv = document.getElementById('statusSearchResult');
     if (!resultDiv) return;
@@ -2364,10 +2369,13 @@ async function searchByContract() {
 
     try {
         showLoading(true, '조회 중...');
-        const records = await eel.search_records_by_contract(contractNumber)();
+        const result = await searchRecordsWithOt('contract', contractNumber);
         showLoading(false);
-
-        renderSearchResults(records, resultDiv, contractNumber, '계약번호');
+        if (!result || !result.success) {
+            showCustomAlert('오류', result?.message || '조회 중 오류가 발생했습니다.', 'error');
+            return;
+        }
+        renderSearchResults(result.records || [], resultDiv, contractNumber, '계약번호', result.summary || null);
     } catch (error) {
         console.error('현황 조회 오류:', error);
         showLoading(false);
@@ -2392,10 +2400,13 @@ async function searchByShipName() {
 
     try {
         showLoading(true, '조회 중...');
-        const records = await eel.search_records_by_ship(shipName)();
+        const result = await searchRecordsWithOt('ship', shipName);
         showLoading(false);
-
-        renderSearchResults(records, resultDiv, shipName, '선명');
+        if (!result || !result.success) {
+            showCustomAlert('오류', result?.message || '조회 중 오류가 발생했습니다.', 'error');
+            return;
+        }
+        renderSearchResults(result.records || [], resultDiv, shipName, '선명', result.summary || null);
     } catch (error) {
         console.error('작업별 조회 오류:', error);
         showLoading(false);
@@ -2420,8 +2431,13 @@ async function searchByCompany() {
 
     try {
         showLoading(true, '조회 중...');
-        const records = await eel.search_records_by_company(companyName)();
+        const result = await searchRecordsWithOt('company', companyName);
         showLoading(false);
+        if (!result || !result.success) {
+            showCustomAlert('오류', result?.message || '조회 중 오류가 발생했습니다.', 'error');
+            return;
+        }
+        const records = result.records || [];
 
         if (!records || records.length === 0) {
             resultDiv.innerHTML = `<p class="text-slate-500">업체 "${escapeHtml(companyName)}"에 대한 작업 내역이 없습니다.</p>`;
@@ -2431,6 +2447,7 @@ async function searchByCompany() {
         // 전역 상태 저장
         _companySearchRecords = records;
         _companySearchName = companyName;
+        _companySearchSummary = result.summary || null;
 
         // 월 목록 추출
         const monthSet = new Set(records.map(r => (r.date || '').substring(0, 7)).filter(k => k));
@@ -2484,6 +2501,10 @@ function renderCompanyMonthView(container) {
 
     const monthManpower = calcCompanyManpower(monthRecords);
     const totalManpower  = calcCompanyManpower(_companySearchRecords);
+    const monthOt = monthRecords.reduce((sum, record) => sum + (parseFloat(record.ot) || 0), 0);
+    const totalOt = (_companySearchSummary && typeof _companySearchSummary.totalOt === 'number')
+        ? _companySearchSummary.totalOt
+        : _companySearchRecords.reduce((sum, record) => sum + (parseFloat(record.ot) || 0), 0);
     const canPrev = _companySearchMonthIdx > 0;
     const canNext = _companySearchMonthIdx < _companySearchMonths.length - 1;
 
@@ -2491,7 +2512,8 @@ function renderCompanyMonthView(container) {
         <div class="mb-2 text-sm text-slate-600">
             <span class="font-semibold">업체: ${escapeHtml(_companySearchName)}</span> |
             전체 <span class="font-semibold text-blue-600">${_companySearchRecords.length}</span>건 /
-            <span class="font-semibold text-blue-600">${totalManpower}</span>공
+            <span class="font-semibold text-blue-600">${totalManpower}</span>공 /
+            총 OT <span class="font-semibold text-orange-500">${totalOt.toFixed(1)}</span>h
         </div>
         <div class="flex items-center gap-3 mb-3">
             <button onclick="moveCompanyMonth(-1)" ${canPrev ? '' : 'disabled'}
@@ -2499,7 +2521,7 @@ function renderCompanyMonthView(container) {
             <span class="font-bold text-slate-700 text-base">${year}년 ${parseInt(month)}월</span>
             <button onclick="moveCompanyMonth(1)" ${canNext ? '' : 'disabled'}
                     class="px-3 py-1 rounded bg-slate-200 hover:bg-slate-300 font-bold disabled:opacity-30 disabled:cursor-not-allowed">▶</button>
-            <span class="text-xs text-slate-500">${monthRecords.length}건, ${monthManpower}공 &nbsp;|&nbsp; ${_companySearchMonthIdx + 1} / ${_companySearchMonths.length}개월</span>
+            <span class="text-xs text-slate-500">${monthRecords.length}건, ${monthManpower}공, OT ${monthOt.toFixed(1)}h &nbsp;|&nbsp; ${_companySearchMonthIdx + 1} / ${_companySearchMonths.length}개월</span>
         </div>`;
 
     if (monthRecords.length === 0) {
@@ -2515,6 +2537,7 @@ function renderCompanyMonthView(container) {
                     <th class="border p-2 text-center w-24">선명</th>
                     <th class="border p-2 text-center w-28">엔진모델</th>
                     <th class="border p-2 text-center">작업내용</th>
+                    <th class="border p-2 text-center w-16">OT</th>
                     <th class="border p-2 text-center w-36">직원</th>
                 </tr>
             </thead>
@@ -2527,18 +2550,28 @@ function renderCompanyMonthView(container) {
                 dateDisplay = `${d.getMonth() + 1}/${d.getDate()}`;
             }
             const workers = extractCompanyWorkers(record.teammates || '', _companySearchName);
-            const workersDisplay = workers.length > 0 ? workers.join(', ') : '-';
-            const workTypeBadge = record.work_type === 'night'
+            const workersDisplay = record.isSynthetic
+                ? (record.leader || '-')
+                : (workers.length > 0 ? workers.join(', ') : '-');
+            const workType = record.workType || record.work_type || 'day';
+            const workTypeBadge = workType === 'night'
                 ? '<span class="text-xs bg-purple-100 text-purple-700 rounded px-1 ml-1">야간</span>'
-                : '';
+                : workType === 'holiday'
+                    ? '<span class="text-xs bg-amber-100 text-amber-700 rounded px-1 ml-1">휴일 OT</span>'
+                    : '';
+            const otDisplay = (parseFloat(record.ot) || 0) > 0
+                ? `<span class="font-semibold text-orange-500">+${(parseFloat(record.ot) || 0).toFixed(1)}h</span>`
+                : '<span class="text-slate-300">-</span>';
+            const rowClass = record.isSynthetic ? 'bg-amber-50 hover:bg-amber-100' : 'hover:bg-blue-50';
 
             html += `
-                <tr class="hover:bg-blue-50">
+                <tr class="${rowClass}">
                     <td class="border p-2 text-center">${escapeHtml(dateDisplay)}${workTypeBadge}</td>
                     <td class="border p-2 text-center">${escapeHtml(record.company || '-')}</td>
                     <td class="border p-2 text-center">${escapeHtml(record.ship_name || '-')}</td>
                     <td class="border p-2 text-center">${escapeHtml(record.engine_model || '-')}</td>
                     <td class="border p-2">${escapeHtml(record.work_content || '-')}</td>
+                    <td class="border p-2 text-center">${otDisplay}</td>
                     <td class="border p-2 text-center">${escapeHtml(workersDisplay)}</td>
                 </tr>`;
         });
@@ -2598,6 +2631,7 @@ function calculateOutsourceManpower(records) {
     const companyMap = {};
 
     records.forEach(record => {
+        if (record.isSynthetic) return;
         const teammates = record.teammates || '';
 
         function addNames(company, namesStr) {
@@ -2635,12 +2669,31 @@ function toggleOutsourceDetail(el, company) {
     if (detail) detail.classList.toggle('hidden');
 }
 
-function renderSearchResults(records, container, searchTerm, searchType) {
+function _getSearchSummary(records, summary = null) {
+    if (summary) return summary;
+    const safeRecords = records || [];
+    const nightOt = round1(safeRecords.filter(r => r.otSource === 'night').reduce((sum, r) => sum + (parseFloat(r.ot) || 0), 0));
+    const holidayOt = round1(safeRecords.filter(r => r.otSource === 'holiday').reduce((sum, r) => sum + (parseFloat(r.ot) || 0), 0));
+    return {
+        totalRecords: safeRecords.length,
+        totalManpower: round1(safeRecords.reduce((sum, r) => sum + (parseFloat(r.manpower) || 0), 0)),
+        totalOt: round1(nightOt + holidayOt),
+        nightOt,
+        holidayOt,
+    };
+}
+
+function round1(value) {
+    return Math.round((value || 0) * 10) / 10;
+}
+
+function renderSearchResults(records, container, searchTerm, searchType, summary = null) {
     // 상태 저장 후 정렬 렌더러에 위임 (기본: 최신순)
     _searchSortState.records   = records;
     _searchSortState.container = container;
     _searchSortState.term      = searchTerm;
     _searchSortState.type      = searchType;
+    _searchSortState.summary   = _getSearchSummary(records, summary);
     _searchSortState.key       = 'date';
     _searchSortState.dir       = -1;
     _renderSortedSearch();
@@ -2651,13 +2704,13 @@ function sortSearchBy(key) {
         _searchSortState.dir *= -1;
     } else {
         _searchSortState.key = key;
-        _searchSortState.dir = (key === 'manpower') ? -1 : 1;
+        _searchSortState.dir = (key === 'manpower' || key === 'ot') ? -1 : 1;
     }
     _renderSortedSearch();
 }
 
 function _renderSortedSearch() {
-    const { records, container, term, type, key, dir } = _searchSortState;
+    const { records, container, term, type, key, dir, summary } = _searchSortState;
     if (!container) return;
 
     if (!records || records.length === 0) {
@@ -2669,7 +2722,7 @@ function _renderSortedSearch() {
     const sorted = [...records].sort((a, b) => {
         const av = a[key] ?? '';
         const bv = b[key] ?? '';
-        if (key === 'manpower') return (parseFloat(av) - parseFloat(bv)) * dir;
+        if (key === 'manpower' || key === 'ot') return ((parseFloat(av) || 0) - (parseFloat(bv) || 0)) * dir;
         return String(av).localeCompare(String(bv), 'ko') * dir;
     });
 
@@ -2677,8 +2730,10 @@ function _renderSortedSearch() {
     const si = (k) => key === k ? (dir === -1 ? ' ▼' : ' ▲') : '';
     const thCls = 'border p-2 text-center cursor-pointer hover:bg-indigo-200 select-none';
 
-    // 총 인원 합계
-    const totalManpower = records.reduce((sum, r) => sum + (r.manpower || 0), 0);
+    const totalManpower = summary?.totalManpower || 0;
+    const totalOt = summary?.totalOt || 0;
+    const nightOt = summary?.nightOt || 0;
+    const holidayOt = summary?.holidayOt || 0;
 
     // 외주 업체별 공수 집계
     const outsourceMap = calculateOutsourceManpower(records);
@@ -2710,8 +2765,10 @@ function _renderSortedSearch() {
     let html = `
         <div class="mb-1 text-sm text-slate-600">
             <span class="font-semibold">${escapeHtml(type)}: ${escapeHtml(term)}</span> |
-            총 <span class="font-semibold text-blue-600">${sorted.length}</span>건 |
-            총 인원 <span class="font-semibold text-blue-600">${totalManpower.toFixed(1)}</span>공
+            총 <span class="font-semibold text-blue-600">${summary?.totalRecords ?? sorted.length}</span>건 |
+            총 인원 <span class="font-semibold text-blue-600">${totalManpower.toFixed(1)}</span>공 |
+            총 OT <span class="font-semibold text-orange-500">${totalOt.toFixed(1)}</span>h
+            <span class="text-xs text-slate-400">(야간 ${nightOt.toFixed(1)}h / 휴일 ${holidayOt.toFixed(1)}h)</span>
         </div>
         ${outsourceHtml}
         <div class="overflow-x-auto">
@@ -2724,6 +2781,7 @@ function _renderSortedSearch() {
                 <th class="${thCls}" onclick="sortSearchBy('work_content')">작업내용${si('work_content')}</th>
                 <th class="${thCls} w-24" onclick="sortSearchBy('leader')">작업자${si('leader')}</th>
                 <th class="${thCls} w-12" onclick="sortSearchBy('manpower')">인원${si('manpower')}</th>
+                <th class="${thCls} w-16" onclick="sortSearchBy('ot')">OT${si('ot')}</th>
                 <th class="${thCls}" onclick="sortSearchBy('teammates')">동반자${si('teammates')}</th>
             </tr></thead>
             <tbody>`;
@@ -2734,16 +2792,27 @@ function _renderSortedSearch() {
             const d = new Date(dateDisplay + 'T00:00:00');
             dateDisplay = `${d.getMonth() + 1}/${d.getDate()}`;
         }
+        const workType = record.workType || record.work_type || 'day';
+        const badge = workType === 'night'
+            ? '<span class="text-xs bg-purple-100 text-purple-700 rounded px-1 ml-1">야간</span>'
+            : workType === 'holiday'
+                ? '<span class="text-xs bg-amber-100 text-amber-700 rounded px-1 ml-1">휴일 OT</span>'
+                : '';
         const leader    = escapeHtml((record.leader    || '-').replace(/<i>/g, '').replace(/<\/i>/g, ''));
         const teammates = escapeHtml((record.teammates || '-').replace(/<i>/g, '').replace(/<\/i>/g, ''));
-        html += `<tr class="hover:bg-blue-50">
-            <td class="border p-2 text-center">${escapeHtml(dateDisplay)}</td>
+        const otDisplay = (parseFloat(record.ot) || 0) > 0
+            ? `<span class="font-semibold text-orange-500">+${(parseFloat(record.ot) || 0).toFixed(1)}h</span>`
+            : '';
+        const rowClass = record.isSynthetic ? 'bg-amber-50 hover:bg-amber-100' : 'hover:bg-blue-50';
+        html += `<tr class="${rowClass}">
+            <td class="border p-2 text-center">${escapeHtml(dateDisplay)}${badge}</td>
             <td class="border p-2 text-center">${escapeHtml(record.company || '-')}</td>
             <td class="border p-2 text-center">${escapeHtml(record.ship_name || '-')}</td>
             <td class="border p-2 text-center">${escapeHtml(record.engine_model || '-')}</td>
             <td class="border p-2">${escapeHtml(record.work_content || '-')}</td>
             <td class="border p-2 text-center">${leader}</td>
             <td class="border p-2 text-center font-semibold text-blue-600">${record.manpower > 0 ? record.manpower : ''}</td>
+            <td class="border p-2 text-center">${otDisplay}</td>
             <td class="border p-2">${teammates}</td>
         </tr>`;
     });

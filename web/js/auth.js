@@ -1146,6 +1146,99 @@ async function notifyLoginSuccess() {
         const leaveReportTabBtn = document.getElementById('btnEmployeeLeaveReport');
         if (leaveReportTabBtn) leaveReportTabBtn.classList.toggle('hidden', !currentUser.leave_report_edit);
     } catch(_) { console.warn('연차 보고 탭 버튼 표시 실패'); }
+
+    try {
+        await maybeShowMorningRecordReminder();
+    } catch(_) { console.warn('아침 기록 팝업 표시 실패'); }
+}
+
+function _formatDateKey(date) {
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function _getYesterdayDateStr() {
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    return _formatDateKey(d);
+}
+
+function _isMorningReminderWindow() {
+    const now = new Date();
+    const hour = now.getHours();
+    return hour >= 6 && hour < 12;
+}
+
+function closeMorningRecordReminder() {
+    document.getElementById('morningRecordReminder')?.remove();
+}
+
+async function maybeShowMorningRecordReminder() {
+    if (!currentUser || !(currentUser.can_write || currentUser.role === 'admin')) return;
+    if (!_isMorningReminderWindow()) return;
+
+    const todayKey = _formatDateKey(new Date());
+    const storageKey = `morning-record-reminder:${currentUser.user_id}:${todayKey}`;
+    if (localStorage.getItem(storageKey)) return;
+    localStorage.setItem(storageKey, 'shown');
+
+    const yesterdayStr = _getYesterdayDateStr();
+    const yesterday = new Date(yesterdayStr + 'T00:00:00');
+    const weekday = yesterday.getDay();
+    const showHolidayButton = weekday === 5 || weekday === 6 || weekday === 0;
+
+    let holidayPeriodKey = '';
+    if (showHolidayButton) {
+        try {
+            holidayPeriodKey = await eel.get_latest_friday(yesterdayStr)();
+        } catch (_) { /* ignore */ }
+    }
+
+    showMorningRecordReminder({
+        yesterdayStr,
+        holidayPeriodKey,
+        showHolidayButton: !!holidayPeriodKey,
+    });
+}
+
+function showMorningRecordReminder({ yesterdayStr, holidayPeriodKey, showHolidayButton }) {
+    closeMorningRecordReminder();
+
+    const div = document.createElement('div');
+    div.id = 'morningRecordReminder';
+    div.className = 'fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50';
+    div.innerHTML = `
+        <div class="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-lg mx-4">
+            <div class="flex items-start justify-between gap-4 mb-4">
+                <div>
+                    <h3 class="text-xl font-bold text-slate-800">지난 작업 기록 확인</h3>
+                    <p class="text-sm text-slate-500 mt-1">${escapeHtml(yesterdayStr)} 기준 작업 현황과 연장 근무 결과를 기록/확인해 주세요.</p>
+                </div>
+                <button id="btnCloseMorningReminder" class="text-slate-400 hover:text-slate-600 text-xl leading-none">&times;</button>
+            </div>
+            <div class="grid grid-cols-1 gap-2">
+                <button id="btnMorningDaily" class="px-4 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-left">지난 작업 입력</button>
+                <button id="btnMorningNight" class="px-4 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-left">야간 결과 입력</button>
+                ${showHolidayButton ? '<button id="btnMorningHoliday" class="px-4 py-3 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-semibold text-left">휴일 OT 입력</button>' : ''}
+                <button id="btnMorningDismiss" class="px-4 py-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold">오늘은 닫기</button>
+            </div>
+        </div>`;
+
+    document.body.appendChild(div);
+    div.addEventListener('click', (e) => { if (e.target === div) closeMorningRecordReminder(); });
+    document.getElementById('btnCloseMorningReminder')?.addEventListener('click', closeMorningRecordReminder);
+    document.getElementById('btnMorningDismiss')?.addEventListener('click', closeMorningRecordReminder);
+    document.getElementById('btnMorningDaily')?.addEventListener('click', () => {
+        closeMorningRecordReminder();
+        if (typeof openDailyWorkInputForDate === 'function') openDailyWorkInputForDate(yesterdayStr);
+    });
+    document.getElementById('btnMorningNight')?.addEventListener('click', () => {
+        closeMorningRecordReminder();
+        if (typeof openNightReportForDate === 'function') openNightReportForDate(yesterdayStr);
+    });
+    document.getElementById('btnMorningHoliday')?.addEventListener('click', () => {
+        closeMorningRecordReminder();
+        if (typeof openHolidayReportForPeriod === 'function') openHolidayReportForPeriod(holidayPeriodKey);
+    });
 }
 
 function showRestartNotification(count) {

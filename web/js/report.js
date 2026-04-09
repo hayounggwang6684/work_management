@@ -164,7 +164,7 @@ function changeReportDate(days) {
     const reportDate = document.getElementById('reportDate');
     if (!reportDate?.value) {
         const today = new Date();
-        reportDate.value = today.toISOString().split('T')[0];
+        reportDate.value = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
     }
     const current = new Date(reportDate.value + 'T00:00:00');
     current.setDate(current.getDate() + days);
@@ -282,7 +282,8 @@ async function loadDailyReport() {
             const contractNumber = record.contract_number || record.contractNumber || '';
             const key = contractNumber || shipName;
             const startDate = projectDates[key];
-            const todayStr = new Date().toISOString().split('T')[0]; // "YYYY-MM-DD"
+            const _tn = new Date();
+            const todayStr = `${_tn.getFullYear()}-${String(_tn.getMonth()+1).padStart(2,'0')}-${String(_tn.getDate()).padStart(2,'0')}`;
             const endDisplay = (reportDate === todayStr) ? '진행중' : reportDateStr;
             const projectPeriod = startDate ? `${startDate} ~ ${endDisplay}` : endDisplay;
             
@@ -388,7 +389,7 @@ async function loadNightReport() {
         // 항상 기본 명단으로 시작, 야근시간 기본값 '-'
         _nightReportEntries = _NIGHT_REPORT_DEFAULT_ROSTER.map(r => ({
             dept: r.dept, rank: r.rank, name: r.name,
-            dateLabel: '-', workContent: ''
+            dateLabel: '-', workContent: '', shipName: ''
         }));
 
         // 작업 레코드가 있으면 이름 매핑으로 종료시간·작업내용 채우기
@@ -398,25 +399,26 @@ async function loadNightReport() {
                 const { inHouse, outsourced } = separateWorkers(record.leader, record.teammates);
                 const workContent = [record.engineModel, record.workContent].filter(Boolean).join(' ');
                 const endTime = record.endTime || '-';
+                const shipName = record.shipName || '';
                 if (inHouse && inHouse !== '-') {
                     inHouse.split(',').map(n => n.trim()).filter(Boolean).forEach(name => {
-                        nameWorkMap.set(stripRank(name), { workContent: workContent || record.shipName || '', endTime });
+                        nameWorkMap.set(stripRank(name), { workContent, shipName, endTime });
                     });
                 }
                 if (outsourced && outsourced !== '-') {
                     outsourced.split(',').map(n => n.trim()).filter(Boolean).forEach(name => {
-                        nameWorkMap.set(name, { workContent: workContent || record.shipName || '', endTime });
+                        nameWorkMap.set(name, { workContent, shipName, endTime });
                     });
                 }
             });
             _nightReportEntries.forEach(entry => {
                 const work = nameWorkMap.get(entry.name);
-                if (work) { entry.dateLabel = work.endTime; entry.workContent = work.workContent; }
+                if (work) { entry.dateLabel = work.endTime; entry.workContent = work.workContent; entry.shipName = work.shipName || ''; }
             });
             // 명단에 없는 외부 작업자 추가
             nameWorkMap.forEach((work, name) => {
                 if (!_nightReportEntries.some(e => e.name === name)) {
-                    _nightReportEntries.push({ dept: '외주', rank: '', name, dateLabel: work.endTime, workContent: work.workContent });
+                    _nightReportEntries.push({ dept: '외주', rank: '', name, dateLabel: work.endTime, workContent: work.workContent, shipName: work.shipName || '' });
                 }
             });
         }
@@ -488,6 +490,7 @@ function renderNightReportTable() {
                        onchange="_updateNightEntry(${i},'dateLabel',this.value)">
             </td>
             <td class="border border-gray-900 p-0">
+                ${entry.shipName ? `<div class="px-1 pt-0.5 text-xs text-blue-600 font-medium border-b border-gray-100 no-capture">${escapeHtml(entry.shipName)}</div>` : ''}
                 <input type="text" value="${escapeHtml(entry.workContent||'')}" class="w-full px-1 py-1 border-0 focus:bg-yellow-50 text-sm"
                        onchange="_updateNightEntry(${i},'workContent',this.value)">
             </td>
@@ -523,7 +526,7 @@ function _moveNightRow(index, dir) {
 }
 
 function addNightRow() {
-    _nightReportEntries.push({ dept: '', rank: '', name: '', dateLabel: '-', workContent: '' });
+    _nightReportEntries.push({ dept: '', rank: '', name: '', dateLabel: '-', workContent: '', shipName: '' });
     renderNightReportTable();
 }
 
@@ -533,6 +536,77 @@ function addNightRow() {
 
 let _holidayEntries = [];
 let _holidayPeriodDates = {};
+
+function _createHolidayDefaultEntry(base = {}) {
+    return {
+        department: base.dept || base.department || '',
+        rank: base.rank || '',
+        name: base.name || '',
+        friWork: '-',
+        satWork: '-',
+        sunWork: '-',
+        workContent: '',
+        contractNumber: '',
+        company: '',
+        shipName: '',
+    };
+}
+
+function _addHolidayMetaCandidate(metaMap, rawName, meta) {
+    const cleanName = stripRank(String(rawName || '').replace(/\*/g, '').trim());
+    if (!cleanName) return;
+    if (!metaMap.has(cleanName)) metaMap.set(cleanName, meta);
+}
+
+function _buildHolidayMetaMapFromRecords(records) {
+    const metaMap = new Map();
+    (records || []).forEach(rec => {
+        const contractNumber = rec.contractNumber || rec.contract_number || '';
+        const shipName = rec.shipName || rec.ship_name || '';
+        const ownerCompany = rec.company || '';
+        const workContent = rec.workContent || rec.work_content || '';
+        const leader = rec.leader || '';
+        const teammates = rec.teammates || '';
+        const inHouseMeta = { contractNumber, company: ownerCompany, shipName, workContent };
+
+        _addHolidayMetaCandidate(metaMap, leader, inHouseMeta);
+
+        let remaining = teammates;
+        const contractRegex = /([^,\[\]()\n]+?)\(([^)]+)\)/g;
+        let match;
+        while ((match = contractRegex.exec(teammates)) !== null) {
+            const vendorCompany = match[1].replace(/<[^>]+>/g, '').replace(/\*/g, '').trim();
+            match[2].split(',').forEach(name => {
+                _addHolidayMetaCandidate(metaMap, name, {
+                    contractNumber,
+                    company: vendorCompany,
+                    shipName,
+                    workContent,
+                });
+            });
+            remaining = remaining.replace(match[0], '');
+        }
+
+        const dailyRegex = /([^,\[\]()\n]+?)\[([^\]]+)\]/g;
+        while ((match = dailyRegex.exec(remaining)) !== null) {
+            const vendorCompany = match[1].replace(/<[^>]+>/g, '').replace(/\*/g, '').trim();
+            match[2].split(',').forEach(name => {
+                _addHolidayMetaCandidate(metaMap, name, {
+                    contractNumber,
+                    company: vendorCompany,
+                    shipName,
+                    workContent,
+                });
+            });
+            remaining = remaining.replace(match[0], '');
+        }
+
+        remaining.split(',').forEach(name => {
+            _addHolidayMetaCandidate(metaMap, name, inHouseMeta);
+        });
+    });
+    return metaMap;
+}
 
 async function loadHolidayReport() {
     const periodKey = document.getElementById('holidayPeriodInput')?.value;
@@ -544,11 +618,53 @@ async function loadHolidayReport() {
 
         // 저장된 엔트리가 없으면 고정 명단으로 초기화
         if (_holidayEntries.length === 0) {
-            _holidayEntries = _NIGHT_REPORT_DEFAULT_ROSTER.map(r => ({
-                department: r.dept, rank: r.rank, name: r.name,
-                friWork: '-', satWork: '-', sunWork: '-', workContent: ''
+            _holidayEntries = _NIGHT_REPORT_DEFAULT_ROSTER.map(r => _createHolidayDefaultEntry(r));
+        } else {
+            _holidayEntries = _holidayEntries.map(e => ({
+                ..._createHolidayDefaultEntry(e),
+                ...e,
+                contractNumber: e.contractNumber || '',
+                company: e.company || '',
+                shipName: e.shipName || '',
             }));
         }
+
+        // 금/토/일 work_records 조회해 이름→프로젝트 메타 구성
+        const holidayMetaMap = new Map();
+        try {
+            const friDate = periodKey;
+            const friD = new Date(friDate + 'T00:00:00');
+            const satDate = new Date(friD); satDate.setDate(friD.getDate() + 1);
+            const sunDate = new Date(friD); sunDate.setDate(friD.getDate() + 2);
+            const fmt = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+            const [friRecs, satRecs, sunRecs] = await Promise.all([
+                eel.load_work_records(friDate, 'day')(),
+                eel.load_work_records(fmt(satDate), 'day')(),
+                eel.load_work_records(fmt(sunDate), 'day')()
+            ]);
+            const mergedRecords = [...(friRecs || []), ...(satRecs || []), ...(sunRecs || [])];
+            const inferredMap = _buildHolidayMetaMapFromRecords(mergedRecords);
+            inferredMap.forEach((value, key) => {
+                if (!holidayMetaMap.has(key)) holidayMetaMap.set(key, value);
+            });
+        } catch (_se) { /* 선명 조회 실패 시 무시 */ }
+
+        _holidayEntries.forEach(entry => {
+            const cleanName = stripRank(String(entry.name || '').replace(/\*/g, '').trim());
+            const meta = holidayMetaMap.get(cleanName);
+            if (!meta) return;
+            if (!entry.contractNumber) entry.contractNumber = meta.contractNumber || '';
+            if (!entry.company) entry.company = meta.company || '';
+            if (!entry.shipName) entry.shipName = meta.shipName || '';
+            if (!entry.workContent) entry.workContent = meta.workContent || '';
+        });
+
+        _holidayEntries.forEach(entry => {
+            if (!entry.contractNumber) entry.contractNumber = '';
+            if (!entry.company) entry.company = '';
+            if (!entry.shipName) entry.shipName = '';
+            if (!entry.workContent) entry.workContent = '';
+        });
 
         // 날짜 헤더 업데이트
         const thFri = document.getElementById('thFri');
@@ -627,6 +743,17 @@ function renderHolidayTable() {
                        onchange="_updateHolidayEntry(${i},'sunWork',this.value)">
             </td>
             <td class="border border-gray-900 p-0">
+                <div class="grid grid-cols-1 gap-0 border-b border-gray-100 bg-slate-50 no-capture">
+                    <input type="text" value="${escapeHtml(entry.contractNumber||'')}" placeholder="계약번호"
+                           class="w-full px-1 py-1 border-0 border-b border-gray-100 focus:bg-yellow-50 text-xs font-mono"
+                           onchange="_updateHolidayEntry(${i},'contractNumber',this.value)">
+                    <input type="text" value="${escapeHtml(entry.company||'')}" placeholder="업체명"
+                           class="w-full px-1 py-1 border-0 border-b border-gray-100 focus:bg-yellow-50 text-xs"
+                           onchange="_updateHolidayEntry(${i},'company',this.value)">
+                    <input type="text" value="${escapeHtml(entry.shipName||'')}" placeholder="선명"
+                           class="w-full px-1 py-1 border-0 focus:bg-yellow-50 text-xs text-blue-700"
+                           onchange="_updateHolidayEntry(${i},'shipName',this.value)">
+                </div>
                 <input type="text" value="${escapeHtml(entry.workContent||'')}" class="w-full px-1 py-1 border-0 focus:bg-yellow-50 text-sm"
                        onchange="_updateHolidayEntry(${i},'workContent',this.value)">
             </td>
@@ -675,11 +802,37 @@ function _moveHolidayRow(index, dir) {
 }
 
 function addHolidayRow() {
-    _holidayEntries.push({
-        department: '', rank: '', name: '',
-        friWork: '-', satWork: '-', sunWork: '-', workContent: ''
-    });
+    _holidayEntries.push(_createHolidayDefaultEntry());
     renderHolidayTable();
+}
+
+function openDailyWorkInputForDate(dateStr) {
+    if (!dateStr) return;
+    if (typeof showView === 'function') showView('daily');
+    if (typeof showWorkTab === 'function' && typeof currentWorkTab !== 'undefined' && currentWorkTab !== 'day') {
+        showWorkTab('day');
+    }
+    if (typeof currentDate !== 'undefined') currentDate = new Date(dateStr + 'T00:00:00');
+    if (typeof updateDateInput === 'function') updateDateInput();
+    if (typeof loadWorkRecords === 'function') loadWorkRecords();
+}
+
+function openNightReportForDate(dateStr) {
+    if (!dateStr) return;
+    if (typeof showView === 'function') showView('report');
+    if (typeof showReportTab === 'function') showReportTab('night');
+    const dateEl = document.getElementById('nightReportDate');
+    if (dateEl) dateEl.value = dateStr;
+    if (typeof loadNightReport === 'function') loadNightReport();
+}
+
+function openHolidayReportForPeriod(periodKey) {
+    if (!periodKey) return;
+    if (typeof showView === 'function') showView('report');
+    if (typeof showReportTab === 'function') showReportTab('holiday');
+    const periodEl = document.getElementById('holidayPeriodInput');
+    if (periodEl) periodEl.value = periodKey;
+    if (typeof loadHolidayReport === 'function') loadHolidayReport();
 }
 
 async function saveHolidayEntries() {

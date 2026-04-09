@@ -430,6 +430,16 @@ class DatabaseManager:
                     UNIQUE(period_key, seq)
                 )
             ''')
+            for _col, _defn in [
+                ('contract_number', "TEXT DEFAULT ''"),
+                ('company', "TEXT DEFAULT ''"),
+                ('ship_name', "TEXT DEFAULT ''"),
+            ]:
+                try:
+                    cursor.execute(f"ALTER TABLE holiday_work_entries ADD COLUMN {_col} {_defn}")
+                    logger.info(f"holiday_work_entries.{_col} 컬럼 추가 완료")
+                except Exception:
+                    pass
 
     # =========================================================================
     # 작업 레코드 관련 메서드
@@ -595,8 +605,9 @@ class DatabaseManager:
                         INSERT INTO holiday_work_entries
                             (period_key, seq, department, rank, name,
                              fri_work, sat_work, sun_work, work_content,
+                             contract_number, company, ship_name,
                              created_at, updated_at, created_by)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ''', (
                         period_key, i,
                         entry.get('department', ''),
@@ -606,6 +617,9 @@ class DatabaseManager:
                         entry.get('satWork') or entry.get('sat_work', '-'),
                         entry.get('sunWork') or entry.get('sun_work', '-'),
                         entry.get('workContent') or entry.get('work_content', ''),
+                        entry.get('contractNumber') or entry.get('contract_number', ''),
+                        entry.get('company', ''),
+                        entry.get('shipName') or entry.get('ship_name', ''),
                         now, now, username
                     ))
             self.add_activity_log(username, 'save', period_key,

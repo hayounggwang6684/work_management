@@ -1,6 +1,7 @@
 # src/web/api.py - 웹 API (Python ↔ JavaScript)
 
 import eel
+import re
 import threading
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
@@ -576,6 +577,9 @@ def load_holiday_work_entries(period_key: str) -> List[Dict[str, Any]]:
                 'satWork': row.get('sat_work', '-'),
                 'sunWork': row.get('sun_work', '-'),
                 'workContent': row.get('work_content', ''),
+                'contractNumber': row.get('contract_number', ''),
+                'company': row.get('company', ''),
+                'shipName': row.get('ship_name', ''),
             })
         return result
     except Exception as e:
@@ -823,41 +827,317 @@ def get_project_start_dates_batch(contract_numbers: list, ship_names: list) -> d
     return result
 
 
+def _parse_search_ot(end_time: str) -> float:
+    """조회 탭 OT 계산용 헬퍼 (17:00 이후 시간, 석식 공제 없음)"""
+    try:
+        parts = str(end_time or '').strip().split(':')
+        h = int(parts[0])
+        m = int(parts[1]) if len(parts) > 1 else 0
+        total_min = h * 60 + m
+        ot_min = total_min - 17 * 60
+        if ot_min <= 0:
+            return 0.0
+        return round(ot_min / 60.0, 2)
+    except Exception:
+        return 0.0
+
+
+def _build_search_record(row) -> Dict[str, Any]:
+    work_type = row[10] or 'day'
+    end_time = row[11] or ''
+    ot = _parse_search_ot(end_time) if work_type == 'night' else 0.0
+    return {
+        'date': row[0] or '',
+        'recordNumber': int(row[1]) if row[1] else 0,
+        'contractNumber': row[2] or '',
+        'contract_number': row[2] or '',
+        'company': row[3] or '',
+        'shipName': row[4] or '',
+        'ship_name': row[4] or '',
+        'engineModel': row[5] or '',
+        'engine_model': row[5] or '',
+        'workContent': row[6] or '',
+        'work_content': row[6] or '',
+        'leader': row[7] or '',
+        'manpower': float(row[8]) if row[8] else 0.0,
+        'teammates': row[9] or '',
+        'workType': work_type,
+        'endTime': end_time,
+        'ot': ot,
+        'otSource': 'night' if ot > 0 else '',
+        'isSynthetic': False,
+    }
+
+
+def _query_search_work_records(search_type: str, query_text: str) -> List[Dict[str, Any]]:
+    base_sql = '''
+        SELECT date, record_number, contract_number, company, ship_name, engine_model,
+               work_content, leader, manpower, teammates,
+               COALESCE(work_type, 'day') AS work_type, COALESCE(end_time, '') AS end_time
+        FROM work_records
+    '''
+    if search_type == 'contract':
+        sql = base_sql + '''
+            WHERE contract_number = ?
+              AND contract_number IS NOT NULL
+              AND contract_number != ''
+            ORDER BY date, record_number, work_type
+        '''
+        rows = db.execute_query(sql, (query_text.strip().upper(),))
+    elif search_type == 'ship':
+        sql = base_sql + '''
+            WHERE ship_name LIKE ?
+              AND ship_name IS NOT NULL
+              AND ship_name != ''
+            ORDER BY date, record_number, work_type
+        '''
+        rows = db.execute_query(sql, (f'%{query_text.strip().upper()}%',))
+    elif search_type == 'company':
+        sql = base_sql + '''
+            WHERE (teammates LIKE ? OR teammates LIKE ?)
+            ORDER BY date, record_number, work_type
+        '''
+        name = query_text.strip()
+        rows = db.execute_query(sql, (f'%{name}(%', f'%{name}[%'))
+    else:
+        rows = []
+    return [_build_search_record(row) for row in (rows or [])]
+
+
+def _holiday_value_to_ot(work_value: Any) -> float:
+    text = str(work_value or '').strip()
+    return 8.0 if text and text != '-' else 0.0
+
+
+def _normalize_holiday_worker_name(name: Any) -> str:
+    text = str(name or '')
+    text = re.sub(r'<[^>]+>', '', text)
+    text = text.replace('*', '').strip()
+    return text
+
+
+def _add_holiday_meta_candidate(meta_map: Dict[str, Dict[str, str]], raw_name: Any,
+                                meta: Dict[str, str]) -> None:
+    clean_name = _normalize_holiday_worker_name(raw_name)
+    if clean_name and clean_name not in meta_map:
+        meta_map[clean_name] = meta
+
+
+def _build_holiday_meta_map_for_period(period_key: str) -> Dict[str, Dict[str, str]]:
+    try:
+        fri_dt = datetime.strptime(period_key, '%Y-%m-%d')
+    except Exception:
+        return {}
+
+    date_keys = [(fri_dt + timedelta(days=offset)).strftime('%Y-%m-%d') for offset in range(3)]
+    placeholders = ','.join('?' for _ in date_keys)
+    sql = f'''
+        SELECT contract_number, company, ship_name, work_content, leader, teammates
+        FROM work_records
+        WHERE date IN ({placeholders})
+          AND COALESCE(work_type, 'day') = 'day'
+    '''
+
+    with db.get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(sql, tuple(date_keys))
+        rows = cursor.fetchall()
+
+    meta_map: Dict[str, Dict[str, str]] = {}
+    contract_pattern = re.compile(r'([^,\[\]()\n]+?)\(([^)]+)\)')
+    daily_pattern = re.compile(r'([^,\[\]()\n]+?)\[([^\]]+)\]')
+
+    for row in rows:
+        contract_number = row['contract_number'] or ''
+        ship_name = row['ship_name'] or ''
+        owner_company = row['company'] or ''
+        work_content = row['work_content'] or ''
+        leader = row['leader'] or ''
+        teammates = row['teammates'] or ''
+        in_house_meta = {
+            'contract_number': contract_number,
+            'company': owner_company,
+            'ship_name': ship_name,
+            'work_content': work_content,
+        }
+
+        _add_holiday_meta_candidate(meta_map, leader, in_house_meta)
+
+        remaining = teammates
+        for match in contract_pattern.finditer(teammates):
+            vendor_company = _normalize_holiday_worker_name(match.group(1))
+            for worker_name in match.group(2).split(','):
+                _add_holiday_meta_candidate(meta_map, worker_name, {
+                    'contract_number': contract_number,
+                    'company': vendor_company,
+                    'ship_name': ship_name,
+                    'work_content': work_content,
+                })
+            remaining = remaining.replace(match.group(0), '')
+
+        for match in daily_pattern.finditer(remaining):
+            vendor_company = _normalize_holiday_worker_name(match.group(1))
+            for worker_name in match.group(2).split(','):
+                _add_holiday_meta_candidate(meta_map, worker_name, {
+                    'contract_number': contract_number,
+                    'company': vendor_company,
+                    'ship_name': ship_name,
+                    'work_content': work_content,
+                })
+            remaining = remaining.replace(match.group(0), '')
+
+        for worker_name in remaining.split(','):
+            _add_holiday_meta_candidate(meta_map, worker_name, in_house_meta)
+
+    return meta_map
+
+
+def _enrich_holiday_entry_metadata(row: Dict[str, Any],
+                                   period_meta_cache: Dict[str, Dict[str, Dict[str, str]]]) -> Dict[str, Any]:
+    enriched = dict(row)
+    if enriched.get('contract_number') and enriched.get('company') and enriched.get('ship_name'):
+        return enriched
+
+    period_key = enriched.get('period_key', '')
+    if not period_key:
+        return enriched
+
+    meta_map = period_meta_cache.get(period_key)
+    if meta_map is None:
+        meta_map = _build_holiday_meta_map_for_period(period_key)
+        period_meta_cache[period_key] = meta_map
+
+    meta = meta_map.get(_normalize_holiday_worker_name(enriched.get('name', '')))
+    if not meta:
+        return enriched
+
+    enriched['contract_number'] = enriched.get('contract_number') or meta.get('contract_number', '')
+    enriched['company'] = enriched.get('company') or meta.get('company', '')
+    enriched['ship_name'] = enriched.get('ship_name') or meta.get('ship_name', '')
+    enriched['work_content'] = enriched.get('work_content') or meta.get('work_content', '')
+    return enriched
+
+
+def _build_holiday_ot_records(rows) -> List[Dict[str, Any]]:
+    records: List[Dict[str, Any]] = []
+    for row in rows or []:
+        period_key = row['period_key']
+        try:
+            fri_dt = datetime.strptime(period_key, '%Y-%m-%d')
+        except Exception:
+            continue
+        day_defs = [
+            ('fri_work', fri_dt, '금'),
+            ('sat_work', fri_dt + timedelta(days=1), '토'),
+            ('sun_work', fri_dt + timedelta(days=2), '일'),
+        ]
+        for key, dt_obj, label in day_defs:
+            ot = _holiday_value_to_ot(row[key])
+            if ot <= 0:
+                continue
+            work_content = row['work_content'] or ''
+            records.append({
+                'date': dt_obj.strftime('%Y-%m-%d'),
+                'recordNumber': int(row['seq'] or 0),
+                'contractNumber': row['contract_number'] or '',
+                'contract_number': row['contract_number'] or '',
+                'company': row['company'] or '',
+                'shipName': row['ship_name'] or '',
+                'ship_name': row['ship_name'] or '',
+                'engineModel': '',
+                'engine_model': '',
+                'workContent': work_content,
+                'work_content': work_content,
+                'leader': row['name'] or '',
+                'manpower': 0.0,
+                'teammates': '',
+                'workType': 'holiday',
+                'endTime': '',
+                'ot': ot,
+                'otSource': 'holiday',
+                'isSynthetic': True,
+                'holidayLabel': label,
+            })
+    return records
+
+
+def _query_holiday_ot_records(search_type: str, query_text: str) -> List[Dict[str, Any]]:
+    if search_type not in ('contract', 'ship', 'company'):
+        return []
+    sql = '''
+        SELECT period_key, seq, name, fri_work, sat_work, sun_work, work_content,
+               contract_number, company, ship_name
+        FROM holiday_work_entries
+        ORDER BY period_key, seq
+    '''
+    with db.get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(sql)
+        rows = cursor.fetchall()
+    period_meta_cache: Dict[str, Dict[str, Dict[str, str]]] = {}
+    normalized_query = str(query_text or '').strip()
+    normalized_query_upper = normalized_query.upper()
+    normalized_query_lower = normalized_query.lower()
+    filtered_rows = []
+    for raw_row in rows:
+        row = _enrich_holiday_entry_metadata(dict(raw_row), period_meta_cache)
+        contract_number = str(row.get('contract_number') or '').strip().upper()
+        ship_name = str(row.get('ship_name') or '').strip().upper()
+        company = str(row.get('company') or '').strip().lower()
+        if search_type == 'contract' and contract_number != normalized_query_upper:
+            continue
+        if search_type == 'ship' and normalized_query_upper not in ship_name:
+            continue
+        if search_type == 'company' and normalized_query_lower not in company:
+            continue
+        filtered_rows.append(row)
+    return _build_holiday_ot_records(filtered_rows)
+
+
+@eel.expose
+def search_records_with_ot(search_type: str, query: str) -> Dict[str, Any]:
+    """조회 탭용 통합 검색 + OT 집계"""
+    try:
+        st = (search_type or '').strip().lower()
+        if st not in ('contract', 'ship', 'company'):
+            return {'success': False, 'message': '지원하지 않는 조회 유형입니다.', 'records': [], 'summary': {}}
+        if not query or not str(query).strip():
+            return {'success': False, 'message': '조회어를 입력해주세요.', 'records': [], 'summary': {}}
+
+        work_records = _query_search_work_records(st, str(query))
+        holiday_records = _query_holiday_ot_records(st, str(query))
+        records = sorted(
+            work_records + holiday_records,
+            key=lambda r: (r.get('date', ''), int(r.get('recordNumber', 0)), r.get('workType', '')),
+        )
+
+        night_ot = round(sum(float(r.get('ot', 0) or 0) for r in records if r.get('otSource') == 'night'), 1)
+        holiday_ot = round(sum(float(r.get('ot', 0) or 0) for r in records if r.get('otSource') == 'holiday'), 1)
+        total_ot = round(night_ot + holiday_ot, 1)
+        total_manpower = round(sum(float(r.get('manpower', 0) or 0) for r in records), 1)
+
+        return {
+            'success': True,
+            'records': records,
+            'summary': {
+                'totalRecords': len(records),
+                'totalManpower': total_manpower,
+                'totalOt': total_ot,
+                'nightOt': night_ot,
+                'holidayOt': holiday_ot,
+            }
+        }
+    except Exception as e:
+        logger.error(f"통합 검색 OT 집계 오류: {e}")
+        return {'success': False, 'message': '조회 중 오류가 발생했습니다.', 'records': [], 'summary': {}}
+
+
 @eel.expose
 def search_records_by_contract(contract_number: str) -> List[Dict[str, Any]]:
     """계약번호로 작업 내역 조회"""
     try:
-        if not contract_number or contract_number.strip() == '':
-            return []
-
-        query = '''
-            SELECT date, company, ship_name, engine_model, work_content,
-                   leader, manpower, teammates
-            FROM work_records
-            WHERE contract_number = ?
-            AND contract_number IS NOT NULL
-            AND contract_number != ''
-            ORDER BY date, record_number
-        '''
-
-        logger.info(f"계약번호 검색: {contract_number}")
-        results = db.execute_query(query, (contract_number.strip().upper(),))
-        logger.info(f"검색 결과: {len(results) if results else 0}건")
-
-        records = []
-        for row in results:
-            records.append({
-                'date': row[0] or '',
-                'company': row[1] or '',
-                'ship_name': row[2] or '',
-                'engine_model': row[3] or '',
-                'work_content': row[4] or '',
-                'leader': row[5] or '',
-                'manpower': float(row[6]) if row[6] else 0.0,
-                'teammates': row[7] or ''
-            })
-
-        return records
+        result = search_records_with_ot('contract', contract_number)
+        return result.get('records', []) if result.get('success') else []
     except Exception as e:
         logger.error(f"계약번호 검색 오류: {e}")
         return []
@@ -1211,38 +1491,8 @@ def get_work_hours_by_month(name: str, year: int, month: int,
 def search_records_by_ship(ship_name: str) -> List[Dict[str, Any]]:
     """선명으로 작업 내역 조회"""
     try:
-        if not ship_name or ship_name.strip() == '':
-            return []
-
-        query = '''
-            SELECT date, company, ship_name, engine_model, work_content,
-                   leader, manpower, teammates
-            FROM work_records
-            WHERE ship_name LIKE ?
-            AND ship_name IS NOT NULL
-            AND ship_name != ''
-            ORDER BY date, record_number
-        '''
-
-        name = ship_name.strip().upper()
-        logger.info(f"선명 검색: {name}")
-        results = db.execute_query(query, (f'%{name}%',))
-        logger.info(f"검색 결과: {len(results) if results else 0}건")
-
-        records = []
-        for row in results:
-            records.append({
-                'date': row[0] or '',
-                'company': row[1] or '',
-                'ship_name': row[2] or '',
-                'engine_model': row[3] or '',
-                'work_content': row[4] or '',
-                'leader': row[5] or '',
-                'manpower': float(row[6]) if row[6] else 0.0,
-                'teammates': row[7] or ''
-            })
-
-        return records
+        result = search_records_with_ot('ship', ship_name)
+        return result.get('records', []) if result.get('success') else []
     except Exception as e:
         logger.error(f"선명 검색 오류: {e}")
         return []
@@ -1252,39 +1502,8 @@ def search_records_by_ship(ship_name: str) -> List[Dict[str, Any]]:
 def search_records_by_company(company_name: str) -> List[Dict[str, Any]]:
     """외주 업체명으로 작업 내역 조회"""
     try:
-        if not company_name or company_name.strip() == '':
-            return []
-
-        name = company_name.strip()
-        # work_content 필터 제거 — 야간(work_type='night') 레코드도 포함
-        query = '''
-            SELECT date, company, ship_name, engine_model, work_content,
-                   leader, manpower, teammates, work_type
-            FROM work_records
-            WHERE (teammates LIKE ? OR teammates LIKE ?)
-            ORDER BY date, record_number
-        '''
-        params = (f'%{name}(%', f'%{name}[%')
-
-        logger.info(f"업체명 검색: {name}")
-        results = db.execute_query(query, params)
-        logger.info(f"검색 결과: {len(results) if results else 0}건")
-
-        records = []
-        for row in results:
-            records.append({
-                'date': row[0] or '',
-                'company': row[1] or '',
-                'ship_name': row[2] or '',
-                'engine_model': row[3] or '',
-                'work_content': row[4] or '',
-                'leader': row[5] or '',
-                'manpower': float(row[6]) if row[6] else 0.0,
-                'teammates': row[7] or '',
-                'work_type': row[8] or 'day'
-            })
-
-        return records
+        result = search_records_with_ot('company', company_name)
+        return result.get('records', []) if result.get('success') else []
     except Exception as e:
         logger.error(f"업체명 검색 오류: {e}")
         return []
