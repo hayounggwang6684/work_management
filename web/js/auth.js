@@ -349,13 +349,155 @@ function _clearLocalAutoLogin() {
 const _adminDbState = {
     subtab: 'excel',
     owners: [],
+    ownerSuggestions: [],
     selectedOwner: '',
     selectedOwners: new Set(),
     selectedOwnerShips: new Set(),
     vendors: [],
     selectedVendor: '',
     selectedVendorWorkers: new Set(),
+    canUndoMerge: false,
+    lastMergeUndoSummary: '',
 };
+
+function compareVersionText(left, right) {
+    const leftParts = String(left || '').split('.').map(v => parseInt(v, 10) || 0);
+    const rightParts = String(right || '').split('.').map(v => parseInt(v, 10) || 0);
+    const length = Math.max(leftParts.length, rightParts.length);
+    for (let i = 0; i < length; i += 1) {
+        const l = leftParts[i] || 0;
+        const r = rightParts[i] || 0;
+        if (l < r) return -1;
+        if (l > r) return 1;
+    }
+    return 0;
+}
+
+function encodeSuggestionPayload(names) {
+    return encodeURIComponent(JSON.stringify(Array.isArray(names) ? names : []));
+}
+
+function decodeSuggestionPayload(payload) {
+    try {
+        const parsed = JSON.parse(decodeURIComponent(String(payload || '')));
+        return Array.isArray(parsed) ? parsed.filter(Boolean) : [];
+    } catch (_) {
+        return [];
+    }
+}
+
+function renderMergeSuggestionButtons(suggestions, applyHandlerName, emptyMessage) {
+    if (!Array.isArray(suggestions) || suggestions.length === 0) {
+        return `<div class="text-xs text-slate-400">${escapeHtml(emptyMessage)}</div>`;
+    }
+    return suggestions.map(suggestion => {
+        const names = Array.isArray(suggestion?.names) ? suggestion.names.filter(Boolean) : [];
+        const payload = encodeSuggestionPayload(names);
+        const reason = suggestion?.reason ? `<div class="text-[11px] text-slate-500 mt-1">${escapeHtml(suggestion.reason)}</div>` : '';
+        return `
+            <button onclick="${applyHandlerName}('${escapeJs(payload)}')"
+                    class="w-full text-left rounded-lg border border-amber-200 bg-amber-50 hover:bg-amber-100 px-3 py-2 transition">
+                <div class="text-sm font-semibold text-amber-900">${escapeHtml(suggestion?.label || names.join(', '))}</div>
+                ${reason}
+            </button>
+        `;
+    }).join('');
+}
+
+function _buildMergePreviewText(title, preview) {
+    const lines = [title, '', preview?.message || '변경 대상이 없습니다.'];
+    if (preview?.details) lines.push('', preview.details);
+    lines.push('', '계속하시겠습니까?');
+    return lines.join('\n');
+}
+
+function updateAdminMergeUndoButtons() {
+    ['btnUndoOwnerMerge', 'btnUndoVendorMerge'].forEach(id => {
+        const button = document.getElementById(id);
+        if (!button) return;
+        button.classList.toggle('hidden', !_adminDbState.canUndoMerge);
+        button.disabled = !_adminDbState.canUndoMerge;
+        button.title = _adminDbState.canUndoMerge ? (_adminDbState.lastMergeUndoSummary || '최근 병합 되돌리기') : '';
+    });
+}
+
+async function refreshAdminMergeUndoState() {
+    try {
+        const result = await eel.admin_get_last_merge_undo(currentUser?.user_id || '')();
+        _adminDbState.canUndoMerge = !!(result && result.success && result.available);
+        _adminDbState.lastMergeUndoSummary = result?.summary || '';
+    } catch (error) {
+        console.warn('병합 되돌리기 상태 조회 실패:', error);
+        _adminDbState.canUndoMerge = false;
+        _adminDbState.lastMergeUndoSummary = '';
+    }
+    updateAdminMergeUndoButtons();
+}
+
+async function undoLastAdminMerge() {
+    if (!_adminDbState.canUndoMerge) {
+        showToast('되돌릴 최근 병합 내역이 없습니다.', 'warning');
+        return;
+    }
+    const summary = _adminDbState.lastMergeUndoSummary || '최근 병합';
+    if (!confirm(`최근 병합을 되돌릴까요?\n\n${summary}`)) return;
+
+    try {
+        const result = await eel.admin_undo_last_merge(currentUser?.user_id || '')();
+        if (!result || !result.success) {
+            showCustomAlert('오류', result?.message || '병합 되돌리기에 실패했습니다.', 'error');
+            return;
+        }
+        showToast(result.message || '최근 병합을 되돌렸습니다.', 'success');
+        await Promise.all([
+            loadAdminOwnerCompanyCatalog(true),
+            loadAdminVendorCompanyCatalog(true),
+        ]);
+        await refreshAdminMergeUndoState();
+    } catch (error) {
+        console.error('병합 되돌리기 오류:', error);
+        showCustomAlert('오류', '병합 되돌리기 중 오류가 발생했습니다.', 'error');
+    }
+}
+window.undoLastAdminMerge = undoLastAdminMerge;
+
+function applyOwnerCompanySuggestion(payload) {
+    const names = decodeSuggestionPayload(payload);
+    if (names.length < 2) {
+        showToast('추천 후보가 충분하지 않습니다.', 'warning');
+        return;
+    }
+    _adminDbState.selectedOwner = names[0];
+    _adminDbState.selectedOwners = new Set(names);
+    _adminDbState.selectedOwnerShips = new Set();
+    renderAdminOwnerCompanyList();
+    promptMergeSelectedOwnerCompanies();
+}
+window.applyOwnerCompanySuggestion = applyOwnerCompanySuggestion;
+
+function applyOwnerShipSuggestion(payload) {
+    const names = decodeSuggestionPayload(payload);
+    if (names.length < 2) {
+        showToast('추천 후보가 충분하지 않습니다.', 'warning');
+        return;
+    }
+    _adminDbState.selectedOwnerShips = new Set(names);
+    renderAdminOwnerCompanyList();
+    promptMergeSelectedOwnerShips();
+}
+window.applyOwnerShipSuggestion = applyOwnerShipSuggestion;
+
+function applyVendorWorkerSuggestion(payload) {
+    const names = decodeSuggestionPayload(payload);
+    if (names.length < 2) {
+        showToast('추천 후보가 충분하지 않습니다.', 'warning');
+        return;
+    }
+    _adminDbState.selectedVendorWorkers = new Set(names);
+    renderAdminVendorCompanyList();
+    promptMergeSelectedVendorWorkers();
+}
+window.applyVendorWorkerSuggestion = applyVendorWorkerSuggestion;
 
 function showAdminTab(tab) {
     const tabs = ['users', 'settings', 'db', 'telegram', 'status', 'activity'];
@@ -401,6 +543,7 @@ function showAdminDbSubtab(tab) {
     closeAdminOwnerCompanyContextMenu();
     closeAdminOwnerShipContextMenu();
     closeAdminVendorWorkerContextMenu();
+    refreshAdminMergeUndoState();
     if (tab === 'owners') loadAdminOwnerCompanyCatalog();
     if (tab === 'vendors') loadAdminVendorCompanyCatalog();
 }
@@ -430,6 +573,7 @@ async function loadAdminOwnerCompanyCatalog(force = false) {
             return;
         }
         _adminDbState.owners = result.owners || [];
+        _adminDbState.ownerSuggestions = result.ownerSuggestions || [];
         if (!_adminDbState.selectedOwner && _adminDbState.owners.length > 0) {
             _adminDbState.selectedOwner = _adminDbState.owners[0].name;
         }
@@ -453,8 +597,18 @@ window.loadAdminOwnerCompanyCatalog = loadAdminOwnerCompanyCatalog;
 
 function renderAdminOwnerCompanyList() {
     const listEl = document.getElementById('adminOwnerCompanyList');
+    const suggestionsEl = document.getElementById('adminOwnerCompanySuggestions');
     const detailEl = document.getElementById('adminOwnerCompanyDetail');
     if (!listEl || !detailEl) return;
+
+    if (suggestionsEl) {
+        suggestionsEl.innerHTML = `
+            <div class="space-y-2">
+                <div class="text-xs font-semibold text-amber-700">중복 의심 선사</div>
+                ${renderMergeSuggestionButtons(_adminDbState.ownerSuggestions, 'applyOwnerCompanySuggestion', '추천 후보가 없습니다.')}
+            </div>
+        `;
+    }
 
     if (_adminDbState.owners.length === 0) {
         listEl.innerHTML = '<p class="text-sm text-slate-400 p-3">등록된 선사가 없습니다.</p>';
@@ -487,6 +641,12 @@ function renderAdminOwnerCompanyList() {
             <div class="text-lg font-bold text-slate-800">${escapeHtml(owner.name)}</div>
             <div class="text-sm text-slate-500 mt-1">선박 ${owner.shipCount}척 · 작업 ${owner.workRecordCount + owner.holidayCount}건 · 등록 ${owner.projectCount}건</div>
             <div class="text-xs text-slate-400 mt-2">선박도 Ctrl 선택 후 우클릭으로 병합할 수 있습니다.</div>
+        </div>
+        <div class="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3">
+            <div class="text-xs font-semibold text-amber-700 mb-2">중복 의심 선박</div>
+            <div class="space-y-2">
+                ${renderMergeSuggestionButtons(owner.shipSuggestions || [], 'applyOwnerShipSuggestion', '추천 후보가 없습니다.')}
+            </div>
         </div>
         <div class="space-y-3">
             ${owner.ships.map(ship => `
@@ -573,9 +733,24 @@ async function promptMergeSelectedOwnerCompanies() {
         _adminDbState.selectedOwner || selected[0]
     );
     if (!targetName || !targetName.trim()) return;
-    if (!confirm(`"${selected.join(', ')}" 을(를) "${targetName.trim()}" 으로 병합하시겠습니까?`)) return;
 
     try {
+        const preview = await eel.admin_preview_merge_owner_companies(
+            selected,
+            targetName.trim(),
+            currentUser?.user_id || ''
+        )();
+        if (!preview || !preview.success) {
+            showCustomAlert('오류', preview?.message || '선사 병합 미리보기를 불러오지 못했습니다.', 'error');
+            return;
+        }
+        const totalUpdates = (preview.workUpdates || 0) + (preview.projectUpdates || 0) + (preview.holidayUpdates || 0);
+        if (totalUpdates <= 0) {
+            showCustomAlert('변경 대상 없음', preview.message || '변경될 데이터가 없습니다.', 'warning');
+            return;
+        }
+        if (!confirm(_buildMergePreviewText(`"${selected.join(', ')}" 을(를) "${targetName.trim()}" 으로 병합합니다.`, preview))) return;
+
         const result = await eel.admin_merge_owner_companies(
             selected,
             targetName.trim(),
@@ -589,6 +764,7 @@ async function promptMergeSelectedOwnerCompanies() {
         _adminDbState.selectedOwner = targetName.trim();
         _adminDbState.selectedOwners = new Set([targetName.trim()]);
         await loadAdminOwnerCompanyCatalog(true);
+        await refreshAdminMergeUndoState();
     } catch (error) {
         console.error('선사 병합 오류:', error);
         showCustomAlert('오류', '선사 병합 중 오류가 발생했습니다.', 'error');
@@ -656,9 +832,25 @@ async function promptMergeSelectedOwnerShips() {
         selected[0]
     );
     if (!targetName || !targetName.trim()) return;
-    if (!confirm(`"${selected.join(', ')}" 을(를) "${targetName.trim()}" 으로 병합하시겠습니까?`)) return;
 
     try {
+        const preview = await eel.admin_preview_merge_owner_ships(
+            ownerName,
+            selected,
+            targetName.trim(),
+            currentUser?.user_id || ''
+        )();
+        if (!preview || !preview.success) {
+            showCustomAlert('오류', preview?.message || '선박 병합 미리보기를 불러오지 못했습니다.', 'error');
+            return;
+        }
+        const totalUpdates = (preview.workUpdates || 0) + (preview.projectUpdates || 0) + (preview.holidayUpdates || 0);
+        if (totalUpdates <= 0) {
+            showCustomAlert('변경 대상 없음', preview.message || '변경될 데이터가 없습니다.', 'warning');
+            return;
+        }
+        if (!confirm(_buildMergePreviewText(`"${selected.join(', ')}" 을(를) "${targetName.trim()}" 으로 병합합니다.`, preview))) return;
+
         const result = await eel.admin_merge_owner_ships(
             ownerName,
             selected,
@@ -672,6 +864,7 @@ async function promptMergeSelectedOwnerShips() {
         showToast(result.message || '선박 병합이 완료되었습니다.', 'success');
         _adminDbState.selectedOwnerShips = new Set([targetName.trim()]);
         await loadAdminOwnerCompanyCatalog(true);
+        await refreshAdminMergeUndoState();
     } catch (error) {
         console.error('선박 병합 오류:', error);
         showCustomAlert('오류', '선박 병합 중 오류가 발생했습니다.', 'error');
@@ -741,6 +934,12 @@ function renderAdminVendorCompanyList() {
                 <div class="text-sm text-slate-500 mt-1">직원 ${vendor.workerCount}명 · 작업 ${vendor.workRecordCount}건 · 휴일 ${vendor.holidayCount}건</div>
             </div>
             <div class="text-xs text-slate-400">Ctrl+클릭 선택 후 우클릭</div>
+        </div>
+        <div class="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3">
+            <div class="text-xs font-semibold text-amber-700 mb-2">중복 의심 직원</div>
+            <div class="space-y-2">
+                ${renderMergeSuggestionButtons(vendor.workerSuggestions || [], 'applyVendorWorkerSuggestion', '추천 후보가 없습니다.')}
+            </div>
         </div>
         <div class="flex flex-wrap gap-2">
             ${vendor.workers.map(worker => {
@@ -816,9 +1015,25 @@ async function promptMergeSelectedVendorWorkers() {
         selected[0]
     );
     if (!targetName || !targetName.trim()) return;
-    if (!confirm(`"${selected.join(', ')}" 을(를) "${targetName.trim()}" 으로 병합하시겠습니까?`)) return;
 
     try {
+        const preview = await eel.admin_preview_merge_vendor_workers(
+            _adminDbState.selectedVendor,
+            selected,
+            targetName.trim(),
+            currentUser?.user_id || ''
+        )();
+        if (!preview || !preview.success) {
+            showCustomAlert('오류', preview?.message || '직원 병합 미리보기를 불러오지 못했습니다.', 'error');
+            return;
+        }
+        const totalUpdates = (preview.workUpdates || 0) + (preview.holidayUpdates || 0);
+        if (totalUpdates <= 0) {
+            showCustomAlert('변경 대상 없음', preview.message || '변경될 데이터가 없습니다.', 'warning');
+            return;
+        }
+        if (!confirm(_buildMergePreviewText(`"${selected.join(', ')}" 을(를) "${targetName.trim()}" 으로 병합합니다.`, preview))) return;
+
         const result = await eel.admin_merge_vendor_workers(
             _adminDbState.selectedVendor,
             selected,
@@ -832,6 +1047,7 @@ async function promptMergeSelectedVendorWorkers() {
         showToast(result.message || '병합이 완료되었습니다.', 'success');
         _adminDbState.selectedVendorWorkers = new Set();
         await loadAdminVendorCompanyCatalog(true);
+        await refreshAdminMergeUndoState();
     } catch (error) {
         console.error('외주 직원 병합 오류:', error);
         showCustomAlert('오류', '외주 직원 병합 중 오류가 발생했습니다.', 'error');
@@ -1704,6 +1920,11 @@ async function maybeShowVersionPatchNotes(currentVersion) {
         return;
     }
     if (previousVersion === versionText) {
+        currentUser.client_version = versionText;
+        return;
+    }
+    if (compareVersionText(previousVersion, versionText) >= 0) {
+        localStorage.setItem(storageKey, versionText);
         currentUser.client_version = versionText;
         return;
     }

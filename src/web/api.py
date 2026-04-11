@@ -1,5 +1,7 @@
 # src/web/api.py - 웹 API (Python ↔ JavaScript)
 
+import difflib
+import json
 import eel
 import re
 import threading
@@ -383,7 +385,12 @@ def admin_get_owner_company_catalog(admin_id: str = '') -> Dict[str, Any]:
     """선사(owner_company) 목록과 선박/장비 요약 조회"""
     try:
         if not _get_admin_user(admin_id):
-            return {'success': False, 'message': '관리자 권한이 필요합니다.', 'owners': []}
+            return {
+                'success': False,
+                'message': '관리자 권한이 필요합니다.',
+                'owners': [],
+                'ownerSuggestions': [],
+            }
 
         owner_map: Dict[str, Dict[str, Any]] = {}
 
@@ -427,7 +434,7 @@ def admin_get_owner_company_catalog(admin_id: str = '') -> Dict[str, Any]:
             if not owner_name:
                 continue
             owner = _ensure_owner(owner_name)
-            ship_name = str(row['ship_name'] or '').strip() or '(선박 미입력)'
+            ship_name = _display_ship_label(row['ship_name'])
             ship = _ensure_ship(owner, ship_name)
             engine_model = str(row['engine_model'] or '').strip()
             if engine_model:
@@ -440,7 +447,7 @@ def admin_get_owner_company_catalog(admin_id: str = '') -> Dict[str, Any]:
             if not owner_name:
                 continue
             owner = _ensure_owner(owner_name)
-            ship_name = str(row['ship_name'] or '').strip() or '(선박 미입력)'
+            ship_name = _display_ship_label(row['ship_name'])
             ship = _ensure_ship(owner, ship_name)
             engine_model = str(row['engine_model'] or '').strip()
             if engine_model:
@@ -453,7 +460,7 @@ def admin_get_owner_company_catalog(admin_id: str = '') -> Dict[str, Any]:
             if not owner_name:
                 continue
             owner = _ensure_owner(owner_name)
-            ship_name = str(row['ship_name'] or '').strip() or '(선박 미입력)'
+            ship_name = _display_ship_label(row['ship_name'])
             ship = _ensure_ship(owner, ship_name)
             ship['holidayCount'] += 1
             owner['holidayCount'] += 1
@@ -479,13 +486,23 @@ def admin_get_owner_company_catalog(admin_id: str = '') -> Dict[str, Any]:
                 'totalCount': owner['workRecordCount'] + owner['holidayCount'] + owner['projectCount'],
                 'shipCount': len(ships),
                 'ships': ships,
+                'shipSuggestions': _build_merge_suggestions([item['shipName'] for item in ships]),
             })
 
         owners.sort(key=lambda item: _mixed_locale_sort_key(item['name']))
-        return {'success': True, 'owners': owners}
+        return {
+            'success': True,
+            'owners': owners,
+            'ownerSuggestions': _build_merge_suggestions([item['name'] for item in owners]),
+        }
     except Exception as e:
         logger.error(f"선사 목록 조회 오류: {e}")
-        return {'success': False, 'message': '선사 목록 조회 중 오류가 발생했습니다.', 'owners': []}
+        return {
+            'success': False,
+            'message': '선사 목록 조회 중 오류가 발생했습니다.',
+            'owners': [],
+            'ownerSuggestions': [],
+        }
 
 
 @eel.expose
@@ -562,6 +579,7 @@ def admin_get_vendor_company_catalog(admin_id: str = '') -> Dict[str, Any]:
                 'holidayCount': vendor['holidayCount'],
                 'workerCount': len(workers),
                 'workers': workers,
+                'workerSuggestions': _build_merge_suggestions([item['name'] for item in workers]),
             })
 
         vendors.sort(key=lambda item: _mixed_locale_sort_key(item['name']))
@@ -571,6 +589,337 @@ def admin_get_vendor_company_catalog(admin_id: str = '') -> Dict[str, Any]:
         return {'success': False, 'message': '외주 업체 목록 조회 중 오류가 발생했습니다.', 'vendors': []}
 
 
+def _plan_merge_vendor_workers(vendor_company: str, source_names: List[str],
+                               target_name: str) -> Dict[str, Any]:
+    vendor_display = str(vendor_company or '').strip()
+    normalized_sources = sorted({
+        _normalize_holiday_worker_name(name)
+        for name in (source_names or [])
+        if _normalize_holiday_worker_name(name)
+    })
+    target_display = str(target_name or '').strip() or (normalized_sources[0] if normalized_sources else '')
+    if not vendor_display:
+        return {'success': False, 'message': '외주 업체명을 선택하세요.'}
+    if len(normalized_sources) < 2:
+        return {'success': False, 'message': '병합할 직원명을 2개 이상 선택하세요.'}
+    if not target_display:
+        return {'success': False, 'message': '대표 이름을 입력하세요.'}
+
+    updates = []
+    work_updates = 0
+    holiday_updates = 0
+    vendor_key = _normalize_company_label(vendor_display)
+
+    with db.get_connection() as conn:
+        cursor = conn.cursor()
+        work_rows = cursor.execute('''
+            SELECT id, teammates
+            FROM work_records
+            WHERE teammates IS NOT NULL AND teammates != ''
+        ''').fetchall()
+        for row in work_rows:
+            new_teammates, changed = _replace_vendor_worker_names_in_teammates(
+                row['teammates'] or '',
+                vendor_display,
+                normalized_sources,
+                target_display,
+            )
+            if not changed:
+                continue
+            updates.append({
+                'table': 'work_records',
+                'id': row['id'],
+                'old_fields': {'teammates': row['teammates'] or ''},
+                'new_fields': {'teammates': new_teammates},
+            })
+            work_updates += 1
+
+        holiday_rows = cursor.execute('''
+            SELECT id, name, vendor_company, company
+            FROM holiday_work_entries
+            WHERE name IS NOT NULL AND name != ''
+        ''').fetchall()
+        for row in holiday_rows:
+            row_vendor = str(row['vendor_company'] or row['company'] or '').strip()
+            if _normalize_company_label(row_vendor) != vendor_key:
+                continue
+            if _normalize_holiday_worker_name(row['name'] or '') not in normalized_sources:
+                continue
+            updates.append({
+                'table': 'holiday_work_entries',
+                'id': row['id'],
+                'old_fields': {
+                    'name': row['name'] or '',
+                    'vendor_company': row['vendor_company'] or '',
+                    'company': row['company'] or '',
+                },
+                'new_fields': {
+                    'name': target_display,
+                    'vendor_company': vendor_display,
+                    'company': vendor_display,
+                },
+            })
+            holiday_updates += 1
+
+    details = f"{', '.join(normalized_sources)} -> {target_display} (work={work_updates}, holiday={holiday_updates})"
+    return {
+        'success': True,
+        'targetDisplay': target_display,
+        'normalizedSources': normalized_sources,
+        'updates': updates,
+        'workUpdates': work_updates,
+        'holidayUpdates': holiday_updates,
+        'message': f'미리보기: 작업 {work_updates}건, 휴일 {holiday_updates}건 변경',
+        'details': details,
+    }
+
+
+def _plan_merge_owner_companies(source_names: List[str], target_name: str) -> Dict[str, Any]:
+    normalized_sources = sorted({
+        _normalize_holiday_worker_name(name)
+        for name in (source_names or [])
+        if _normalize_holiday_worker_name(name)
+    })
+    target_display = str(target_name or '').strip() or (normalized_sources[0] if normalized_sources else '')
+    source_keys = {_normalize_company_label(name) for name in normalized_sources}
+
+    if len(normalized_sources) < 2:
+        return {'success': False, 'message': '병합할 선사를 2개 이상 선택하세요.'}
+    if not target_display:
+        return {'success': False, 'message': '대표 선사명을 입력하세요.'}
+
+    updates = []
+    work_updates = 0
+    project_updates = 0
+    holiday_updates = 0
+
+    with db.get_connection() as conn:
+        cursor = conn.cursor()
+        work_rows = cursor.execute('''
+            SELECT id, company
+            FROM work_records
+            WHERE company IS NOT NULL AND company != ''
+        ''').fetchall()
+        for row in work_rows:
+            if _normalize_company_label(row['company'] or '') not in source_keys:
+                continue
+            updates.append({
+                'table': 'work_records',
+                'id': row['id'],
+                'old_fields': {'company': row['company'] or ''},
+                'new_fields': {'company': target_display},
+            })
+            work_updates += 1
+
+        board_rows = cursor.execute('''
+            SELECT id, company
+            FROM board_projects
+            WHERE company IS NOT NULL AND company != ''
+        ''').fetchall()
+        for row in board_rows:
+            if _normalize_company_label(row['company'] or '') not in source_keys:
+                continue
+            updates.append({
+                'table': 'board_projects',
+                'id': row['id'],
+                'old_fields': {'company': row['company'] or ''},
+                'new_fields': {'company': target_display},
+            })
+            project_updates += 1
+
+        holiday_rows = cursor.execute('''
+            SELECT id, owner_company
+            FROM holiday_work_entries
+            WHERE owner_company IS NOT NULL AND owner_company != ''
+        ''').fetchall()
+        for row in holiday_rows:
+            if _normalize_company_label(row['owner_company'] or '') not in source_keys:
+                continue
+            updates.append({
+                'table': 'holiday_work_entries',
+                'id': row['id'],
+                'old_fields': {'owner_company': row['owner_company'] or ''},
+                'new_fields': {'owner_company': target_display},
+            })
+            holiday_updates += 1
+
+    details = f"{', '.join(normalized_sources)} -> {target_display} (work={work_updates}, project={project_updates}, holiday={holiday_updates})"
+    return {
+        'success': True,
+        'targetDisplay': target_display,
+        'normalizedSources': normalized_sources,
+        'updates': updates,
+        'workUpdates': work_updates,
+        'projectUpdates': project_updates,
+        'holidayUpdates': holiday_updates,
+        'message': f'미리보기: 작업 {work_updates}건, 등록 {project_updates}건, 휴일 {holiday_updates}건 변경',
+        'details': details,
+    }
+
+
+def _plan_merge_owner_ships(owner_name: str, source_names: List[str], target_name: str) -> Dict[str, Any]:
+    owner_display = str(owner_name or '').strip()
+    owner_key = _normalize_company_label(owner_display)
+    normalized_sources = sorted({
+        _display_ship_label(name)
+        for name in (source_names or [])
+        if _display_ship_label(name)
+    })
+    target_display = _display_ship_label(target_name or (normalized_sources[0] if normalized_sources else ''))
+    target_storage = _storage_ship_label(target_display)
+    source_keys = {_normalize_ship_label(name) for name in normalized_sources}
+
+    if not owner_key:
+        return {'success': False, 'message': '선사를 먼저 선택하세요.'}
+    if len(normalized_sources) < 2:
+        return {'success': False, 'message': '병합할 선박을 2개 이상 선택하세요.'}
+    if not target_display:
+        return {'success': False, 'message': '대표 선박명을 입력하세요.'}
+
+    updates = []
+    work_updates = 0
+    project_updates = 0
+    holiday_updates = 0
+
+    with db.get_connection() as conn:
+        cursor = conn.cursor()
+        work_rows = cursor.execute('''
+            SELECT id, company, ship_name
+            FROM work_records
+            WHERE company IS NOT NULL AND company != ''
+        ''').fetchall()
+        for row in work_rows:
+            if _normalize_company_label(row['company'] or '') != owner_key:
+                continue
+            if _normalize_ship_label(row['ship_name'] or '') not in source_keys:
+                continue
+            updates.append({
+                'table': 'work_records',
+                'id': row['id'],
+                'old_fields': {'ship_name': row['ship_name'] or ''},
+                'new_fields': {'ship_name': target_storage},
+            })
+            work_updates += 1
+
+        board_rows = cursor.execute('''
+            SELECT id, company, ship_name
+            FROM board_projects
+            WHERE company IS NOT NULL AND company != ''
+        ''').fetchall()
+        for row in board_rows:
+            if _normalize_company_label(row['company'] or '') != owner_key:
+                continue
+            if _normalize_ship_label(row['ship_name'] or '') not in source_keys:
+                continue
+            updates.append({
+                'table': 'board_projects',
+                'id': row['id'],
+                'old_fields': {'ship_name': row['ship_name'] or ''},
+                'new_fields': {'ship_name': target_storage},
+            })
+            project_updates += 1
+
+        holiday_rows = cursor.execute('''
+            SELECT id, owner_company, ship_name
+            FROM holiday_work_entries
+            WHERE owner_company IS NOT NULL AND owner_company != ''
+        ''').fetchall()
+        for row in holiday_rows:
+            if _normalize_company_label(row['owner_company'] or '') != owner_key:
+                continue
+            if _normalize_ship_label(row['ship_name'] or '') not in source_keys:
+                continue
+            updates.append({
+                'table': 'holiday_work_entries',
+                'id': row['id'],
+                'old_fields': {'ship_name': row['ship_name'] or ''},
+                'new_fields': {'ship_name': target_storage},
+            })
+            holiday_updates += 1
+
+    details = f"{owner_display}: {', '.join(normalized_sources)} -> {target_display} (work={work_updates}, project={project_updates}, holiday={holiday_updates})"
+    return {
+        'success': True,
+        'targetDisplay': target_display,
+        'normalizedSources': normalized_sources,
+        'updates': updates,
+        'workUpdates': work_updates,
+        'projectUpdates': project_updates,
+        'holidayUpdates': holiday_updates,
+        'message': f'미리보기: 작업 {work_updates}건, 등록 {project_updates}건, 휴일 {holiday_updates}건 변경',
+        'details': details,
+    }
+
+
+@eel.expose
+def admin_preview_merge_vendor_workers(vendor_company: str, source_names: List[str],
+                                       target_name: str = '', admin_id: str = '') -> Dict[str, Any]:
+    if not _get_admin_user(admin_id):
+        return {'success': False, 'message': '관리자 권한이 필요합니다.'}
+    return _plan_merge_vendor_workers(vendor_company, source_names, target_name)
+
+
+@eel.expose
+def admin_preview_merge_owner_companies(source_names: List[str], target_name: str = '',
+                                        admin_id: str = '') -> Dict[str, Any]:
+    if not _get_admin_user(admin_id):
+        return {'success': False, 'message': '관리자 권한이 필요합니다.'}
+    return _plan_merge_owner_companies(source_names, target_name)
+
+
+@eel.expose
+def admin_preview_merge_owner_ships(owner_name: str, source_names: List[str], target_name: str = '',
+                                    admin_id: str = '') -> Dict[str, Any]:
+    if not _get_admin_user(admin_id):
+        return {'success': False, 'message': '관리자 권한이 필요합니다.'}
+    return _plan_merge_owner_ships(owner_name, source_names, target_name)
+
+
+@eel.expose
+def admin_get_last_merge_undo(admin_id: str = '') -> Dict[str, Any]:
+    if not _get_admin_user(admin_id):
+        return {'success': False, 'message': '관리자 권한이 필요합니다.', 'available': False}
+    snapshot = _load_last_merge_undo()
+    if not snapshot or not snapshot.get('updates'):
+        return {'success': True, 'available': False, 'summary': ''}
+    return {
+        'success': True,
+        'available': True,
+        'summary': str(snapshot.get('details') or snapshot.get('action') or '').strip(),
+        'action': snapshot.get('action', ''),
+        'target': snapshot.get('target', ''),
+    }
+
+
+@eel.expose
+def admin_undo_last_merge(admin_id: str = '') -> Dict[str, Any]:
+    if not _get_admin_user(admin_id):
+        return {'success': False, 'message': '관리자 권한이 필요합니다.'}
+    snapshot = _load_last_merge_undo()
+    if not snapshot or not snapshot.get('updates'):
+        return {'success': False, 'message': '되돌릴 최근 병합 내역이 없습니다.'}
+
+    try:
+        with db.get_connection() as conn:
+            cursor = conn.cursor()
+            restored = _apply_merge_updates(cursor, snapshot.get('updates', []), use_old_values=True)
+        db.add_activity_log(
+            admin_id,
+            'undo_merge',
+            str(snapshot.get('target') or ''),
+            str(snapshot.get('details') or '')
+        )
+        _clear_last_merge_undo()
+        return {
+            'success': True,
+            'message': f'최근 병합 되돌리기 완료: {restored}건 복원',
+            'restoredCount': restored,
+        }
+    except Exception as e:
+        logger.error(f"병합 되돌리기 오류: {e}")
+        return {'success': False, 'message': '병합 되돌리기 중 오류가 발생했습니다.'}
+
+
 @eel.expose
 def admin_merge_vendor_workers(vendor_company: str, source_names: List[str],
                                target_name: str, admin_id: str = '') -> Dict[str, Any]:
@@ -578,78 +927,27 @@ def admin_merge_vendor_workers(vendor_company: str, source_names: List[str],
     try:
         if not _get_admin_user(admin_id):
             return {'success': False, 'message': '관리자 권한이 필요합니다.'}
-
-        vendor_display = str(vendor_company or '').strip()
-        target_display = str(target_name or '').strip()
-        normalized_sources = sorted({
-            _normalize_holiday_worker_name(name)
-            for name in (source_names or [])
-            if _normalize_holiday_worker_name(name)
-        })
-        if not vendor_display:
-            return {'success': False, 'message': '외주 업체명을 선택하세요.'}
-        if len(normalized_sources) < 2:
-            return {'success': False, 'message': '병합할 직원명을 2개 이상 선택하세요.'}
-        if not target_display:
-            return {'success': False, 'message': '대표 이름을 입력하세요.'}
-
-        now = datetime.now().isoformat()
-        work_updates = 0
-        holiday_updates = 0
-        vendor_key = _normalize_company_label(vendor_display)
+        plan = _plan_merge_vendor_workers(vendor_company, source_names, target_name)
+        if not plan.get('success'):
+            return plan
 
         with db.get_connection() as conn:
             cursor = conn.cursor()
-            work_rows = cursor.execute('''
-                SELECT id, teammates
-                FROM work_records
-                WHERE teammates IS NOT NULL AND teammates != ''
-            ''').fetchall()
-            for row in work_rows:
-                new_teammates, changed = _replace_vendor_worker_names_in_teammates(
-                    row['teammates'] or '',
-                    vendor_display,
-                    normalized_sources,
-                    target_display,
-                )
-                if not changed:
-                    continue
-                cursor.execute('''
-                    UPDATE work_records
-                    SET teammates = ?, updated_at = ?
-                    WHERE id = ?
-                ''', (new_teammates, now, row['id']))
-                work_updates += 1
+            _apply_merge_updates(cursor, plan.get('updates', []), use_old_values=False)
 
-            holiday_rows = cursor.execute('''
-                SELECT id, name, vendor_company, company
-                FROM holiday_work_entries
-                WHERE name IS NOT NULL AND name != ''
-            ''').fetchall()
-            for row in holiday_rows:
-                row_vendor = str(row['vendor_company'] or row['company'] or '').strip()
-                if _normalize_company_label(row_vendor) != vendor_key:
-                    continue
-                if _normalize_holiday_worker_name(row['name'] or '') not in normalized_sources:
-                    continue
-                cursor.execute('''
-                    UPDATE holiday_work_entries
-                    SET name = ?, vendor_company = ?, company = ?, updated_at = ?
-                    WHERE id = ?
-                ''', (target_display, vendor_display, vendor_display, now, row['id']))
-                holiday_updates += 1
-
-        db.add_activity_log(
-            admin_id,
+        vendor_display = str(vendor_company or '').strip()
+        _save_last_merge_undo(_build_undo_snapshot(
             'merge_vendor_workers',
             vendor_display,
-            f"{', '.join(normalized_sources)} -> {target_display} (work={work_updates}, holiday={holiday_updates})"
-        )
+            plan.get('details', ''),
+            plan.get('updates', []),
+        ))
+        db.add_activity_log(admin_id, 'merge_vendor_workers', vendor_display, plan.get('details', ''))
         return {
             'success': True,
-            'message': f'병합 완료: 작업 {work_updates}건, 휴일 {holiday_updates}건 수정',
-            'workUpdates': work_updates,
-            'holidayUpdates': holiday_updates,
+            'message': f"병합 완료: 작업 {plan.get('workUpdates', 0)}건, 휴일 {plan.get('holidayUpdates', 0)}건 수정",
+            'workUpdates': plan.get('workUpdates', 0),
+            'holidayUpdates': plan.get('holidayUpdates', 0),
         }
     except Exception as e:
         logger.error(f"외주 직원 병합 오류: {e}")
@@ -663,85 +961,28 @@ def admin_merge_owner_companies(source_names: List[str], target_name: str,
     try:
         if not _get_admin_user(admin_id):
             return {'success': False, 'message': '관리자 권한이 필요합니다.'}
-
-        target_display = str(target_name or '').strip()
-        normalized_sources = sorted({
-            _normalize_holiday_worker_name(name)
-            for name in (source_names or [])
-            if _normalize_holiday_worker_name(name)
-        })
-        source_keys = {_normalize_company_label(name) for name in normalized_sources}
-
-        if len(normalized_sources) < 2:
-            return {'success': False, 'message': '병합할 선사를 2개 이상 선택하세요.'}
-        if not target_display:
-            return {'success': False, 'message': '대표 선사명을 입력하세요.'}
-
-        now = datetime.now().isoformat()
-        work_updates = 0
-        project_updates = 0
-        holiday_updates = 0
+        plan = _plan_merge_owner_companies(source_names, target_name)
+        if not plan.get('success'):
+            return plan
 
         with db.get_connection() as conn:
             cursor = conn.cursor()
+            _apply_merge_updates(cursor, plan.get('updates', []), use_old_values=False)
 
-            work_rows = cursor.execute('''
-                SELECT id, company
-                FROM work_records
-                WHERE company IS NOT NULL AND company != ''
-            ''').fetchall()
-            for row in work_rows:
-                if _normalize_company_label(row['company'] or '') not in source_keys:
-                    continue
-                cursor.execute('''
-                    UPDATE work_records
-                    SET company = ?, updated_at = ?
-                    WHERE id = ?
-                ''', (target_display, now, row['id']))
-                work_updates += 1
-
-            board_rows = cursor.execute('''
-                SELECT id, company
-                FROM board_projects
-                WHERE company IS NOT NULL AND company != ''
-            ''').fetchall()
-            for row in board_rows:
-                if _normalize_company_label(row['company'] or '') not in source_keys:
-                    continue
-                cursor.execute('''
-                    UPDATE board_projects
-                    SET company = ?, updated_at = ?
-                    WHERE id = ?
-                ''', (target_display, now, row['id']))
-                project_updates += 1
-
-            holiday_rows = cursor.execute('''
-                SELECT id, owner_company
-                FROM holiday_work_entries
-                WHERE owner_company IS NOT NULL AND owner_company != ''
-            ''').fetchall()
-            for row in holiday_rows:
-                if _normalize_company_label(row['owner_company'] or '') not in source_keys:
-                    continue
-                cursor.execute('''
-                    UPDATE holiday_work_entries
-                    SET owner_company = ?, updated_at = ?
-                    WHERE id = ?
-                ''', (target_display, now, row['id']))
-                holiday_updates += 1
-
-        db.add_activity_log(
-            admin_id,
+        target_display = str(plan.get('targetDisplay') or target_name or '').strip()
+        _save_last_merge_undo(_build_undo_snapshot(
             'merge_owner_companies',
             target_display,
-            f"{', '.join(normalized_sources)} -> {target_display} (work={work_updates}, project={project_updates}, holiday={holiday_updates})"
-        )
+            plan.get('details', ''),
+            plan.get('updates', []),
+        ))
+        db.add_activity_log(admin_id, 'merge_owner_companies', target_display, plan.get('details', ''))
         return {
             'success': True,
-            'message': f'병합 완료: 작업 {work_updates}건, 등록 {project_updates}건, 휴일 {holiday_updates}건 수정',
-            'workUpdates': work_updates,
-            'projectUpdates': project_updates,
-            'holidayUpdates': holiday_updates,
+            'message': f"병합 완료: 작업 {plan.get('workUpdates', 0)}건, 등록 {plan.get('projectUpdates', 0)}건, 휴일 {plan.get('holidayUpdates', 0)}건 수정",
+            'workUpdates': plan.get('workUpdates', 0),
+            'projectUpdates': plan.get('projectUpdates', 0),
+            'holidayUpdates': plan.get('holidayUpdates', 0),
         }
     except Exception as e:
         logger.error(f"선사 병합 오류: {e}")
@@ -755,98 +996,28 @@ def admin_merge_owner_ships(owner_name: str, source_names: List[str], target_nam
     try:
         if not _get_admin_user(admin_id):
             return {'success': False, 'message': '관리자 권한이 필요합니다.'}
-
-        owner_display = str(owner_name or '').strip()
-        owner_key = _normalize_company_label(owner_display)
-        target_display = str(target_name or '').strip()
-        normalized_sources = sorted({
-            _normalize_holiday_worker_name(name)
-            for name in (source_names or [])
-            if _normalize_holiday_worker_name(name)
-        })
-        source_keys = {_normalize_ship_label(name) for name in normalized_sources}
-
-        if not owner_key:
-            return {'success': False, 'message': '선사를 먼저 선택하세요.'}
-        if len(normalized_sources) < 2:
-            return {'success': False, 'message': '병합할 선박을 2개 이상 선택하세요.'}
-        if not target_display:
-            return {'success': False, 'message': '대표 선박명을 입력하세요.'}
-
-        now = datetime.now().isoformat()
-        work_updates = 0
-        project_updates = 0
-        holiday_updates = 0
+        plan = _plan_merge_owner_ships(owner_name, source_names, target_name)
+        if not plan.get('success'):
+            return plan
 
         with db.get_connection() as conn:
             cursor = conn.cursor()
+            _apply_merge_updates(cursor, plan.get('updates', []), use_old_values=False)
 
-            work_rows = cursor.execute('''
-                SELECT id, company, ship_name
-                FROM work_records
-                WHERE company IS NOT NULL AND company != ''
-                  AND ship_name IS NOT NULL AND ship_name != ''
-            ''').fetchall()
-            for row in work_rows:
-                if _normalize_company_label(row['company'] or '') != owner_key:
-                    continue
-                if _normalize_ship_label(row['ship_name'] or '') not in source_keys:
-                    continue
-                cursor.execute('''
-                    UPDATE work_records
-                    SET ship_name = ?, updated_at = ?
-                    WHERE id = ?
-                ''', (target_display, now, row['id']))
-                work_updates += 1
-
-            board_rows = cursor.execute('''
-                SELECT id, company, ship_name
-                FROM board_projects
-                WHERE company IS NOT NULL AND company != ''
-                  AND ship_name IS NOT NULL AND ship_name != ''
-            ''').fetchall()
-            for row in board_rows:
-                if _normalize_company_label(row['company'] or '') != owner_key:
-                    continue
-                if _normalize_ship_label(row['ship_name'] or '') not in source_keys:
-                    continue
-                cursor.execute('''
-                    UPDATE board_projects
-                    SET ship_name = ?, updated_at = ?
-                    WHERE id = ?
-                ''', (target_display, now, row['id']))
-                project_updates += 1
-
-            holiday_rows = cursor.execute('''
-                SELECT id, owner_company, ship_name
-                FROM holiday_work_entries
-                WHERE owner_company IS NOT NULL AND owner_company != ''
-                  AND ship_name IS NOT NULL AND ship_name != ''
-            ''').fetchall()
-            for row in holiday_rows:
-                if _normalize_company_label(row['owner_company'] or '') != owner_key:
-                    continue
-                if _normalize_ship_label(row['ship_name'] or '') not in source_keys:
-                    continue
-                cursor.execute('''
-                    UPDATE holiday_work_entries
-                    SET ship_name = ?, updated_at = ?
-                    WHERE id = ?
-                ''', (target_display, now, row['id']))
-                holiday_updates += 1
-
-        db.add_activity_log(
-            admin_id,
+        owner_display = str(owner_name or '').strip()
+        _save_last_merge_undo(_build_undo_snapshot(
             'merge_owner_ships',
             owner_display,
-            f"{owner_display}: {', '.join(normalized_sources)} -> {target_display} (work={work_updates}, project={project_updates}, holiday={holiday_updates})"
-        )
+            plan.get('details', ''),
+            plan.get('updates', []),
+        ))
+        db.add_activity_log(admin_id, 'merge_owner_ships', owner_display, plan.get('details', ''))
         return {
             'success': True,
-            'message': f'병합 완료: 작업 {work_updates}건, 등록 {project_updates}건, 휴일 {holiday_updates}건 수정',
-            'workUpdates': work_updates,
-            'projectUpdates': project_updates,
-            'holidayUpdates': holiday_updates,
+            'message': f"병합 완료: 작업 {plan.get('workUpdates', 0)}건, 등록 {plan.get('projectUpdates', 0)}건, 휴일 {plan.get('holidayUpdates', 0)}건 수정",
+            'workUpdates': plan.get('workUpdates', 0),
+            'projectUpdates': plan.get('projectUpdates', 0),
+            'holidayUpdates': plan.get('holidayUpdates', 0),
         }
     except Exception as e:
         logger.error(f"선박 병합 오류: {e}")
@@ -1395,6 +1566,10 @@ def _holiday_value_to_ot(work_value: Any) -> float:
     return 8.0 if text and text != '-' else 0.0
 
 
+EMPTY_SHIP_LABEL = '(선박 미입력)'
+LAST_MERGE_UNDO_KEY = 'admin.last_merge_undo'
+
+
 def _normalize_holiday_worker_name(name: Any) -> str:
     text = str(name or '')
     text = re.sub(r'<[^>]+>', '', text)
@@ -1407,7 +1582,187 @@ def _normalize_company_label(name: Any) -> str:
 
 
 def _normalize_ship_label(name: Any) -> str:
-    return _normalize_holiday_worker_name(name).lower()
+    text = _normalize_holiday_worker_name(name)
+    if not text or text == EMPTY_SHIP_LABEL:
+        return '__empty_ship__'
+    return text.lower()
+
+
+def _display_ship_label(name: Any) -> str:
+    text = _normalize_holiday_worker_name(name)
+    return text or EMPTY_SHIP_LABEL
+
+
+def _storage_ship_label(name: Any) -> str:
+    text = _normalize_holiday_worker_name(name)
+    return '' if not text or text == EMPTY_SHIP_LABEL else text
+
+
+def _normalize_merge_suggestion_key(name: Any) -> str:
+    text = _normalize_holiday_worker_name(name)
+    if not text or text == EMPTY_SHIP_LABEL:
+        return ''
+    return ''.join(ch.casefold() for ch in text if ch.isalnum())
+
+
+def _levenshtein_distance_limit_one(left: str, right: str) -> int:
+    if left == right:
+        return 0
+    if abs(len(left) - len(right)) > 1:
+        return 2
+
+    if len(left) > len(right):
+        left, right = right, left
+
+    if len(left) == len(right):
+        mismatches = sum(1 for idx in range(len(left)) if left[idx] != right[idx])
+        return mismatches if mismatches <= 1 else 2
+
+    idx = 0
+    jdx = 0
+    mismatches = 0
+    while idx < len(left) and jdx < len(right):
+        if left[idx] == right[jdx]:
+            idx += 1
+            jdx += 1
+            continue
+        mismatches += 1
+        if mismatches > 1:
+            return 2
+        jdx += 1
+
+    if jdx < len(right) or idx < len(left):
+        mismatches += 1
+    return mismatches if mismatches <= 1 else 2
+
+
+def _is_likely_merge_suggestion_pair(left_key: str, right_key: str) -> bool:
+    if not left_key or not right_key or left_key == right_key:
+        return False
+    if _levenshtein_distance_limit_one(left_key, right_key) <= 1:
+        return True
+    if left_key[0] != right_key[0]:
+        return False
+    if abs(len(left_key) - len(right_key)) > 3:
+        return False
+    ratio = difflib.SequenceMatcher(None, left_key, right_key).ratio()
+    return ratio >= 0.84
+
+
+def _build_merge_suggestions(names: List[str], limit: int = 6) -> List[Dict[str, Any]]:
+    unique_names: List[str] = []
+    seen_names = set()
+    for raw_name in names or []:
+        name = str(raw_name or '').strip()
+        if not name or name in seen_names or name == EMPTY_SHIP_LABEL:
+            continue
+        seen_names.add(name)
+        unique_names.append(name)
+
+    suggestions: List[Dict[str, Any]] = []
+    seen_groups = set()
+    key_groups: Dict[str, List[str]] = {}
+    for name in unique_names:
+        key = _normalize_merge_suggestion_key(name)
+        if len(key) < 3:
+            continue
+        key_groups.setdefault(key, []).append(name)
+
+    for group in key_groups.values():
+        if len(group) < 2:
+            continue
+        names_key = tuple(sorted(group))
+        if names_key in seen_groups:
+            continue
+        seen_groups.add(names_key)
+        suggestions.append({
+            'names': list(group),
+            'label': ' / '.join(group),
+            'reason': '형식 차이',
+        })
+        if len(suggestions) >= limit:
+            return suggestions
+
+    for idx, left_name in enumerate(unique_names):
+        left_key = _normalize_merge_suggestion_key(left_name)
+        if len(left_key) < 3:
+            continue
+        for right_name in unique_names[idx + 1:]:
+            right_key = _normalize_merge_suggestion_key(right_name)
+            if len(right_key) < 3:
+                continue
+            if left_key == right_key:
+                continue
+            if not _is_likely_merge_suggestion_pair(left_key, right_key):
+                continue
+            names_key = tuple(sorted([left_name, right_name]))
+            if names_key in seen_groups:
+                continue
+            seen_groups.add(names_key)
+            suggestions.append({
+                'names': [left_name, right_name],
+                'label': f'{left_name} / {right_name}',
+                'reason': '유사 이름',
+            })
+            if len(suggestions) >= limit:
+                return suggestions
+
+    return suggestions
+
+
+def _build_undo_snapshot(action: str, target: str, details: str,
+                         updates: List[Dict[str, Any]]) -> Dict[str, Any]:
+    return {
+        'action': action,
+        'target': target,
+        'details': details,
+        'createdAt': datetime.now().isoformat(),
+        'updates': updates,
+    }
+
+
+def _save_last_merge_undo(snapshot: Dict[str, Any]) -> None:
+    db.set_setting(LAST_MERGE_UNDO_KEY, json.dumps(snapshot, ensure_ascii=False))
+
+
+def _load_last_merge_undo() -> Optional[Dict[str, Any]]:
+    raw_value = db.get_setting(LAST_MERGE_UNDO_KEY, '')
+    if not raw_value:
+        return None
+    try:
+        return json.loads(raw_value)
+    except Exception:
+        return None
+
+
+def _clear_last_merge_undo() -> None:
+    db.set_setting(LAST_MERGE_UNDO_KEY, '')
+
+
+def _apply_merge_updates(cursor, updates: List[Dict[str, Any]], use_old_values: bool = False) -> int:
+    table_fields = {
+        'work_records': {'company', 'ship_name', 'teammates'},
+        'board_projects': {'company', 'ship_name'},
+        'holiday_work_entries': {'owner_company', 'vendor_company', 'company', 'ship_name', 'name'},
+    }
+    now = datetime.now().isoformat()
+    applied = 0
+
+    for update in updates or []:
+        table = str(update.get('table') or '')
+        row_id = update.get('id')
+        values = update.get('old_fields' if use_old_values else 'new_fields') or {}
+        if table not in table_fields or not values or row_id in (None, ''):
+            continue
+        field_names = [field for field in values.keys() if field in table_fields[table]]
+        if not field_names:
+            continue
+        assignments = ', '.join([f'{field} = ?' for field in field_names] + ['updated_at = ?'])
+        params = [values[field] for field in field_names] + [now, row_id]
+        cursor.execute(f'UPDATE {table} SET {assignments} WHERE id = ?', params)
+        applied += 1
+
+    return applied
 
 
 def _mixed_locale_sort_key(name: Any):
@@ -3932,6 +4287,12 @@ def get_compact_patch_notes(from_version: str, to_version: str = '') -> Dict[str
             start_parsed = pkg_version.parse(start_ver) if start_ver else None
         except Exception:
             return {'success': False, 'message': '버전 형식이 올바르지 않습니다.'}
+
+        if start_parsed and start_parsed >= end_parsed:
+            return {
+                'success': False,
+                'message': '패치 노트는 이전 버전보다 높은 버전으로 업데이트될 때만 표시됩니다.'
+            }
 
         page = 1
         matched = []

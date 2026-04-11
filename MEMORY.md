@@ -2,6 +2,11 @@
 
 ## Bug Fixes Applied
 
+- 2026-04-11: Excluded live `config/settings.json` from the installer and now seed first-run installs from `config/settings.example.json`, preventing GitHub/Telegram tokens from being packaged into setup builds while keeping default app versions aligned with the current release.
+- 2026-04-11: Fixed 선사 목록 ship merges so the visible placeholder `(선박 미입력)` now maps back to blank `ship_name` rows and can be merged into a real ship name across `work_records`, `board_projects`, and `holiday_work_entries`.
+- 2026-04-11: Hardened login patch-note display so downgrade or same-version logins no longer show a misleading “updated” modal when the stored client version is already newer than or equal to the running app version.
+- 2026-04-11: Added merge preview/undo flow to 관리자 > DB 관리 so owner, ship, and vendor-name merges now show affected row counts before applying and support one-step rollback of the most recent merge.
+- 2026-04-11: Added duplicate-candidate suggestions to 선사/선박/외주 직원 catalogs, surfacing likely typo pairs as clickable merge recommendations based on normalized/fuzzy name matching.
 - 2026-04-10: Split holiday OT metadata into `ownerCompany` and `vendorCompany` so holiday entries no longer overload a single `company` field with both 선사 and 외주 업체 meanings; holiday company searches now match the vendor company while search results continue to show the owner company in the 선사 column.
 - 2026-04-10: Tightened holiday OT metadata inference so in-house workers no longer inherit owner-company names as vendor companies, ambiguous duplicate-name matches are left unresolved instead of auto-filling the first project, and morning reminders are marked as shown only after the popup is actually rendered.
 - 2026-04-10: Corrected legacy holiday vendor inference so old rows that stored the owner-company alias in `company` now recover the real `vendorCompany`, and the morning reminder is only suppressed for the day when the user explicitly clicks `오늘은 닫기`.

@@ -1363,12 +1363,19 @@
                 <div id="adminDbOwnersSubtab" class="hidden">
                     <div class="mb-4 flex items-center justify-between">
                         <p class="text-sm text-slate-500">지금까지 기록된 선사를 오름차순으로 보여주고, 선택한 선사의 선박과 장비를 오른쪽에 표시합니다. `Ctrl` 선택 후 우클릭으로 선사명과 선박명을 각각 병합할 수 있습니다.</p>
-                        <button onclick="loadAdminOwnerCompanyCatalog(true)"
-                                class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 rounded text-sm">새로고침</button>
+                        <div class="flex items-center gap-2">
+                            <button id="btnUndoOwnerMerge" onclick="undoLastAdminMerge()"
+                                    class="hidden px-3 py-1.5 bg-amber-100 hover:bg-amber-200 text-amber-900 rounded text-sm">
+                                최근 병합 되돌리기
+                            </button>
+                            <button onclick="loadAdminOwnerCompanyCatalog(true)"
+                                    class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 rounded text-sm">새로고침</button>
+                        </div>
                     </div>
                     <div class="grid grid-cols-12 gap-4">
                         <div class="col-span-4 border rounded-xl bg-slate-50 min-h-[420px] relative">
                             <div class="px-4 py-3 border-b bg-white rounded-t-xl font-semibold">선사 목록</div>
+                            <div id="adminOwnerCompanySuggestions" class="px-3 pt-3"></div>
                             <div id="adminOwnerCompanyList" class="max-h-[520px] overflow-y-auto p-2 space-y-2"></div>
                             <div id="adminOwnerCompanyContextMenu"
                                  class="hidden absolute z-50 bg-white border border-slate-200 rounded-lg shadow-xl py-1 min-w-[140px]">
@@ -1395,8 +1402,14 @@
                 <div id="adminDbVendorsSubtab" class="hidden">
                     <div class="mb-4 flex items-center justify-between">
                         <p class="text-sm text-slate-500">왼쪽에서 외주 업체를 선택하면 오른쪽에 소속 직원명이 보입니다. `Ctrl` 키를 누른 채 여러 이름을 선택한 뒤 우클릭하면 병합할 수 있습니다.</p>
-                        <button onclick="loadAdminVendorCompanyCatalog(true)"
-                                class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 rounded text-sm">새로고침</button>
+                        <div class="flex items-center gap-2">
+                            <button id="btnUndoVendorMerge" onclick="undoLastAdminMerge()"
+                                    class="hidden px-3 py-1.5 bg-amber-100 hover:bg-amber-200 text-amber-900 rounded text-sm">
+                                최근 병합 되돌리기
+                            </button>
+                            <button onclick="loadAdminVendorCompanyCatalog(true)"
+                                    class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 rounded text-sm">새로고침</button>
+                        </div>
                     </div>
                     <div class="grid grid-cols-12 gap-4">
                         <div class="col-span-4 border rounded-xl bg-slate-50 min-h-[420px]">

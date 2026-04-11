@@ -3,12 +3,12 @@
 
 [Setup]
 AppName=금일작업현황 관리
-AppVersion=2.3.7
+AppVersion=2.3.8
 AppPublisher=Your Company
 DefaultDirName={autopf}\WorkManagement
 DefaultGroupName=금일작업현황 관리
 OutputDir=dist\installer
-OutputBaseFilename=WorkManagement_Setup_v2.3.7
+OutputBaseFilename=WorkManagement_Setup_v2.3.8
 Compression=lzma2/max
 SolidCompression=yes
 ArchitecturesAllowed=x64compatible
@@ -33,7 +33,9 @@ Source: "build_embedded\app\src\*"; DestDir: "{app}\app\src"; Flags: ignoreversi
 Source: "build_embedded\app\web\*"; DestDir: "{app}\app\web"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 ; 설정 파일 (최초 설치만 복사, 업데이트 후 사용자 설정 보존)
-Source: "build_embedded\app\config\*"; DestDir: "{app}\app\config"; Flags: onlyifdoesntexist recursesubdirs createallsubdirs
+; 운영용 settings.json 은 토큰을 포함할 수 있으므로 설치본에 직접 포함하지 않는다.
+Source: "build_embedded\app\config\*"; DestDir: "{app}\app\config"; Excludes: "settings.json"; Flags: onlyifdoesntexist recursesubdirs createallsubdirs
+Source: "build_embedded\app\config\settings.example.json"; DestDir: "{app}\app\config"; DestName: "settings.json"; Flags: onlyifdoesntexist
 
 ; 에셋 (로고 등)
 Source: "build_embedded\app\assets\*"; DestDir: "{app}\app\assets"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
