@@ -749,6 +749,111 @@ def admin_merge_owner_companies(source_names: List[str], target_name: str,
 
 
 @eel.expose
+def admin_merge_owner_ships(owner_name: str, source_names: List[str], target_name: str,
+                            admin_id: str = '') -> Dict[str, Any]:
+    """선사 내부의 중복 선박명을 하나의 대표 이름으로 병합"""
+    try:
+        if not _get_admin_user(admin_id):
+            return {'success': False, 'message': '관리자 권한이 필요합니다.'}
+
+        owner_display = str(owner_name or '').strip()
+        owner_key = _normalize_company_label(owner_display)
+        target_display = str(target_name or '').strip()
+        normalized_sources = sorted({
+            _normalize_holiday_worker_name(name)
+            for name in (source_names or [])
+            if _normalize_holiday_worker_name(name)
+        })
+        source_keys = {_normalize_ship_label(name) for name in normalized_sources}
+
+        if not owner_key:
+            return {'success': False, 'message': '선사를 먼저 선택하세요.'}
+        if len(normalized_sources) < 2:
+            return {'success': False, 'message': '병합할 선박을 2개 이상 선택하세요.'}
+        if not target_display:
+            return {'success': False, 'message': '대표 선박명을 입력하세요.'}
+
+        now = datetime.now().isoformat()
+        work_updates = 0
+        project_updates = 0
+        holiday_updates = 0
+
+        with db.get_connection() as conn:
+            cursor = conn.cursor()
+
+            work_rows = cursor.execute('''
+                SELECT id, company, ship_name
+                FROM work_records
+                WHERE company IS NOT NULL AND company != ''
+                  AND ship_name IS NOT NULL AND ship_name != ''
+            ''').fetchall()
+            for row in work_rows:
+                if _normalize_company_label(row['company'] or '') != owner_key:
+                    continue
+                if _normalize_ship_label(row['ship_name'] or '') not in source_keys:
+                    continue
+                cursor.execute('''
+                    UPDATE work_records
+                    SET ship_name = ?, updated_at = ?
+                    WHERE id = ?
+                ''', (target_display, now, row['id']))
+                work_updates += 1
+
+            board_rows = cursor.execute('''
+                SELECT id, company, ship_name
+                FROM board_projects
+                WHERE company IS NOT NULL AND company != ''
+                  AND ship_name IS NOT NULL AND ship_name != ''
+            ''').fetchall()
+            for row in board_rows:
+                if _normalize_company_label(row['company'] or '') != owner_key:
+                    continue
+                if _normalize_ship_label(row['ship_name'] or '') not in source_keys:
+                    continue
+                cursor.execute('''
+                    UPDATE board_projects
+                    SET ship_name = ?, updated_at = ?
+                    WHERE id = ?
+                ''', (target_display, now, row['id']))
+                project_updates += 1
+
+            holiday_rows = cursor.execute('''
+                SELECT id, owner_company, ship_name
+                FROM holiday_work_entries
+                WHERE owner_company IS NOT NULL AND owner_company != ''
+                  AND ship_name IS NOT NULL AND ship_name != ''
+            ''').fetchall()
+            for row in holiday_rows:
+                if _normalize_company_label(row['owner_company'] or '') != owner_key:
+                    continue
+                if _normalize_ship_label(row['ship_name'] or '') not in source_keys:
+                    continue
+                cursor.execute('''
+                    UPDATE holiday_work_entries
+                    SET ship_name = ?, updated_at = ?
+                    WHERE id = ?
+                ''', (target_display, now, row['id']))
+                holiday_updates += 1
+
+        db.add_activity_log(
+            admin_id,
+            'merge_owner_ships',
+            owner_display,
+            f"{owner_display}: {', '.join(normalized_sources)} -> {target_display} (work={work_updates}, project={project_updates}, holiday={holiday_updates})"
+        )
+        return {
+            'success': True,
+            'message': f'병합 완료: 작업 {work_updates}건, 등록 {project_updates}건, 휴일 {holiday_updates}건 수정',
+            'workUpdates': work_updates,
+            'projectUpdates': project_updates,
+            'holidayUpdates': holiday_updates,
+        }
+    except Exception as e:
+        logger.error(f"선박 병합 오류: {e}")
+        return {'success': False, 'message': '선박 병합 중 오류가 발생했습니다.'}
+
+
+@eel.expose
 def admin_update_local_db_path(new_path: str, admin_id: str) -> Dict[str, Any]:
     """로컬 DB 경로 변경 (관리자 전용)"""
     try:
@@ -1298,6 +1403,10 @@ def _normalize_holiday_worker_name(name: Any) -> str:
 
 
 def _normalize_company_label(name: Any) -> str:
+    return _normalize_holiday_worker_name(name).lower()
+
+
+def _normalize_ship_label(name: Any) -> str:
     return _normalize_holiday_worker_name(name).lower()
 
 

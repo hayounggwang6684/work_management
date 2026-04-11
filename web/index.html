@@ -1362,7 +1362,7 @@
 
                 <div id="adminDbOwnersSubtab" class="hidden">
                     <div class="mb-4 flex items-center justify-between">
-                        <p class="text-sm text-slate-500">지금까지 기록된 선사를 오름차순으로 보여주고, 선택한 선사의 선박과 장비를 오른쪽에 표시합니다. `Ctrl` 선택 후 우클릭으로 선사명을 병합할 수 있습니다.</p>
+                        <p class="text-sm text-slate-500">지금까지 기록된 선사를 오름차순으로 보여주고, 선택한 선사의 선박과 장비를 오른쪽에 표시합니다. `Ctrl` 선택 후 우클릭으로 선사명과 선박명을 각각 병합할 수 있습니다.</p>
                         <button onclick="loadAdminOwnerCompanyCatalog(true)"
                                 class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 rounded text-sm">새로고침</button>
                     </div>
@@ -1378,9 +1378,16 @@
                                 </button>
                             </div>
                         </div>
-                        <div class="col-span-8 border rounded-xl bg-white min-h-[420px]">
+                        <div class="col-span-8 border rounded-xl bg-white min-h-[420px] relative">
                             <div class="px-4 py-3 border-b font-semibold">선박 / 장비</div>
                             <div id="adminOwnerCompanyDetail" class="p-4"></div>
+                            <div id="adminOwnerShipContextMenu"
+                                 class="hidden absolute z-50 bg-white border border-slate-200 rounded-lg shadow-xl py-1 min-w-[140px]">
+                                <button onclick="promptMergeSelectedOwnerShips()"
+                                        class="w-full text-left px-4 py-2 text-sm hover:bg-slate-100">
+                                    병합
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>

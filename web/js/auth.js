@@ -351,6 +351,7 @@ const _adminDbState = {
     owners: [],
     selectedOwner: '',
     selectedOwners: new Set(),
+    selectedOwnerShips: new Set(),
     vendors: [],
     selectedVendor: '',
     selectedVendorWorkers: new Set(),
@@ -398,11 +399,24 @@ function showAdminDbSubtab(tab) {
         if (panel) panel.classList.toggle('hidden', key !== tab);
     });
     closeAdminOwnerCompanyContextMenu();
+    closeAdminOwnerShipContextMenu();
     closeAdminVendorWorkerContextMenu();
     if (tab === 'owners') loadAdminOwnerCompanyCatalog();
     if (tab === 'vendors') loadAdminVendorCompanyCatalog();
 }
 window.showAdminDbSubtab = showAdminDbSubtab;
+
+function _getSelectedOwnerEntry() {
+    return _adminDbState.owners.find(item => item.name === _adminDbState.selectedOwner) || _adminDbState.owners[0] || null;
+}
+
+function _syncSelectedOwnerShips() {
+    const owner = _getSelectedOwnerEntry();
+    const validNames = new Set((owner?.ships || []).map(ship => ship.shipName));
+    _adminDbState.selectedOwnerShips = new Set(
+        [..._adminDbState.selectedOwnerShips].filter(name => validNames.has(name))
+    );
+}
 
 async function loadAdminOwnerCompanyCatalog(force = false) {
     if (!force && _adminDbState.owners.length > 0) {
@@ -428,6 +442,7 @@ async function loadAdminOwnerCompanyCatalog(force = false) {
         if (_adminDbState.selectedOwners.size === 0 && _adminDbState.selectedOwner) {
             _adminDbState.selectedOwners = new Set([_adminDbState.selectedOwner]);
         }
+        _syncSelectedOwnerShips();
         renderAdminOwnerCompanyList();
     } catch (error) {
         console.error('선사 목록 로드 오류:', error);
@@ -459,8 +474,9 @@ function renderAdminOwnerCompanyList() {
             </button>`;
     }).join('');
 
-    const owner = _adminDbState.owners.find(item => item.name === _adminDbState.selectedOwner) || _adminDbState.owners[0];
+    const owner = _getSelectedOwnerEntry();
     _adminDbState.selectedOwner = owner?.name || '';
+    _syncSelectedOwnerShips();
     if (!owner) {
         detailEl.innerHTML = '<p class="text-sm text-slate-400">선사를 선택하면 선박과 장비가 표시됩니다.</p>';
         return;
@@ -470,10 +486,13 @@ function renderAdminOwnerCompanyList() {
         <div class="mb-4">
             <div class="text-lg font-bold text-slate-800">${escapeHtml(owner.name)}</div>
             <div class="text-sm text-slate-500 mt-1">선박 ${owner.shipCount}척 · 작업 ${owner.workRecordCount + owner.holidayCount}건 · 등록 ${owner.projectCount}건</div>
+            <div class="text-xs text-slate-400 mt-2">선박도 Ctrl 선택 후 우클릭으로 병합할 수 있습니다.</div>
         </div>
         <div class="space-y-3">
             ${owner.ships.map(ship => `
-                <div class="border border-slate-200 rounded-xl p-4 bg-slate-50">
+                <button onclick="handleAdminOwnerShipClick('${escapeJs(ship.shipName)}', event)"
+                        oncontextmenu="handleAdminOwnerShipContextMenu('${escapeJs(ship.shipName)}', event)"
+                        class="w-full text-left border rounded-xl p-4 transition ${_adminDbState.selectedOwnerShips.has(ship.shipName) ? 'bg-blue-50 border-blue-300' : 'bg-slate-50 border-slate-200 hover:bg-slate-100'}">
                     <div class="flex items-center justify-between gap-4 mb-2">
                         <div class="font-semibold text-slate-800">${escapeHtml(ship.shipName)}</div>
                         <div class="text-xs text-slate-500">작업 ${ship.workRecordCount + ship.holidayCount}건 · 등록 ${ship.projectCount}건</div>
@@ -483,7 +502,7 @@ function renderAdminOwnerCompanyList() {
                             ? ship.engineModels.map(model => `<span class="px-2 py-1 bg-white border border-slate-200 rounded-full text-xs text-slate-700">${escapeHtml(model)}</span>`).join('')
                             : '<span class="text-xs text-slate-400">등록된 장비 없음</span>'}
                     </div>
-                </div>
+                </button>
             `).join('')}
         </div>`;
 }
@@ -491,12 +510,14 @@ function renderAdminOwnerCompanyList() {
 function selectAdminOwnerCompany(ownerName) {
     _adminDbState.selectedOwner = ownerName;
     _adminDbState.selectedOwners = new Set([ownerName]);
+    _adminDbState.selectedOwnerShips = new Set();
     renderAdminOwnerCompanyList();
 }
 window.selectAdminOwnerCompany = selectAdminOwnerCompany;
 
 function handleAdminOwnerCompanyClick(ownerName, event) {
     closeAdminOwnerCompanyContextMenu();
+    closeAdminOwnerShipContextMenu();
     const multi = !!(event && (event.ctrlKey || event.metaKey));
     _adminDbState.selectedOwner = ownerName;
     if (multi) {
@@ -508,6 +529,7 @@ function handleAdminOwnerCompanyClick(ownerName, event) {
     } else {
         _adminDbState.selectedOwners = new Set([ownerName]);
     }
+    _adminDbState.selectedOwnerShips = new Set();
     renderAdminOwnerCompanyList();
 }
 window.handleAdminOwnerCompanyClick = handleAdminOwnerCompanyClick;
@@ -573,6 +595,89 @@ async function promptMergeSelectedOwnerCompanies() {
     }
 }
 window.promptMergeSelectedOwnerCompanies = promptMergeSelectedOwnerCompanies;
+
+function handleAdminOwnerShipClick(shipName, event) {
+    closeAdminOwnerShipContextMenu();
+    const multi = !!(event && (event.ctrlKey || event.metaKey));
+    if (multi) {
+        if (_adminDbState.selectedOwnerShips.has(shipName)) _adminDbState.selectedOwnerShips.delete(shipName);
+        else _adminDbState.selectedOwnerShips.add(shipName);
+        if (_adminDbState.selectedOwnerShips.size === 0) {
+            _adminDbState.selectedOwnerShips = new Set([shipName]);
+        }
+    } else {
+        _adminDbState.selectedOwnerShips = new Set([shipName]);
+    }
+    renderAdminOwnerCompanyList();
+}
+window.handleAdminOwnerShipClick = handleAdminOwnerShipClick;
+
+function handleAdminOwnerShipContextMenu(shipName, event) {
+    event.preventDefault();
+    if (!_adminDbState.selectedOwnerShips.has(shipName)) {
+        _adminDbState.selectedOwnerShips = new Set([shipName]);
+        renderAdminOwnerCompanyList();
+    }
+    if (_adminDbState.selectedOwnerShips.size < 2) {
+        closeAdminOwnerShipContextMenu();
+        return;
+    }
+    const menu = document.getElementById('adminOwnerShipContextMenu');
+    if (!menu) return;
+    const parentRect = menu.parentElement?.getBoundingClientRect();
+    const offsetX = parentRect ? event.clientX - parentRect.left : event.clientX;
+    const offsetY = parentRect ? event.clientY - parentRect.top : event.clientY;
+    menu.style.left = `${offsetX}px`;
+    menu.style.top = `${offsetY}px`;
+    menu.classList.remove('hidden');
+}
+window.handleAdminOwnerShipContextMenu = handleAdminOwnerShipContextMenu;
+
+function closeAdminOwnerShipContextMenu() {
+    document.getElementById('adminOwnerShipContextMenu')?.classList.add('hidden');
+}
+window.closeAdminOwnerShipContextMenu = closeAdminOwnerShipContextMenu;
+
+async function promptMergeSelectedOwnerShips() {
+    closeAdminOwnerShipContextMenu();
+    const ownerName = _adminDbState.selectedOwner;
+    const selected = [..._adminDbState.selectedOwnerShips];
+    if (!ownerName) {
+        showToast('선사를 먼저 선택하세요.', 'warning');
+        return;
+    }
+    if (selected.length < 2) {
+        showToast('병합할 선박을 2개 이상 선택하세요.', 'warning');
+        return;
+    }
+
+    const targetName = prompt(
+        `대표 선박명을 입력하세요.\n\n선사: ${ownerName}\n선택: ${selected.join(', ')}`,
+        selected[0]
+    );
+    if (!targetName || !targetName.trim()) return;
+    if (!confirm(`"${selected.join(', ')}" 을(를) "${targetName.trim()}" 으로 병합하시겠습니까?`)) return;
+
+    try {
+        const result = await eel.admin_merge_owner_ships(
+            ownerName,
+            selected,
+            targetName.trim(),
+            currentUser?.user_id || ''
+        )();
+        if (!result || !result.success) {
+            showCustomAlert('오류', result?.message || '선박 병합에 실패했습니다.', 'error');
+            return;
+        }
+        showToast(result.message || '선박 병합이 완료되었습니다.', 'success');
+        _adminDbState.selectedOwnerShips = new Set([targetName.trim()]);
+        await loadAdminOwnerCompanyCatalog(true);
+    } catch (error) {
+        console.error('선박 병합 오류:', error);
+        showCustomAlert('오류', '선박 병합 중 오류가 발생했습니다.', 'error');
+    }
+}
+window.promptMergeSelectedOwnerShips = promptMergeSelectedOwnerShips;
 
 async function loadAdminVendorCompanyCatalog(force = false) {
     if (!force && _adminDbState.vendors.length > 0) {
@@ -739,6 +844,10 @@ document.addEventListener('click', (event) => {
     if (ownerMenu && !ownerMenu.classList.contains('hidden')) {
         if (!ownerMenu.contains(event.target)) closeAdminOwnerCompanyContextMenu();
     }
+    const ownerShipMenu = document.getElementById('adminOwnerShipContextMenu');
+    if (ownerShipMenu && !ownerShipMenu.classList.contains('hidden')) {
+        if (!ownerShipMenu.contains(event.target)) closeAdminOwnerShipContextMenu();
+    }
     const menu = document.getElementById('adminVendorWorkerContextMenu');
     if (!menu || menu.classList.contains('hidden')) return;
     if (menu.contains(event.target)) return;
@@ -748,6 +857,7 @@ document.addEventListener('click', (event) => {
 document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') {
         closeAdminOwnerCompanyContextMenu();
+        closeAdminOwnerShipContextMenu();
         closeAdminVendorWorkerContextMenu();
     }
 });
