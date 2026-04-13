@@ -1958,11 +1958,12 @@ function createTableRow(record, index, records = workRecords, showEndTime = fals
         <td class="border p-2 text-center w-10">
             <input type="checkbox" id="isAs_${index}" class="w-4 h-4 cursor-pointer accent-orange-500">
         </td>
-        ${showEndTime ? `<td class="border p-0 w-20">
+        ${showEndTime ? `<td class="border p-0 w-24 min-w-[96px]">
             <input type="text" id="endTime_${index}"
-                   oninput="updateRecord(${index}, 'endTime', this.value)"
+                   oninput="handleEndTimeInput(${index}, this)"
+                   onblur="handleEndTimeInput(${index}, this)"
                    class="w-full px-2 py-1 text-center border-0 focus:bg-indigo-50 outline-none text-sm"
-                   placeholder="23:30">
+                   placeholder="2100 / 21:00">
         </td>` : ''}
     `;
 
@@ -2176,6 +2177,38 @@ function handleTeammatesInput(index, input) {
     const storedValue = displayValue.replace(/\*(.*?)\*/g, '<i>$1</i>');
     updateRecord(index, 'teammates', storedValue);
     calculateManpowerInstant(index);
+}
+
+function normalizeEndTimeValue(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+
+    if (raw.includes(':')) {
+        const sanitized = raw.replace(/[^\d:]/g, '');
+        const [rawHour = '', rawMinute = ''] = sanitized.split(':');
+        const hour = rawHour.slice(0, 2);
+        const minute = rawMinute.slice(0, 2);
+        return minute ? `${hour}:${minute}` : hour;
+    }
+
+    const digits = raw.replace(/\D/g, '').slice(0, 4);
+    if (digits.length <= 2) return digits;
+    if (digits.length === 3) return `${digits.slice(0, 1)}:${digits.slice(1)}`;
+    return `${digits.slice(0, 2)}:${digits.slice(2, 4)}`;
+}
+
+function handleEndTimeInput(index, input) {
+    const oldValue = input.value;
+    const cursorPosition = input.selectionStart || oldValue.length;
+    const newValue = normalizeEndTimeValue(oldValue);
+
+    if (oldValue !== newValue) {
+        input.value = newValue;
+        const nextCursor = Math.min(newValue.length, cursorPosition + (newValue.length - oldValue.length));
+        try { input.setSelectionRange(nextCursor, nextCursor); } catch (_) { /* noop */ }
+    }
+
+    updateRecord(index, 'endTime', newValue);
 }
 
 // ============================================================================

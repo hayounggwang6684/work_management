@@ -465,7 +465,7 @@ function renderNightReportTable() {
     tbody.innerHTML = '';
 
     if (_nightReportEntries.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7" class="border border-gray-900 p-3 text-center text-slate-500">작업 내역이 없습니다.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8" class="border border-gray-900 p-3 text-center text-slate-500">작업 내역이 없습니다.</td></tr>';
         if (totalEl) totalEl.textContent = '0';
         return;
     }
@@ -514,8 +514,10 @@ function renderNightReportTable() {
                 <input type="text" value="${escapeHtml(entry.dateLabel||'')}" class="w-20 px-1 py-1 border-0 focus:bg-yellow-50 text-sm text-center"
                        onchange="_updateNightEntry(${i},'dateLabel',this.value)">
             </td>
+            <td class="border border-gray-900 p-2 text-center text-sm text-blue-700 font-medium whitespace-nowrap">
+                ${escapeHtml(entry.shipName || '-')}
+            </td>
             <td class="border border-gray-900 p-0">
-                ${entry.shipName ? `<div class="px-1 pt-0.5 text-xs text-blue-600 font-medium border-b border-gray-100">${escapeHtml(entry.shipName)}</div>` : ''}
                 <input type="text" value="${escapeHtml(entry.workContent||'')}" class="w-full px-1 py-1 border-0 focus:bg-yellow-50 text-sm"
                        onchange="_updateNightEntry(${i},'workContent',this.value)">
             </td>
@@ -756,7 +758,7 @@ function renderHolidayTable() {
     tbody.innerHTML = '';
 
     if (_holidayEntries.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="9" class="border border-gray-900 p-3 text-center text-slate-500">입력된 내역이 없습니다.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="10" class="border border-gray-900 p-3 text-center text-slate-500">입력된 내역이 없습니다.</td></tr>';
         return;
     }
 
@@ -811,21 +813,11 @@ function renderHolidayTable() {
                        onchange="_updateHolidayEntry(${i},'sunWork',this.value)">
             </td>
             <td class="border border-gray-900 p-0">
-                ${entry.shipName ? `<div class="px-1 pt-0.5 text-xs text-blue-600 font-medium border-b border-gray-100">${escapeHtml(entry.shipName)}</div>` : ''}
-                <div class="grid grid-cols-1 gap-0 border-b border-gray-100 bg-slate-50 no-capture">
-                    <input type="text" value="${escapeHtml(entry.contractNumber||'')}" placeholder="계약번호"
-                           class="w-full px-1 py-1 border-0 border-b border-gray-100 focus:bg-yellow-50 text-xs font-mono"
-                           onchange="_updateHolidayEntry(${i},'contractNumber',this.value)">
-                    <input type="text" value="${escapeHtml(entry.ownerCompany||'')}" placeholder="선사"
-                           class="w-full px-1 py-1 border-0 border-b border-gray-100 focus:bg-yellow-50 text-xs"
-                           onchange="_updateHolidayEntry(${i},'ownerCompany',this.value)">
-                    <input type="text" value="${escapeHtml(entry.vendorCompany||'')}" placeholder="외주 업체명"
-                           class="w-full px-1 py-1 border-0 border-b border-gray-100 focus:bg-yellow-50 text-xs"
-                           onchange="_updateHolidayEntry(${i},'vendorCompany',this.value)">
-                    <input type="text" value="${escapeHtml(entry.shipName||'')}" placeholder="선명"
-                           class="w-full px-1 py-1 border-0 focus:bg-yellow-50 text-xs text-blue-700"
-                           onchange="_updateHolidayEntry(${i},'shipName',this.value)">
-                </div>
+                <input type="text" value="${escapeHtml(entry.shipName||'')}" placeholder="선명"
+                       class="w-full px-1 py-1 border-0 focus:bg-yellow-50 text-sm text-center text-blue-700"
+                       onchange="_updateHolidayEntry(${i},'shipName',this.value)">
+            </td>
+            <td class="border border-gray-900 p-0">
                 <input type="text" value="${escapeHtml(entry.workContent||'')}" class="w-full px-1 py-1 border-0 focus:bg-yellow-50 text-sm"
                        onchange="_updateHolidayEntry(${i},'workContent',this.value)">
             </td>
@@ -852,7 +844,7 @@ function renderHolidayTable() {
         <td class="border border-gray-900 p-2 text-center text-red-600">${friCount || 0}</td>
         <td class="border border-gray-900 p-2 text-center text-red-600">${satCount || 0}</td>
         <td class="border border-gray-900 p-2 text-center text-red-600">${sunCount || 0}</td>
-        <td class="border border-gray-900 p-2" colspan="2"></td>
+        <td class="border border-gray-900 p-2" colspan="3"></td>
     `;
     tbody.appendChild(totalTr);
 }
