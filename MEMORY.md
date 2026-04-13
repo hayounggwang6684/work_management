@@ -2,6 +2,9 @@
 
 ## Bug Fixes Applied
 
+- 2026-04-14: Added a separate `야간 근무 인원` label to the 야간 보고 footer so the screen now shows both the full roster count and the count of entries that actually have night-work data entered.
+- 2026-04-14: Fixed 야간 작업 계약번호 자동완성 to scope field lookup to the active row instead of global document IDs, preventing hidden 주간 rows with duplicate input IDs from swallowing ship/engine autofill targets.
+- 2026-04-14: Changed 야간 종료 시간 auto-format timing to match the UI request: values now stay as typed while editing and only normalize to forms like `2100 -> 21:00` when the field loses focus or when 저장 is executed.
 - 2026-04-13: Hardened 야간 종료 시간 formatting by handling keyup/change/paste in addition to input/blur, so four-digit values like `2100` now normalize immediately to `21:00` in the desktop field instead of waiting for a later save cycle.
 - 2026-04-13: Updated 야간 보고 to keep a dedicated `선명` column without shifting row content, and changed 야간 종료 시간 input so `2100` / `930` are reformatted immediately while typing to `21:00` / `9:30`.
 - 2026-04-13: Adjusted 야간 작업 종료 시간 handling so digits are kept stable while typing, then normalized on blur/save to formats like `2100 -> 21:00`; existing unformatted 야간 종료 시간 values now render in normalized form when the tab reloads.

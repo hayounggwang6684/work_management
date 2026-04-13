@@ -460,6 +460,7 @@ async function loadNightReport() {
 function renderNightReportTable() {
     const tbody = document.getElementById('nightReportTable');
     const totalEl = document.getElementById('nightReportTotal');
+    const workingTotalEl = document.getElementById('nightReportWorkingTotal');
     if (!tbody) return;
 
     tbody.innerHTML = '';
@@ -467,6 +468,7 @@ function renderNightReportTable() {
     if (_nightReportEntries.length === 0) {
         tbody.innerHTML = '<tr><td colspan="8" class="border border-gray-900 p-3 text-center text-slate-500">작업 내역이 없습니다.</td></tr>';
         if (totalEl) totalEl.textContent = '0';
+        if (workingTotalEl) workingTotalEl.textContent = '0';
         return;
     }
 
@@ -532,7 +534,15 @@ function renderNightReportTable() {
         tbody.appendChild(tr);
     });
 
+    const workingCount = _nightReportEntries.filter(entry => {
+        const timeText = String(entry.dateLabel || '').trim();
+        const shipText = String(entry.shipName || '').trim();
+        const workText = String(entry.workContent || '').trim();
+        return (timeText && timeText !== '-') || !!shipText || !!workText;
+    }).length;
+
     if (totalEl) totalEl.textContent = _nightReportEntries.length;
+    if (workingTotalEl) workingTotalEl.textContent = String(workingCount);
 }
 
 function _updateNightEntry(index, field, value) {

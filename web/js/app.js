@@ -1961,9 +1961,7 @@ function createTableRow(record, index, records = workRecords, showEndTime = fals
         </td>
         ${showEndTime ? `<td class="border p-0 w-24 min-w-[96px]">
             <input type="text" id="endTime_${index}"
-                   oninput="handleEndTimeTyping(${index}, this)"
-                   onkeyup="handleEndTimeTyping(${index}, this)"
-                   onchange="handleEndTimeBlur(${index}, this)"
+                   oninput="handleEndTimeInput(${index}, this)"
                    onblur="handleEndTimeBlur(${index}, this)"
                    inputmode="numeric"
                    maxlength="5"
@@ -1988,9 +1986,6 @@ function createTableRow(record, index, records = workRecords, showEndTime = fals
         const normalizedEndTime = normalizeEndTimeValue(record.endTime || '');
         record.endTime = normalizedEndTime;
         endTimeEl.value = normalizedEndTime;
-        endTimeEl.addEventListener('paste', () => {
-            setTimeout(() => handleEndTimeTyping(index, endTimeEl), 0);
-        });
     }
 
     // A/S 체크박스 상태 및 이벤트 등록
@@ -2125,8 +2120,8 @@ async function autoExpandContractNumber(index, input) {
         // 비어있는 필드만 자동완성 (이미 입력된 값은 유지)
         const autoFillMap = {
             company:     () => tr.querySelector('[data-field="company"]'),
-            shipName:    () => document.getElementById(`shipName_${index}`),
-            engineModel: () => document.getElementById(`engineModel_${index}`),
+            shipName:    () => tr.querySelector(`#shipName_${index}`),
+            engineModel: () => tr.querySelector(`#engineModel_${index}`),
             workContent: () => tr.querySelector('[data-field="workContent"]'),
             location:    () => tr.querySelector('[data-field="location"]'),
         };
@@ -2209,20 +2204,12 @@ function normalizeEndTimeValue(value) {
     return `${digits.slice(0, 2)}:${digits.slice(2, 4)}`;
 }
 
-function handleEndTimeTyping(index, input) {
-    const oldValue = input.value;
-    const digitsOnly = oldValue.replace(/\D/g, '').slice(0, 4);
-    let newValue = digitsOnly;
-    if (oldValue.includes(':') || digitsOnly.length >= 4) {
-        newValue = normalizeEndTimeValue(digitsOnly || oldValue);
+function handleEndTimeInput(index, input) {
+    const rawValue = String(input.value || '').replace(/[^\d:]/g, '').slice(0, 5);
+    if (input.value !== rawValue) {
+        input.value = rawValue;
     }
-
-    if (oldValue !== newValue) {
-        input.value = newValue;
-        try { input.setSelectionRange(newValue.length, newValue.length); } catch (_) { /* noop */ }
-    }
-
-    updateRecord(index, 'endTime', newValue);
+    updateRecord(index, 'endTime', rawValue);
 }
 
 function handleEndTimeBlur(index, input) {
