@@ -515,11 +515,11 @@ function renderNightReportTable() {
                 <input type="text" value="${escapeHtml(entry.dateLabel||'')}" class="w-20 px-1 py-1 border-0 focus:bg-yellow-50 text-sm text-center"
                        onchange="_updateNightEntry(${i},'dateLabel',this.value)">
             </td>
-            <td class="border border-gray-900 p-2 text-center text-sm text-blue-700 font-medium whitespace-nowrap">
+            <td class="border border-gray-900 p-2 text-center text-sm text-blue-700 font-medium whitespace-nowrap w-20" style="max-width:80px">
                 ${escapeHtml(entry.shipName || '-')}
             </td>
-            <td class="border border-gray-900 p-0 align-top">
-                <input type="text" value="${escapeHtml(entry.workContent||'')}" class="w-full px-1 py-1 border-0 focus:bg-yellow-50 text-sm"
+            <td class="border border-gray-900 p-0 align-top w-40" style="min-width:160px">
+                <input type="text" value="${escapeHtml(entry.workContent||'')}" class="w-full px-1 py-1 border-0 focus:bg-yellow-50 text-sm text-center"
                        onchange="_updateNightEntry(${i},'workContent',this.value)">
             </td>
             <td class="border border-gray-900 p-1 text-center no-capture" style="white-space:nowrap">
@@ -821,22 +821,22 @@ function renderHolidayTable() {
                 <input type="text" value="${escapeHtml(entry.sunWork||'-')}" class="w-20 px-1 py-1 border-0 focus:bg-yellow-50 text-sm text-center"
                        onchange="_updateHolidayEntry(${i},'sunWork',this.value)">
             </td>
-            <td class="border border-gray-900 p-0">
+            <td class="border border-gray-900 p-0 w-24" style="min-width:96px">
                 <input type="text" value="${escapeHtml(entry.shipName||'')}" placeholder="선명"
                        class="w-full px-1 py-1 border-0 focus:bg-yellow-50 text-sm text-center text-blue-700"
                        onchange="_updateHolidayEntry(${i},'shipName',this.value)">
             </td>
-            <td class="border border-gray-900 p-0">
-                <input type="text" value="${escapeHtml(entry.workContent||'')}" class="w-full px-1 py-1 border-0 focus:bg-yellow-50 text-sm"
+            <td class="border border-gray-900 p-0 w-72" style="min-width:288px">
+                <input type="text" value="${escapeHtml(entry.workContent||'')}" class="w-full px-1 py-1 border-0 focus:bg-yellow-50 text-sm text-center"
                        onchange="_updateHolidayEntry(${i},'workContent',this.value)">
             </td>
-            <td class="border border-gray-900 p-1 text-center no-capture" style="white-space:nowrap">
+            <td class="border border-gray-900 p-1 text-center no-capture w-24" style="white-space:nowrap; min-width:96px">
                 <button onclick="_moveHolidayRow(${i},-1)" ${isFirst ? 'disabled' : ''}
-                        class="px-1 text-slate-500 hover:text-blue-600 disabled:opacity-30 text-xs">▲</button>
+                        class="px-2 text-slate-500 hover:text-blue-600 disabled:opacity-30 text-xs">▲</button>
                 <button onclick="_moveHolidayRow(${i},1)" ${isLast ? 'disabled' : ''}
-                        class="px-1 text-slate-500 hover:text-blue-600 disabled:opacity-30 text-xs">▼</button>
+                        class="px-2 text-slate-500 hover:text-blue-600 disabled:opacity-30 text-xs">▼</button>
                 <button onclick="_deleteHolidayRow(${i})"
-                        class="px-1 text-red-500 hover:bg-red-50 rounded text-xs">✕</button>
+                        class="px-2 text-red-500 hover:bg-red-50 rounded text-xs">✕</button>
             </td>
         `;
         tbody.appendChild(tr);

@@ -2,6 +2,9 @@
 
 ## Bug Fixes Applied
 
+- 2026-04-14: Expanded the 휴일 보고 layout so `작업내용` is much wider, `편집` is about twice as wide, and the capture container itself is larger, making long holiday work descriptions and edit controls fit more comfortably.
+- 2026-04-14: Widened the 야간 보고 `작업내용` column to roughly double the previous width and slightly tightened the `선명` column so long work descriptions have more room without changing the table structure.
+- 2026-04-14: Unified the 야간 보고 horizontal alignment by centering the 작업내용 cell text and centering both footer summary labels (`총 인원`, `야간 근무 인원`) instead of mixing left and right alignment.
 - 2026-04-14: Added a separate `야간 근무 인원` label to the 야간 보고 footer so the screen now shows both the full roster count and the count of entries that actually have night-work data entered.
 - 2026-04-14: Fixed 야간 작업 계약번호 자동완성 to scope field lookup to the active row instead of global document IDs, preventing hidden 주간 rows with duplicate input IDs from swallowing ship/engine autofill targets.
 - 2026-04-14: Changed 야간 종료 시간 auto-format timing to match the UI request: values now stay as typed while editing and only normalize to forms like `2100 -> 21:00` when the field loses focus or when 저장 is executed.
