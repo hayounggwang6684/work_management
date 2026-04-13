@@ -2,6 +2,8 @@
 
 ## Bug Fixes Applied
 
+- 2026-04-13: Adjusted 야간 작업 종료 시간 handling so digits are kept stable while typing, then normalized on blur/save to formats like `2100 -> 21:00`; existing unformatted 야간 종료 시간 values now render in normalized form when the tab reloads.
+- 2026-04-13: Reverted the 야간 보고 `선명` dedicated-column experiment and now render 선명 + 작업내용 together in the original 작업내용 cell so report rows no longer shift against the header layout.
 - 2026-04-13: Widened the 야간 작업 종료 시간 column/header and added forgiving time formatting so values like `2100` or `930` are normalized to `21:00` / `9:30` while typing or on blur.
 - 2026-04-13: Reworked 야간/휴일 보고 layouts so 선명이 no longer stacks above 작업내용 in the same cell; 야간 보고 now has a dedicated 선명 column and 휴일 보고 shows only 선명 plus concise 엔진/작업 내용 without the extra contract/owner/vendor metadata editor block.
 - 2026-04-13: Fixed 야간 작업 계약번호 자동완성이 `workRecordsTable`만 보던 문제를 공용 탭 기준으로 바꿔, 야간 작업 탭에서도 숫자 축약 입력 후 최근 계약 정보가 주간 작업과 동일하게 자동 채워지도록 수정했습니다.

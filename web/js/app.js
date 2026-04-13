@@ -1818,6 +1818,7 @@ async function saveNightWorkRecords() {
         const dateStr = document.getElementById('dateInput')?.value;
         if (!dateStr) return;
 
+        normalizeNightEndTimes();
         showLoading(true, '저장 중...');
         const result = await eel.save_work_records(dateStr, nightWorkRecords, currentUser.full_name, 'night')();
         showLoading(false);
@@ -1960,8 +1961,9 @@ function createTableRow(record, index, records = workRecords, showEndTime = fals
         </td>
         ${showEndTime ? `<td class="border p-0 w-24 min-w-[96px]">
             <input type="text" id="endTime_${index}"
-                   oninput="handleEndTimeInput(${index}, this)"
-                   onblur="handleEndTimeInput(${index}, this)"
+                   oninput="handleEndTimeTyping(${index}, this)"
+                   onblur="handleEndTimeBlur(${index}, this)"
+                   inputmode="numeric"
                    class="w-full px-2 py-1 text-center border-0 focus:bg-indigo-50 outline-none text-sm"
                    placeholder="2100 / 21:00">
         </td>` : ''}
@@ -1979,7 +1981,11 @@ function createTableRow(record, index, records = workRecords, showEndTime = fals
 
     // 종료시간 값 설정 (야간 탭에서만 렌더링됨)
     const endTimeEl = tr.querySelector(`#endTime_${index}`);
-    if (endTimeEl) endTimeEl.value = record.endTime || '';
+    if (endTimeEl) {
+        const normalizedEndTime = normalizeEndTimeValue(record.endTime || '');
+        record.endTime = normalizedEndTime;
+        endTimeEl.value = normalizedEndTime;
+    }
 
     // A/S 체크박스 상태 및 이벤트 등록
     const asCheckbox = tr.querySelector(`#isAs_${index}`);
@@ -2179,6 +2185,21 @@ function handleTeammatesInput(index, input) {
     calculateManpowerInstant(index);
 }
 
+function sanitizeEndTimeTyping(value) {
+    const raw = String(value || '');
+    if (!raw) return '';
+
+    const sanitized = raw.replace(/[^\d:]/g, '');
+    if (!sanitized.includes(':')) {
+        return sanitized.slice(0, 4);
+    }
+
+    const firstColon = sanitized.indexOf(':');
+    const hour = sanitized.slice(0, firstColon).replace(/\D/g, '').slice(0, 2);
+    const minute = sanitized.slice(firstColon + 1).replace(/\D/g, '').slice(0, 2);
+    return minute.length > 0 ? `${hour}:${minute}` : `${hour}:`;
+}
+
 function normalizeEndTimeValue(value) {
     const raw = String(value || '').trim();
     if (!raw) return '';
@@ -2197,10 +2218,10 @@ function normalizeEndTimeValue(value) {
     return `${digits.slice(0, 2)}:${digits.slice(2, 4)}`;
 }
 
-function handleEndTimeInput(index, input) {
+function handleEndTimeTyping(index, input) {
     const oldValue = input.value;
     const cursorPosition = input.selectionStart || oldValue.length;
-    const newValue = normalizeEndTimeValue(oldValue);
+    const newValue = sanitizeEndTimeTyping(oldValue);
 
     if (oldValue !== newValue) {
         input.value = newValue;
@@ -2209,6 +2230,21 @@ function handleEndTimeInput(index, input) {
     }
 
     updateRecord(index, 'endTime', newValue);
+}
+
+function handleEndTimeBlur(index, input) {
+    const newValue = normalizeEndTimeValue(input.value);
+    input.value = newValue;
+    updateRecord(index, 'endTime', newValue);
+}
+
+function normalizeNightEndTimes() {
+    nightWorkRecords.forEach((record, index) => {
+        const normalized = normalizeEndTimeValue(record.endTime || '');
+        record.endTime = normalized;
+        const input = document.getElementById(`endTime_${index}`);
+        if (input) input.value = normalized;
+    });
 }
 
 // ============================================================================
