@@ -2103,8 +2103,9 @@ async function autoExpandContractNumber(index, input) {
         const result = await eel.get_latest_record_by_contract(cn)();
         if (!result || !result.found) return;
 
-        // tbody의 해당 행 참조
-        const tbody = document.getElementById('workRecordsTable');
+        const records = _getActiveRecords();
+        const tableId = currentWorkTab === 'night' ? 'nightRecordsTable' : 'workRecordsTable';
+        const tbody = document.getElementById(tableId);
         const tr = tbody && tbody.rows[index];
         if (!tr) return;
 
@@ -2119,7 +2120,7 @@ async function autoExpandContractNumber(index, input) {
 
         let filled = false;
         for (const [field, getEl] of Object.entries(autoFillMap)) {
-            if (workRecords[index] && workRecords[index][field]) continue; // 이미 데이터 있으면 skip
+            if (records[index] && records[index][field]) continue; // 이미 데이터 있으면 skip
             const el = getEl();
             if (el && !el.value.trim() && result[field]) {
                 el.value = result[field];

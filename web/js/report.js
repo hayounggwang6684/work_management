@@ -88,6 +88,32 @@ function separateWorkers(leader, teammates) {
     };
 }
 
+function extractOutsourcedWorkerNames(teammates) {
+    const names = [];
+    const text = String(teammates || '').trim();
+    if (!text) return names;
+
+    const addNames = (blob) => {
+        String(blob || '').split(',').forEach(part => {
+            const cleanName = stripRank(part);
+            if (cleanName) names.push(cleanName);
+        });
+    };
+
+    const contractRegex = /([^,]+?)\(([^)]+)\)/g;
+    let match;
+    while ((match = contractRegex.exec(text)) !== null) {
+        addNames(match[2]);
+    }
+
+    const dailyRegex = /([^,]+?)\[([^\]]+)\]/g;
+    while ((match = dailyRegex.exec(text)) !== null) {
+        addNames(match[2]);
+    }
+
+    return names;
+}
+
 // ========================================
 // 보고서 탭 전환
 // ========================================
@@ -375,7 +401,7 @@ async function loadNightReport() {
     try {
         const records = await eel.load_work_records(dateStr, 'night')() || [];
         const validRecords = records.filter(r =>
-            r.company || r.shipName || r.workContent || r.leader
+            r.company || r.shipName || r.workContent || r.leader || r.teammates
         );
 
         const d = new Date(dateStr + 'T00:00:00');
@@ -396,7 +422,8 @@ async function loadNightReport() {
         if (validRecords.length > 0) {
             const nameWorkMap = new Map();
             validRecords.forEach(record => {
-                const { inHouse, outsourced } = separateWorkers(record.leader, record.teammates);
+                const { inHouse } = separateWorkers(record.leader, record.teammates);
+                const outsourcedNames = extractOutsourcedWorkerNames(record.teammates);
                 const workContent = [record.engineModel, record.workContent].filter(Boolean).join(' ');
                 const endTime = record.endTime || '-';
                 const shipName = record.shipName || '';
@@ -405,11 +432,9 @@ async function loadNightReport() {
                         nameWorkMap.set(stripRank(name), { workContent, shipName, endTime });
                     });
                 }
-                if (outsourced && outsourced !== '-') {
-                    outsourced.split(',').map(n => n.trim()).filter(Boolean).forEach(name => {
-                        nameWorkMap.set(name, { workContent, shipName, endTime });
-                    });
-                }
+                outsourcedNames.forEach(name => {
+                    nameWorkMap.set(name, { workContent, shipName, endTime });
+                });
             });
             _nightReportEntries.forEach(entry => {
                 const work = nameWorkMap.get(entry.name);
@@ -490,7 +515,7 @@ function renderNightReportTable() {
                        onchange="_updateNightEntry(${i},'dateLabel',this.value)">
             </td>
             <td class="border border-gray-900 p-0">
-                ${entry.shipName ? `<div class="px-1 pt-0.5 text-xs text-blue-600 font-medium border-b border-gray-100 no-capture">${escapeHtml(entry.shipName)}</div>` : ''}
+                ${entry.shipName ? `<div class="px-1 pt-0.5 text-xs text-blue-600 font-medium border-b border-gray-100">${escapeHtml(entry.shipName)}</div>` : ''}
                 <input type="text" value="${escapeHtml(entry.workContent||'')}" class="w-full px-1 py-1 border-0 focus:bg-yellow-50 text-sm"
                        onchange="_updateNightEntry(${i},'workContent',this.value)">
             </td>
@@ -786,6 +811,7 @@ function renderHolidayTable() {
                        onchange="_updateHolidayEntry(${i},'sunWork',this.value)">
             </td>
             <td class="border border-gray-900 p-0">
+                ${entry.shipName ? `<div class="px-1 pt-0.5 text-xs text-blue-600 font-medium border-b border-gray-100">${escapeHtml(entry.shipName)}</div>` : ''}
                 <div class="grid grid-cols-1 gap-0 border-b border-gray-100 bg-slate-50 no-capture">
                     <input type="text" value="${escapeHtml(entry.contractNumber||'')}" placeholder="계약번호"
                            class="w-full px-1 py-1 border-0 border-b border-gray-100 focus:bg-yellow-50 text-xs font-mono"
@@ -832,7 +858,10 @@ function renderHolidayTable() {
 }
 
 function _updateHolidayEntry(index, field, value) {
-    if (_holidayEntries[index]) _holidayEntries[index][field] = value;
+    if (_holidayEntries[index]) {
+        _holidayEntries[index][field] = value;
+        if (field === 'shipName') renderHolidayTable();
+    }
 }
 
 function _deleteHolidayRow(index) {

@@ -2,6 +2,8 @@
 
 ## Bug Fixes Applied
 
+- 2026-04-13: Fixed 야간 작업 계약번호 자동완성이 `workRecordsTable`만 보던 문제를 공용 탭 기준으로 바꿔, 야간 작업 탭에서도 숫자 축약 입력 후 최근 계약 정보가 주간 작업과 동일하게 자동 채워지도록 수정했습니다.
+- 2026-04-13: Fixed 야간/휴일 보고의 선명 표시가 외주 이름 파싱과 캡처 숨김 처리 때문에 빠지던 문제를 수정해, 외주 작업자도 선명이 연결되고 보고서 화면 및 캡처 결과에 선명이 함께 표시되도록 보강했습니다.
 - 2026-04-11: Excluded live `config/settings.json` from the installer and now seed first-run installs from `config/settings.example.json`, preventing GitHub/Telegram tokens from being packaged into setup builds while keeping default app versions aligned with the current release.
 - 2026-04-11: Fixed 선사 목록 ship merges so the visible placeholder `(선박 미입력)` now maps back to blank `ship_name` rows and can be merged into a real ship name across `work_records`, `board_projects`, and `holiday_work_entries`.
 - 2026-04-11: Hardened login patch-note display so downgrade or same-version logins no longer show a misleading “updated” modal when the stored client version is already newer than or equal to the running app version.
