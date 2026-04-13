@@ -1962,8 +1962,11 @@ function createTableRow(record, index, records = workRecords, showEndTime = fals
         ${showEndTime ? `<td class="border p-0 w-24 min-w-[96px]">
             <input type="text" id="endTime_${index}"
                    oninput="handleEndTimeTyping(${index}, this)"
+                   onkeyup="handleEndTimeTyping(${index}, this)"
+                   onchange="handleEndTimeBlur(${index}, this)"
                    onblur="handleEndTimeBlur(${index}, this)"
                    inputmode="numeric"
+                   maxlength="5"
                    class="w-full px-2 py-1 text-center border-0 focus:bg-indigo-50 outline-none text-sm"
                    placeholder="2100 / 21:00">
         </td>` : ''}
@@ -1985,6 +1988,9 @@ function createTableRow(record, index, records = workRecords, showEndTime = fals
         const normalizedEndTime = normalizeEndTimeValue(record.endTime || '');
         record.endTime = normalizedEndTime;
         endTimeEl.value = normalizedEndTime;
+        endTimeEl.addEventListener('paste', () => {
+            setTimeout(() => handleEndTimeTyping(index, endTimeEl), 0);
+        });
     }
 
     // A/S 체크박스 상태 및 이벤트 등록
@@ -2206,7 +2212,10 @@ function normalizeEndTimeValue(value) {
 function handleEndTimeTyping(index, input) {
     const oldValue = input.value;
     const digitsOnly = oldValue.replace(/\D/g, '').slice(0, 4);
-    const newValue = digitsOnly.length >= 3 ? normalizeEndTimeValue(digitsOnly) : digitsOnly;
+    let newValue = digitsOnly;
+    if (oldValue.includes(':') || digitsOnly.length >= 4) {
+        newValue = normalizeEndTimeValue(digitsOnly || oldValue);
+    }
 
     if (oldValue !== newValue) {
         input.value = newValue;

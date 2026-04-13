@@ -2,6 +2,7 @@
 
 ## Bug Fixes Applied
 
+- 2026-04-13: Hardened 야간 종료 시간 formatting by handling keyup/change/paste in addition to input/blur, so four-digit values like `2100` now normalize immediately to `21:00` in the desktop field instead of waiting for a later save cycle.
 - 2026-04-13: Updated 야간 보고 to keep a dedicated `선명` column without shifting row content, and changed 야간 종료 시간 input so `2100` / `930` are reformatted immediately while typing to `21:00` / `9:30`.
 - 2026-04-13: Adjusted 야간 작업 종료 시간 handling so digits are kept stable while typing, then normalized on blur/save to formats like `2100 -> 21:00`; existing unformatted 야간 종료 시간 values now render in normalized form when the tab reloads.
 - 2026-04-13: Reverted the 야간 보고 `선명` dedicated-column experiment and now render 선명 + 작업내용 together in the original 작업내용 cell so report rows no longer shift against the header layout.
