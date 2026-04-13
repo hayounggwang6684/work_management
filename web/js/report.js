@@ -465,7 +465,7 @@ function renderNightReportTable() {
     tbody.innerHTML = '';
 
     if (_nightReportEntries.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7" class="border border-gray-900 p-3 text-center text-slate-500">작업 내역이 없습니다.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8" class="border border-gray-900 p-3 text-center text-slate-500">작업 내역이 없습니다.</td></tr>';
         if (totalEl) totalEl.textContent = '0';
         return;
     }
@@ -513,8 +513,10 @@ function renderNightReportTable() {
                 <input type="text" value="${escapeHtml(entry.dateLabel||'')}" class="w-20 px-1 py-1 border-0 focus:bg-yellow-50 text-sm text-center"
                        onchange="_updateNightEntry(${i},'dateLabel',this.value)">
             </td>
+            <td class="border border-gray-900 p-2 text-center text-sm text-blue-700 font-medium whitespace-nowrap">
+                ${escapeHtml(entry.shipName || '-')}
+            </td>
             <td class="border border-gray-900 p-0 align-top">
-                ${entry.shipName ? `<div class="px-1 pt-0.5 text-xs text-blue-600 font-medium border-b border-gray-100 whitespace-nowrap">${escapeHtml(entry.shipName)}</div>` : ''}
                 <input type="text" value="${escapeHtml(entry.workContent||'')}" class="w-full px-1 py-1 border-0 focus:bg-yellow-50 text-sm"
                        onchange="_updateNightEntry(${i},'workContent',this.value)">
             </td>

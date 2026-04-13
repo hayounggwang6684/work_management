@@ -2185,21 +2185,6 @@ function handleTeammatesInput(index, input) {
     calculateManpowerInstant(index);
 }
 
-function sanitizeEndTimeTyping(value) {
-    const raw = String(value || '');
-    if (!raw) return '';
-
-    const sanitized = raw.replace(/[^\d:]/g, '');
-    if (!sanitized.includes(':')) {
-        return sanitized.slice(0, 4);
-    }
-
-    const firstColon = sanitized.indexOf(':');
-    const hour = sanitized.slice(0, firstColon).replace(/\D/g, '').slice(0, 2);
-    const minute = sanitized.slice(firstColon + 1).replace(/\D/g, '').slice(0, 2);
-    return minute.length > 0 ? `${hour}:${minute}` : `${hour}:`;
-}
-
 function normalizeEndTimeValue(value) {
     const raw = String(value || '').trim();
     if (!raw) return '';
@@ -2220,13 +2205,12 @@ function normalizeEndTimeValue(value) {
 
 function handleEndTimeTyping(index, input) {
     const oldValue = input.value;
-    const cursorPosition = input.selectionStart || oldValue.length;
-    const newValue = sanitizeEndTimeTyping(oldValue);
+    const digitsOnly = oldValue.replace(/\D/g, '').slice(0, 4);
+    const newValue = digitsOnly.length >= 3 ? normalizeEndTimeValue(digitsOnly) : digitsOnly;
 
     if (oldValue !== newValue) {
         input.value = newValue;
-        const nextCursor = Math.min(newValue.length, cursorPosition + (newValue.length - oldValue.length));
-        try { input.setSelectionRange(nextCursor, nextCursor); } catch (_) { /* noop */ }
+        try { input.setSelectionRange(newValue.length, newValue.length); } catch (_) { /* noop */ }
     }
 
     updateRecord(index, 'endTime', newValue);
