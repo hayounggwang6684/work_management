@@ -2334,6 +2334,30 @@ def get_employee_names_for_leave() -> List[str]:
 
 
 @eel.expose
+def get_employee_directory() -> Dict[str, Any]:
+    """직원 명부 조회"""
+    try:
+        return {'success': True, 'employees': db.get_employee_directory()}
+    except Exception as e:
+        logger.error(f"직원 명부 조회 오류: {e}")
+        return {'success': False, 'message': '직원 명부를 불러오지 못했습니다.', 'employees': []}
+
+
+@eel.expose
+def save_employee_directory(rows_json: str) -> Dict[str, Any]:
+    """직원 명부 저장"""
+    try:
+        rows = json.loads(rows_json or '[]')
+        if not isinstance(rows, list):
+            return {'success': False, 'message': '직원 명부 형식이 올바르지 않습니다.'}
+        success, message = db.save_employee_directory(rows)
+        return {'success': success, 'message': message}
+    except Exception as e:
+        logger.error(f"직원 명부 저장 오류: {e}")
+        return {'success': False, 'message': '직원 명부 저장 중 오류가 발생했습니다.'}
+
+
+@eel.expose
 def get_work_hours_by_month(name: str, year: int, month: int,
                              meal_deduct: bool = True) -> Dict[str, Any]:
     """직원 월별 근로 시간 조회 (달력용)

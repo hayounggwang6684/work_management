@@ -25,6 +25,7 @@ let _companySearchName    = '';
 let _companySearchMonths  = []; // 정렬된 YYYY-MM 배열
 let _companySearchMonthIdx = 0;
 let _companySearchSummary = null;
+let _employeeDirectoryData = [];
 
 // 한글→영문 변환 매핑
 const koreanToEnglish = {
@@ -3231,11 +3232,13 @@ function returnToAdminPanel() {
 
 function showEmployeeTab(tab) {
     const tabMap = {
+        directory:  document.getElementById('employeeDirectoryTab'),
         leave:      document.getElementById('employeeLeaveTab'),
         leaveReport: document.getElementById('employeeLeaveReportTab'),
         workhours:  document.getElementById('employeeWorkHoursTab')
     };
     const btnMap = {
+        directory:  document.getElementById('btnEmployeeDirectory'),
         leave:      document.getElementById('btnEmployeeLeave'),
         leaveReport: document.getElementById('btnEmployeeLeaveReport'),
         workhours:  document.getElementById('btnEmployeeWorkHours')
@@ -3255,8 +3258,150 @@ function showEmployeeTab(tab) {
         }
     });
     if (tabMap[tab]) tabMap[tab].classList.remove('hidden');
+    if (tab === 'directory') loadEmployeeDirectory();
     if (tab === 'leaveReport') loadLeaveMonthlyReport();
     if (tab === 'workhours') _initWorkHoursSelectors();
+}
+
+function _createEmptyEmployeeDirectoryRow(overrides = {}) {
+    return {
+        id: null,
+        department: '',
+        name: '',
+        rank: '',
+        phone: '',
+        address: '',
+        externalAccount1: '',
+        externalAccount2: '',
+        healthCheck: '',
+        ...overrides
+    };
+}
+
+async function loadEmployeeDirectory() {
+    const tbody = document.getElementById('employeeDirectoryTable');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="10" class="px-4 py-8 text-center text-slate-400">불러오는 중...</td></tr>';
+    try {
+        const result = await eel.get_employee_directory()();
+        if (!result?.success) {
+            tbody.innerHTML = `<tr><td colspan="10" class="px-4 py-8 text-center text-red-500">${escapeHtml(result?.message || '직원 명부를 불러오지 못했습니다.')}</td></tr>`;
+            return;
+        }
+        _employeeDirectoryData = (result.employees || []).map(row => _createEmptyEmployeeDirectoryRow(row));
+        if (_employeeDirectoryData.length === 0) {
+            _employeeDirectoryData = [_createEmptyEmployeeDirectoryRow()];
+        }
+        renderEmployeeDirectoryTable();
+    } catch (e) {
+        console.error('직원 명부 로드 실패:', e);
+        tbody.innerHTML = '<tr><td colspan="10" class="px-4 py-8 text-center text-red-500">직원 명부를 불러오지 못했습니다.</td></tr>';
+    }
+}
+
+function renderEmployeeDirectoryTable() {
+    const tbody = document.getElementById('employeeDirectoryTable');
+    if (!tbody) return;
+    if (!_employeeDirectoryData.length) {
+        tbody.innerHTML = '<tr><td colspan="10" class="px-4 py-8 text-center text-slate-400">등록된 직원이 없습니다. 행 추가 버튼으로 시작해 주세요.</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = _employeeDirectoryData.map((row, index) => `
+        <tr class="${index % 2 === 0 ? 'bg-white' : 'bg-slate-50'}">
+            <td class="border border-slate-200 px-2 py-2 text-center font-semibold text-slate-500">${index + 1}</td>
+            <td class="border border-slate-200 p-1">
+                <input type="text" value="${escapeHtml(row.department || '')}" class="w-full px-3 py-2 border-0 bg-transparent text-center focus:bg-blue-50 rounded"
+                       oninput="updateEmployeeDirectoryField(${index}, 'department', this.value)">
+            </td>
+            <td class="border border-slate-200 p-1">
+                <input type="text" value="${escapeHtml(row.name || '')}" class="w-full px-3 py-2 border-0 bg-transparent text-center font-medium focus:bg-blue-50 rounded"
+                       oninput="updateEmployeeDirectoryField(${index}, 'name', this.value)">
+            </td>
+            <td class="border border-slate-200 p-1">
+                <input type="text" value="${escapeHtml(row.rank || '')}" class="w-full px-3 py-2 border-0 bg-transparent text-center focus:bg-blue-50 rounded"
+                       oninput="updateEmployeeDirectoryField(${index}, 'rank', this.value)">
+            </td>
+            <td class="border border-slate-200 p-1">
+                <input type="text" value="${escapeHtml(row.phone || '')}" class="w-full px-3 py-2 border-0 bg-transparent text-center focus:bg-blue-50 rounded"
+                       oninput="updateEmployeeDirectoryField(${index}, 'phone', this.value)">
+            </td>
+            <td class="border border-slate-200 p-1">
+                <input type="text" value="${escapeHtml(row.address || '')}" class="w-full px-3 py-2 border-0 bg-transparent text-left focus:bg-blue-50 rounded"
+                       oninput="updateEmployeeDirectoryField(${index}, 'address', this.value)">
+            </td>
+            <td class="border border-slate-200 p-1">
+                <input type="text" value="${escapeHtml(row.externalAccount1 || '')}" class="w-full px-3 py-2 border-0 bg-transparent text-center focus:bg-blue-50 rounded"
+                       oninput="updateEmployeeDirectoryField(${index}, 'externalAccount1', this.value)">
+            </td>
+            <td class="border border-slate-200 p-1">
+                <input type="text" value="${escapeHtml(row.externalAccount2 || '')}" class="w-full px-3 py-2 border-0 bg-transparent text-center focus:bg-blue-50 rounded"
+                       oninput="updateEmployeeDirectoryField(${index}, 'externalAccount2', this.value)">
+            </td>
+            <td class="border border-slate-200 p-1">
+                <input type="text" value="${escapeHtml(row.healthCheck || '')}" class="w-full px-3 py-2 border-0 bg-transparent text-center focus:bg-blue-50 rounded"
+                       oninput="updateEmployeeDirectoryField(${index}, 'healthCheck', this.value)">
+            </td>
+            <td class="border border-slate-200 px-2 py-2 text-center">
+                <button onclick="removeEmployeeDirectoryRow(${index})" class="px-3 py-1.5 bg-red-50 text-red-600 rounded-lg text-xs font-semibold hover:bg-red-100">
+                    삭제
+                </button>
+            </td>
+        </tr>
+    `).join('');
+}
+
+function updateEmployeeDirectoryField(index, field, value) {
+    if (!_employeeDirectoryData[index]) return;
+    _employeeDirectoryData[index][field] = value;
+}
+
+function addEmployeeDirectoryRow() {
+    _employeeDirectoryData.push(_createEmptyEmployeeDirectoryRow());
+    renderEmployeeDirectoryTable();
+}
+
+function removeEmployeeDirectoryRow(index) {
+    if (!_employeeDirectoryData[index]) return;
+    _employeeDirectoryData.splice(index, 1);
+    if (_employeeDirectoryData.length === 0) {
+        _employeeDirectoryData.push(_createEmptyEmployeeDirectoryRow());
+    }
+    renderEmployeeDirectoryTable();
+}
+
+async function saveEmployeeDirectory() {
+    const rows = _employeeDirectoryData.map(row => ({
+        id: row.id || null,
+        department: (row.department || '').trim(),
+        name: (row.name || '').trim(),
+        rank: (row.rank || '').trim(),
+        phone: (row.phone || '').trim(),
+        address: (row.address || '').trim(),
+        externalAccount1: (row.externalAccount1 || '').trim(),
+        externalAccount2: (row.externalAccount2 || '').trim(),
+        healthCheck: (row.healthCheck || '').trim()
+    }));
+    const invalidRow = rows.findIndex(row => !row.name && (row.department || row.rank || row.phone || row.address || row.externalAccount1 || row.externalAccount2 || row.healthCheck));
+    if (invalidRow >= 0) {
+        showCustomAlert('알림', `${invalidRow + 1}번 행의 이름을 입력해 주세요.`, 'warning');
+        return;
+    }
+    try {
+        const result = await eel.save_employee_directory(JSON.stringify(rows))();
+        if (!result?.success) {
+            showToast(result?.message || '직원 명부 저장에 실패했습니다.', 'error');
+            return;
+        }
+        showToast('직원 명부가 저장되었습니다.', 'success');
+        await Promise.all([
+            loadEmployeeDirectory(),
+            loadLeaveEmployeeList()
+        ]);
+    } catch (e) {
+        console.error('직원 명부 저장 실패:', e);
+        showToast('직원 명부 저장 중 오류가 발생했습니다.', 'error');
+    }
 }
 
 // ============================================================================

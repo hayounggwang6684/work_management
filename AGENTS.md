@@ -133,6 +133,8 @@ holiday_work_entries (
 users (id, username, full_name, password_hash, role, ...)
 app_settings (key, value)               -- 키-값 앱 설정
 activity_log (user, action, date, note) -- 사용자 행동 로그
+employee_directory (id, sort_order, department, name, rank, phone, address,
+    external_account1, external_account2, health_check, created_at, updated_at)
 ```
 
 계약번호 형식: `SH-YYYY-NNN-T` (예: `SH-2025-001-T`)

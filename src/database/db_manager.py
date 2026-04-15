@@ -219,6 +219,24 @@ class DatabaseManager:
                 )
             ''')
 
+            # 직원 명부
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS employee_directory (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    sort_order INTEGER NOT NULL DEFAULT 0,
+                    department TEXT DEFAULT '',
+                    name TEXT NOT NULL DEFAULT '',
+                    rank TEXT DEFAULT '',
+                    phone TEXT DEFAULT '',
+                    address TEXT DEFAULT '',
+                    external_account1 TEXT DEFAULT '',
+                    external_account2 TEXT DEFAULT '',
+                    health_check TEXT DEFAULT '',
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+
             # 연차 부여 이력 (매년 수동 추가)
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS leave_grant_history (
@@ -282,6 +300,10 @@ class DatabaseManager:
             cursor.execute('''
                 CREATE INDEX IF NOT EXISTS idx_leave_usage_date
                 ON employee_leave_usage(use_date)
+            ''')
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_employee_directory_sort
+                ON employee_directory(sort_order, id)
             ''')
 
             # employee_leave_usage 컬럼 마이그레이션 (기존 DB 업그레이드 대비)
@@ -1256,27 +1278,156 @@ class DatabaseManager:
             return False
 
     def get_employee_names_for_leave(self) -> list:
-        """연차 관련 직원 이름 목록 (auth_users active + 기존 config) 합집합, 정렬"""
-        names = set()
+        """연차 관련 직원 이름 목록 (직원 명부 + 인증 사용자 + 기존 config) 합집합, 정렬"""
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
-                # 활성 인증 사용자 full_name
-                try:
-                    cursor.execute(
-                        "SELECT full_name FROM auth_users WHERE status IN ('active','approved') AND full_name != ''",
-                    )
-                    for r in cursor.fetchall():
-                        names.add(r['full_name'])
-                except Exception:
-                    pass
-                # 기존 연차 설정이 있는 직원
-                cursor.execute('SELECT employee_name FROM employee_annual_config')
-                for r in cursor.fetchall():
-                    names.add(r['employee_name'])
+                names = self._collect_known_employee_names(cursor)
         except Exception as e:
             logger.error(f"직원 이름 목록 조회 실패: {e}")
-        return sorted(list(names))
+            return []
+        return names
+
+    def _collect_known_employee_names(self, cursor) -> list:
+        names = set()
+        try:
+            cursor.execute("SELECT name FROM employee_directory WHERE TRIM(name) != ''")
+            for r in cursor.fetchall():
+                names.add((r['name'] or '').strip())
+        except Exception:
+            pass
+        try:
+            cursor.execute(
+                "SELECT full_name FROM auth_users WHERE status IN ('active','approved') AND full_name != ''",
+            )
+            for r in cursor.fetchall():
+                names.add((r['full_name'] or '').strip())
+        except Exception:
+            pass
+        try:
+            cursor.execute('SELECT employee_name FROM employee_annual_config')
+            for r in cursor.fetchall():
+                names.add((r['employee_name'] or '').strip())
+        except Exception:
+            pass
+        try:
+            cursor.execute("SELECT DISTINCT employee_name FROM employee_leave_usage WHERE employee_name != ''")
+            for r in cursor.fetchall():
+                names.add((r['employee_name'] or '').strip())
+        except Exception:
+            pass
+        return sorted(name for name in names if name)
+
+    def _seed_employee_directory_if_empty(self, cursor) -> None:
+        try:
+            cursor.execute("SELECT COUNT(*) AS cnt FROM employee_directory")
+            row = cursor.fetchone()
+            if row and row['cnt'] > 0:
+                return
+            seed_names = self._collect_known_employee_names(cursor)
+            for idx, name in enumerate(seed_names, start=1):
+                cursor.execute('''
+                    INSERT INTO employee_directory
+                        (sort_order, department, name, rank, phone, address, external_account1, external_account2, health_check)
+                    VALUES (?, '', ?, '', '', '', '', '', '')
+                ''', (idx, name))
+        except Exception as e:
+            logger.warning(f"직원 명부 초기 시드 실패: {e}")
+
+    def get_employee_directory(self) -> list:
+        """직원 명부 조회"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                self._seed_employee_directory_if_empty(cursor)
+                cursor.execute('''
+                    SELECT id, sort_order, department, name, rank, phone, address,
+                           external_account1, external_account2, health_check
+                    FROM employee_directory
+                    ORDER BY sort_order ASC, id ASC
+                ''')
+                rows = cursor.fetchall()
+                result = []
+                for row in rows:
+                    result.append({
+                        'id': row['id'],
+                        'sortOrder': row['sort_order'],
+                        'department': row['department'] or '',
+                        'name': row['name'] or '',
+                        'rank': row['rank'] or '',
+                        'phone': row['phone'] or '',
+                        'address': row['address'] or '',
+                        'externalAccount1': row['external_account1'] or '',
+                        'externalAccount2': row['external_account2'] or '',
+                        'healthCheck': row['health_check'] or '',
+                    })
+                return result
+        except Exception as e:
+            logger.error(f"직원 명부 조회 실패: {e}")
+            return []
+
+    def save_employee_directory(self, rows: list) -> tuple[bool, str]:
+        """직원 명부 전체 저장"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                self._seed_employee_directory_if_empty(cursor)
+                keep_ids = []
+
+                for idx, raw in enumerate(rows, start=1):
+                    department = str(raw.get('department', '') or '').strip()
+                    name = str(raw.get('name', '') or '').strip()
+                    rank = str(raw.get('rank', '') or '').strip()
+                    phone = str(raw.get('phone', '') or '').strip()
+                    address = str(raw.get('address', '') or '').strip()
+                    external_account1 = str(raw.get('externalAccount1', '') or '').strip()
+                    external_account2 = str(raw.get('externalAccount2', '') or '').strip()
+                    health_check = str(raw.get('healthCheck', '') or '').strip()
+                    has_any_value = any([
+                        department, name, rank, phone, address,
+                        external_account1, external_account2, health_check
+                    ])
+                    if not has_any_value:
+                        continue
+                    if not name:
+                        return False, f'{idx}번 행의 이름을 입력하세요.'
+
+                    row_id = raw.get('id')
+                    if row_id:
+                        cursor.execute('''
+                            UPDATE employee_directory
+                            SET sort_order = ?, department = ?, name = ?, rank = ?, phone = ?, address = ?,
+                                external_account1 = ?, external_account2 = ?, health_check = ?,
+                                updated_at = CURRENT_TIMESTAMP
+                            WHERE id = ?
+                        ''', (
+                            idx, department, name, rank, phone, address,
+                            external_account1, external_account2, health_check, int(row_id)
+                        ))
+                        keep_ids.append(int(row_id))
+                    else:
+                        cursor.execute('''
+                            INSERT INTO employee_directory
+                                (sort_order, department, name, rank, phone, address, external_account1, external_account2, health_check)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ''', (
+                            idx, department, name, rank, phone, address,
+                            external_account1, external_account2, health_check
+                        ))
+                        keep_ids.append(int(cursor.lastrowid))
+
+                if keep_ids:
+                    placeholders = ','.join('?' for _ in keep_ids)
+                    cursor.execute(
+                        f'DELETE FROM employee_directory WHERE id NOT IN ({placeholders})',
+                        keep_ids
+                    )
+                else:
+                    cursor.execute('DELETE FROM employee_directory')
+            return True, '저장되었습니다.'
+        except Exception as e:
+            logger.error(f"직원 명부 저장 실패: {e}")
+            return False, '직원 명부 저장 중 오류가 발생했습니다.'
 
     def get_all_leave_monthly_report(self, year: int) -> list:
         """모든 직원의 연차 월별 현황 조회 (연차 월별 보고 탭용)"""
