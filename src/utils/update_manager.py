@@ -38,11 +38,17 @@ class UpdateManager:
         self.data_dir = self.app_root / "data"
         self.update_cache_file = Path(config.db_path).parent / "update_cache.json"
         self.downloaded_patches_file = self.data_dir / "downloaded_patches.json"
-        self.update_check_interval = 86400  # 24시간
+        self.update_check_interval = 86400  # Cache positive update results for 24h
+        self.no_update_cache_interval = 0   # Do not cache 'up to date' results
 
         # 디렉토리 생성
         self.patches_dir.mkdir(parents=True, exist_ok=True)
         self.data_dir.mkdir(parents=True, exist_ok=True)
+
+    def _refresh_runtime_state(self):
+        """Refresh version/token from config at call time."""
+        self.current_version = config.version
+        self.github_token = config.get('update.github_token', '')
 
     def _get_headers(self, with_token: bool = True) -> Dict[str, str]:
         """GitHub API 요청 헤더"""
@@ -89,6 +95,7 @@ class UpdateManager:
         반환값은 기존 API와 호환되는 형식 유지.
         """
         try:
+            self._refresh_runtime_state()
             # 캐시 확인
             if not force:
                 cached = self._get_cached_update_info()
@@ -259,6 +266,7 @@ class UpdateManager:
         patch_system.py가 나중에 자동 적용할 수 있도록 파일만 배치.
         """
         try:
+            self._refresh_runtime_state()
             new_patches = self._find_new_patch_assets()
 
             if not new_patches:
@@ -337,6 +345,7 @@ class UpdateManager:
 
     def _download_patch_zip(self, patch_info: Dict[str, Any]) -> Optional[Path]:
         """패치 ZIP 파일 다운로드 (Public repo: 토큰 없이 browser_download_url 우선 사용)"""
+        self._refresh_runtime_state()
         temp_dir = Path(tempfile.gettempdir()) / "WorkManagement_Patches"
         temp_dir.mkdir(parents=True, exist_ok=True)
         zip_path = temp_dir / patch_info['name']
@@ -436,6 +445,7 @@ class UpdateManager:
 
     def _get_latest_release(self) -> Optional[Dict[str, Any]]:
         """GitHub에서 최신 릴리스 정보 가져오기 (토큰 만료 시 인증 없이 재시도)"""
+        self._refresh_runtime_state()
         url = f"{self.api_base_url}/repos/{self.github_repo_owner}/{self.github_repo_name}/releases/latest"
 
         for with_token in (True, False):
@@ -459,6 +469,7 @@ class UpdateManager:
 
     def _get_all_releases(self, page: int = 1, per_page: int = 10) -> list:
         """모든 릴리스 목록 가져오기 (토큰 만료 시 인증 없이 재시도)"""
+        self._refresh_runtime_state()
         url = f"{self.api_base_url}/repos/{self.github_repo_owner}/{self.github_repo_name}/releases"
         params = {'page': page, 'per_page': per_page}
 
@@ -483,6 +494,7 @@ class UpdateManager:
     def get_release_notes(self, version_tag: str) -> Optional[str]:
         """특정 버전의 릴리스 노트 가져오기"""
         try:
+            self._refresh_runtime_state()
             url = f"{self.api_base_url}/repos/{self.github_repo_owner}/{self.github_repo_name}/releases/tags/{version_tag}"
             response = requests.get(url, headers=self._get_headers(), timeout=10)
 
@@ -530,7 +542,9 @@ class UpdateManager:
         try:
             timestamp = datetime.fromisoformat(cache['timestamp'])
             elapsed = (datetime.now() - timestamp).total_seconds()
-            return elapsed > self.update_check_interval
+            data = cache.get('data', {}) or {}
+            interval = self.update_check_interval if data.get('update_available') else self.no_update_cache_interval
+            return elapsed > interval
         except Exception:
             return True
 
