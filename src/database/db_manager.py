@@ -11,6 +11,30 @@ from .models import WorkRecord, User, ActivityLog, AppSettings
 from ..utils.logger import logger
 from ..utils.config import config
 
+_NIGHT_REPORT_DEFAULT_ROSTER = [
+    {'department': '관리부', 'rank': '대리', 'name': '나은진'},
+    {'department': '관리부', 'rank': '대리', 'name': '함선옥'},
+    {'department': '관리부', 'rank': '주임', 'name': '최영금'},
+    {'department': '자재부', 'rank': '과장', 'name': '전용준'},
+    {'department': '자재부', 'rank': '대리', 'name': '유승주'},
+    {'department': '자재부', 'rank': '대리', 'name': '김태성'},
+    {'department': '자재부', 'rank': '대리', 'name': '임요섭'},
+    {'department': '기술부', 'rank': '팀장', 'name': '이태욱'},
+    {'department': '기술부', 'rank': '차장', 'name': '이주호'},
+    {'department': '기술부', 'rank': '과장', 'name': '허종회'},
+    {'department': '기술부', 'rank': '과장', 'name': '조기상'},
+    {'department': '기술부', 'rank': '대리', 'name': '이원종'},
+    {'department': '기술부', 'rank': '대리', 'name': '하영광'},
+    {'department': '기술부', 'rank': '대리', 'name': '전정운'},
+    {'department': '기술부', 'rank': '대리', 'name': '이성찬'},
+    {'department': '기술부', 'rank': '사원', 'name': '전윤호'},
+    {'department': '기술부', 'rank': '사원', 'name': '박보성'},
+    {'department': '기술부', 'rank': '사원', 'name': '반규석'},
+    {'department': '기술부', 'rank': '사원', 'name': '백나자르'},
+    {'department': '기술부', 'rank': '사원', 'name': '산자르백'},
+    {'department': '기술부', 'rank': '사원', 'name': '지마'},
+]
+
 
 class DatabaseManager:
     """SQLite 데이터베이스 관리 클래스"""
@@ -1325,12 +1349,21 @@ class DatabaseManager:
             if row and row['cnt'] > 0:
                 return
             seed_names = self._collect_known_employee_names(cursor)
-            for idx, name in enumerate(seed_names, start=1):
+            roster_names = {entry['name'] for entry in _NIGHT_REPORT_DEFAULT_ROSTER}
+            ordered_rows = list(_NIGHT_REPORT_DEFAULT_ROSTER)
+            for name in seed_names:
+                if name not in roster_names:
+                    ordered_rows.append({
+                        'department': '',
+                        'rank': '',
+                        'name': name,
+                    })
+            for idx, entry in enumerate(ordered_rows, start=1):
                 cursor.execute('''
                     INSERT INTO employee_directory
                         (sort_order, department, name, rank, phone, address, external_account1, external_account2, health_check)
-                    VALUES (?, '', ?, '', '', '', '', '', '')
-                ''', (idx, name))
+                    VALUES (?, ?, ?, ?, '', '', '', '', '')
+                ''', (idx, entry.get('department', ''), entry.get('name', ''), entry.get('rank', '')))
         except Exception as e:
             logger.warning(f"직원 명부 초기 시드 실패: {e}")
 

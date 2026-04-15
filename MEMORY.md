@@ -2,7 +2,7 @@
 
 ## Bug Fixes Applied
 
-- 2026-04-15: Added 직원 관리 > `직원 명부` tab with editable rows for 부서/이름/직책/전화번호/주소/외부계정/건강검진, backed by a new `employee_directory` table that auto-seeds from existing 인증/연차 employee names and now also feeds the employee name pickers used in 연차/근로 시간 관리.
+- 2026-04-15: Added 직원 관리 > `직원 명부` tab with editable rows for 부서/이름/직책/전화번호/주소/외부계정/건강검진, backed by a new `employee_directory` table that now seeds from the 야간 보고 기본 명단 first and then appends any extra known names, while also feeding the employee name pickers used in 연차/근로 시간 관리.
 - 2026-04-15: Fixed 야간 보고 본사/외주 분류 so `허종회` no longer falls into `외주` because of the old `허종희` roster spelling, added `전윤호` to the in-house night roster, and changed unmatched plain-text teammates to be appended as `본사` fallback rows instead of being misclassified as outsourced workers.
 - 2026-04-14: Expanded the 휴일 보고 layout so `작업내용` is much wider, `편집` is about twice as wide, and the capture container itself is larger, making long holiday work descriptions and edit controls fit more comfortably.
 - 2026-04-14: Widened the 야간 보고 `작업내용` column to roughly double the previous width and slightly tightened the `선명` column so long work descriptions have more room without changing the table structure.
