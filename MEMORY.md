@@ -2,6 +2,7 @@
 
 ## Bug Fixes Applied
 
+- 2026-04-16: Expanded 직원 관리 > `직원 명부` so 외부 계정 columns are no longer fixed to `외부계정1/2`; headers can now be renamed inline, new account columns can be appended on demand, and the extra header/value data is persisted through the employee directory API/DB using dynamic external account arrays.
 - 2026-04-15: Fixed stale update detection by refreshing `UpdateManager` runtime version/token on every check and effectively disabling long-lived cache for `최신 버전` results, so a release published the same day is no longer hidden for up to 24 hours by old cache data.
 - 2026-04-15: Added 직원 관리 > `직원 명부` tab with editable rows for 부서/이름/직책/전화번호/주소/외부계정/건강검진, backed by a new `employee_directory` table that now seeds from the 야간 보고 기본 명단 first and then appends any extra known names, while also feeding the employee name pickers used in 연차/근로 시간 관리.
 - 2026-04-15: Fixed 야간 보고 본사/외주 분류 so `허종회` no longer falls into `외주` because of the old `허종희` roster spelling, added `전윤호` to the in-house night roster, and changed unmatched plain-text teammates to be appended as `본사` fallback rows instead of being misclassified as outsourced workers.

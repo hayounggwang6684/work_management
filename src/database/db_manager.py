@@ -1,5 +1,6 @@
 # src/database/db_manager.py - SQLite 데이터베이스 관리
 
+import json
 import sqlite3
 import os
 from datetime import datetime
@@ -34,6 +35,8 @@ _NIGHT_REPORT_DEFAULT_ROSTER = [
     {'department': '기술부', 'rank': '사원', 'name': '산자르백'},
     {'department': '기술부', 'rank': '사원', 'name': '지마'},
 ]
+
+_DEFAULT_EMPLOYEE_EXTERNAL_HEADERS = ['외부계정1', '외부계정2']
 
 
 class DatabaseManager:
@@ -260,6 +263,11 @@ class DatabaseManager:
                     updated_at TEXT DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
+
+            try:
+                cursor.execute("ALTER TABLE employee_directory ADD COLUMN external_accounts_json TEXT DEFAULT ''")
+            except sqlite3.OperationalError:
+                pass
 
             # 연차 부여 이력 (매년 수동 추가)
             cursor.execute('''
@@ -1342,6 +1350,53 @@ class DatabaseManager:
             pass
         return sorted(name for name in names if name)
 
+    def _normalize_employee_directory_external_headers(self, headers) -> list:
+        normalized = []
+        if isinstance(headers, list):
+            for index, header in enumerate(headers):
+                value = str(header or '').strip()
+                normalized.append(value or f'외부계정{index + 1}')
+        return normalized or list(_DEFAULT_EMPLOYEE_EXTERNAL_HEADERS)
+
+    def _normalize_employee_directory_external_accounts(self, accounts, header_count: int, fallback=None) -> list:
+        if isinstance(accounts, str):
+            try:
+                accounts = json.loads(accounts)
+            except Exception:
+                accounts = []
+        if not isinstance(accounts, list):
+            accounts = []
+        fallback = fallback or []
+        result = []
+        for index in range(max(header_count, 0)):
+            value = accounts[index] if index < len(accounts) else ''
+            if (value is None or value == '') and index < len(fallback):
+                value = fallback[index]
+            result.append(str(value or ''))
+        return result
+
+    def _get_employee_directory_external_headers(self, cursor) -> list:
+        try:
+            row = cursor.execute(
+                "SELECT value FROM app_settings WHERE key = 'employee_directory_external_headers'"
+            ).fetchone()
+            if row and row['value']:
+                return self._normalize_employee_directory_external_headers(json.loads(row['value']))
+        except Exception as e:
+            logger.warning(f"직원 명부 외부 계정 헤더 로드 실패: {e}")
+        return list(_DEFAULT_EMPLOYEE_EXTERNAL_HEADERS)
+
+    def _save_employee_directory_external_headers(self, cursor, headers) -> list:
+        normalized = self._normalize_employee_directory_external_headers(headers)
+        cursor.execute('''
+            INSERT INTO app_settings (key, value, updated_at)
+            VALUES ('employee_directory_external_headers', ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(key) DO UPDATE SET
+                value = excluded.value,
+                updated_at = CURRENT_TIMESTAMP
+        ''', (json.dumps(normalized, ensure_ascii=False),))
+        return normalized
+
     def _seed_employee_directory_if_empty(self, cursor) -> None:
         try:
             cursor.execute("SELECT COUNT(*) AS cnt FROM employee_directory")
@@ -1367,12 +1422,50 @@ class DatabaseManager:
         except Exception as e:
             logger.warning(f"직원 명부 초기 시드 실패: {e}")
 
+    def get_employee_directory_external_headers(self) -> list:
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                return self._get_employee_directory_external_headers(cursor)
+        except Exception as e:
+            logger.error(f"직원 명부 외부 계정 헤더 조회 실패: {e}")
+            return list(_DEFAULT_EMPLOYEE_EXTERNAL_HEADERS)
+
     def get_employee_directory(self) -> list:
         """직원 명부 조회"""
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
                 self._seed_employee_directory_if_empty(cursor)
+                external_headers = self._get_employee_directory_external_headers(cursor)
+                cursor.execute('''
+                    SELECT id, sort_order, department, name, rank, phone, address,
+                           external_account1, external_account2, external_accounts_json, health_check
+                    FROM employee_directory
+                    ORDER BY sort_order ASC, id ASC
+                ''')
+                rows = cursor.fetchall()
+                result = []
+                for row in rows:
+                    external_accounts = self._normalize_employee_directory_external_accounts(
+                        row['external_accounts_json'] or '',
+                        len(external_headers),
+                        [row['external_account1'] or '', row['external_account2'] or '']
+                    )
+                    result.append({
+                        'id': row['id'],
+                        'sortOrder': row['sort_order'],
+                        'department': row['department'] or '',
+                        'name': row['name'] or '',
+                        'rank': row['rank'] or '',
+                        'phone': row['phone'] or '',
+                        'address': row['address'] or '',
+                        'externalAccount1': external_accounts[0] if len(external_accounts) > 0 else '',
+                        'externalAccount2': external_accounts[1] if len(external_accounts) > 1 else '',
+                        'externalAccounts': external_accounts,
+                        'healthCheck': row['health_check'] or '',
+                    })
+                return result
                 cursor.execute('''
                     SELECT id, sort_order, department, name, rank, phone, address,
                            external_account1, external_account2, health_check
@@ -1399,12 +1492,73 @@ class DatabaseManager:
             logger.error(f"직원 명부 조회 실패: {e}")
             return []
 
-    def save_employee_directory(self, rows: list) -> tuple[bool, str]:
+    def save_employee_directory(self, rows: list, external_headers=None) -> tuple[bool, str]:
         """직원 명부 전체 저장"""
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
                 self._seed_employee_directory_if_empty(cursor)
+                normalized_headers = self._save_employee_directory_external_headers(cursor, external_headers)
+                keep_ids = []
+
+                for idx, raw in enumerate(rows, start=1):
+                    department = str(raw.get('department', '') or '').strip()
+                    name = str(raw.get('name', '') or '').strip()
+                    rank = str(raw.get('rank', '') or '').strip()
+                    phone = str(raw.get('phone', '') or '').strip()
+                    address = str(raw.get('address', '') or '').strip()
+                    external_accounts = self._normalize_employee_directory_external_accounts(
+                        raw.get('externalAccounts', []),
+                        len(normalized_headers),
+                        [raw.get('externalAccount1', ''), raw.get('externalAccount2', '')]
+                    )
+                    external_account1 = external_accounts[0] if len(external_accounts) > 0 else ''
+                    external_account2 = external_accounts[1] if len(external_accounts) > 1 else ''
+                    external_accounts_json = json.dumps(external_accounts, ensure_ascii=False)
+                    health_check = str(raw.get('healthCheck', '') or '').strip()
+                    has_any_value = any([
+                        department, name, rank, phone, address,
+                        health_check, *external_accounts
+                    ])
+                    if not has_any_value:
+                        continue
+                    if not name:
+                        return False, f'{idx}번 행의 이름을 입력하세요.'
+
+                    row_id = raw.get('id')
+                    if row_id:
+                        cursor.execute('''
+                            UPDATE employee_directory
+                            SET sort_order = ?, department = ?, name = ?, rank = ?, phone = ?, address = ?,
+                                external_account1 = ?, external_account2 = ?, external_accounts_json = ?, health_check = ?,
+                                updated_at = CURRENT_TIMESTAMP
+                            WHERE id = ?
+                        ''', (
+                            idx, department, name, rank, phone, address,
+                            external_account1, external_account2, external_accounts_json, health_check, int(row_id)
+                        ))
+                        keep_ids.append(int(row_id))
+                    else:
+                        cursor.execute('''
+                            INSERT INTO employee_directory
+                                (sort_order, department, name, rank, phone, address,
+                                 external_account1, external_account2, external_accounts_json, health_check)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ''', (
+                            idx, department, name, rank, phone, address,
+                            external_account1, external_account2, external_accounts_json, health_check
+                        ))
+                        keep_ids.append(int(cursor.lastrowid))
+
+                if keep_ids:
+                    placeholders = ','.join('?' for _ in keep_ids)
+                    cursor.execute(
+                        f'DELETE FROM employee_directory WHERE id NOT IN ({placeholders})',
+                        keep_ids
+                    )
+                else:
+                    cursor.execute('DELETE FROM employee_directory')
+                return True, '저장되었습니다.'
                 keep_ids = []
 
                 for idx, raw in enumerate(rows, start=1):

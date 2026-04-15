@@ -26,6 +26,7 @@ let _companySearchMonths  = []; // 정렬된 YYYY-MM 배열
 let _companySearchMonthIdx = 0;
 let _companySearchSummary = null;
 let _employeeDirectoryData = [];
+let _employeeDirectoryExternalHeaders = ['외부계정1', '외부계정2'];
 
 // 한글→영문 변환 매핑
 const koreanToEnglish = {
@@ -3263,24 +3264,100 @@ function showEmployeeTab(tab) {
     if (tab === 'workhours') _initWorkHoursSelectors();
 }
 
+function _normalizeEmployeeDirectoryExternalHeaders(headers = []) {
+    const normalized = Array.isArray(headers)
+        ? headers.map((header, index) => {
+            const value = String(header ?? '').trim();
+            return value || `외부계정${index + 1}`;
+        })
+        : [];
+    return normalized.length ? normalized : ['외부계정1', '외부계정2'];
+}
+
+function _normalizeEmployeeDirectoryExternalAccounts(accounts = [], headerCount = _employeeDirectoryExternalHeaders.length, fallback = []) {
+    const source = Array.isArray(accounts) ? accounts : [];
+    const result = [];
+    for (let i = 0; i < headerCount; i++) {
+        result.push(String(source[i] ?? fallback[i] ?? ''));
+    }
+    return result;
+}
+
+function _getEmployeeDirectoryColumnCount() {
+    return 8 + _employeeDirectoryExternalHeaders.length;
+}
+
 function _createEmptyEmployeeDirectoryRow(overrides = {}) {
-    return {
+    const row = {
         id: null,
         department: '',
         name: '',
         rank: '',
         phone: '',
         address: '',
-        externalAccount1: '',
-        externalAccount2: '',
         healthCheck: '',
         ...overrides
     };
+    row.externalAccounts = _normalizeEmployeeDirectoryExternalAccounts(
+        row.externalAccounts,
+        _employeeDirectoryExternalHeaders.length,
+        [row.externalAccount1 || '', row.externalAccount2 || '']
+    );
+    return row;
+}
+
+function _renderEmployeeDirectoryHeader() {
+    const headerRow = document.getElementById('employeeDirectoryHeaderRow');
+    if (!headerRow) return;
+
+    headerRow.innerHTML = `
+        <th class="border border-slate-200 px-3 py-3 text-center w-16">순번</th>
+        <th class="border border-slate-200 px-3 py-3 text-center w-32">부서</th>
+        <th class="border border-slate-200 px-3 py-3 text-center w-28">이름</th>
+        <th class="border border-slate-200 px-3 py-3 text-center w-24">직책</th>
+        <th class="border border-slate-200 px-3 py-3 text-center w-40">전화번호</th>
+        <th class="border border-slate-200 px-3 py-3 text-center" style="width: 28rem; min-width: 28rem;">주소</th>
+        ${_employeeDirectoryExternalHeaders.map((header, index) => `
+            <th class="border border-slate-200 px-2 py-2 text-center" style="min-width: 11rem; width: 11rem;">
+                <input type="text"
+                       value="${escapeHtml(header || '')}"
+                       class="w-full px-2 py-1.5 border border-slate-200 rounded bg-white text-center font-semibold text-sm focus:bg-blue-50"
+                       placeholder="외부계정${index + 1}"
+                       oninput="updateEmployeeDirectoryExternalHeader(${index}, this.value)">
+            </th>
+        `).join('')}
+        <th class="border border-slate-200 px-3 py-3 text-center w-36">건강검진</th>
+        <th class="border border-slate-200 px-3 py-3 text-center w-24">편집</th>
+    `;
+
+    const tableEl = document.getElementById('employeeDirectoryTableElement');
+    if (tableEl) {
+        tableEl.style.minWidth = `${1280 + Math.max(0, _employeeDirectoryExternalHeaders.length - 2) * 176}px`;
+    }
 }
 
 async function loadEmployeeDirectory() {
     const tbody = document.getElementById('employeeDirectoryTable');
     if (!tbody) return;
+    _renderEmployeeDirectoryHeader();
+    tbody.innerHTML = `<tr><td colspan="${_getEmployeeDirectoryColumnCount()}" class="px-4 py-8 text-center text-slate-400">불러오는 중...</td></tr>`;
+    try {
+        const result = await eel.get_employee_directory()();
+        if (!result?.success) {
+            tbody.innerHTML = `<tr><td colspan="${_getEmployeeDirectoryColumnCount()}" class="px-4 py-8 text-center text-red-500">${escapeHtml(result?.message || '직원 명부를 불러오지 못했습니다.')}</td></tr>`;
+            return;
+        }
+        _employeeDirectoryExternalHeaders = _normalizeEmployeeDirectoryExternalHeaders(result.externalHeaders || []);
+        _employeeDirectoryData = (result.employees || []).map(row => _createEmptyEmployeeDirectoryRow(row));
+        if (_employeeDirectoryData.length === 0) {
+            _employeeDirectoryData = [_createEmptyEmployeeDirectoryRow()];
+        }
+        renderEmployeeDirectoryTable();
+    } catch (e) {
+        console.error('직원 명부 로드 실패:', e);
+        tbody.innerHTML = `<tr><td colspan="${_getEmployeeDirectoryColumnCount()}" class="px-4 py-8 text-center text-red-500">직원 명부를 불러오지 못했습니다.</td></tr>`;
+    }
+    return;
     tbody.innerHTML = '<tr><td colspan="10" class="px-4 py-8 text-center text-slate-400">불러오는 중...</td></tr>';
     try {
         const result = await eel.get_employee_directory()();
@@ -3302,6 +3379,53 @@ async function loadEmployeeDirectory() {
 function renderEmployeeDirectoryTable() {
     const tbody = document.getElementById('employeeDirectoryTable');
     if (!tbody) return;
+    _renderEmployeeDirectoryHeader();
+    if (!_employeeDirectoryData.length) {
+        tbody.innerHTML = `<tr><td colspan="${_getEmployeeDirectoryColumnCount()}" class="px-4 py-8 text-center text-slate-400">등록된 직원이 없습니다. 행 추가 버튼으로 시작해 주세요.</td></tr>`;
+        return;
+    }
+
+    tbody.innerHTML = _employeeDirectoryData.map((row, index) => `
+        <tr class="${index % 2 === 0 ? 'bg-white' : 'bg-slate-50'}">
+            <td class="border border-slate-200 px-2 py-2 text-center font-semibold text-slate-500">${index + 1}</td>
+            <td class="border border-slate-200 p-1">
+                <input type="text" value="${escapeHtml(row.department || '')}" class="w-full px-3 py-2 border-0 bg-transparent text-center focus:bg-blue-50 rounded"
+                       oninput="updateEmployeeDirectoryField(${index}, 'department', this.value)">
+            </td>
+            <td class="border border-slate-200 p-1">
+                <input type="text" value="${escapeHtml(row.name || '')}" class="w-full px-3 py-2 border-0 bg-transparent text-center font-medium focus:bg-blue-50 rounded"
+                       oninput="updateEmployeeDirectoryField(${index}, 'name', this.value)">
+            </td>
+            <td class="border border-slate-200 p-1">
+                <input type="text" value="${escapeHtml(row.rank || '')}" class="w-full px-3 py-2 border-0 bg-transparent text-center focus:bg-blue-50 rounded"
+                       oninput="updateEmployeeDirectoryField(${index}, 'rank', this.value)">
+            </td>
+            <td class="border border-slate-200 p-1">
+                <input type="text" value="${escapeHtml(row.phone || '')}" class="w-full px-3 py-2 border-0 bg-transparent text-center focus:bg-blue-50 rounded"
+                       oninput="updateEmployeeDirectoryField(${index}, 'phone', this.value)">
+            </td>
+            <td class="border border-slate-200 p-1">
+                <input type="text" value="${escapeHtml(row.address || '')}" class="w-full px-3 py-2 border-0 bg-transparent text-left focus:bg-blue-50 rounded"
+                       oninput="updateEmployeeDirectoryField(${index}, 'address', this.value)">
+            </td>
+            ${(row.externalAccounts || []).map((value, accountIndex) => `
+                <td class="border border-slate-200 p-1">
+                    <input type="text" value="${escapeHtml(value || '')}" class="w-full px-3 py-2 border-0 bg-transparent text-center focus:bg-blue-50 rounded"
+                           oninput="updateEmployeeDirectoryExternalAccount(${index}, ${accountIndex}, this.value)">
+                </td>
+            `).join('')}
+            <td class="border border-slate-200 p-1">
+                <input type="text" value="${escapeHtml(row.healthCheck || '')}" class="w-full px-3 py-2 border-0 bg-transparent text-center focus:bg-blue-50 rounded"
+                       oninput="updateEmployeeDirectoryField(${index}, 'healthCheck', this.value)">
+            </td>
+            <td class="border border-slate-200 px-2 py-2 text-center">
+                <button onclick="removeEmployeeDirectoryRow(${index})" class="px-3 py-1.5 bg-red-50 text-red-600 rounded-lg text-xs font-semibold hover:bg-red-100">
+                    삭제
+                </button>
+            </td>
+        </tr>
+    `).join('');
+    return;
     if (!_employeeDirectoryData.length) {
         tbody.innerHTML = '<tr><td colspan="10" class="px-4 py-8 text-center text-slate-400">등록된 직원이 없습니다. 행 추가 버튼으로 시작해 주세요.</td></tr>';
         return;
@@ -3356,6 +3480,25 @@ function updateEmployeeDirectoryField(index, field, value) {
     _employeeDirectoryData[index][field] = value;
 }
 
+function updateEmployeeDirectoryExternalHeader(index, value) {
+    if (index < 0 || index >= _employeeDirectoryExternalHeaders.length) return;
+    _employeeDirectoryExternalHeaders[index] = value;
+}
+
+function updateEmployeeDirectoryExternalAccount(rowIndex, accountIndex, value) {
+    if (!_employeeDirectoryData[rowIndex]) return;
+    if (!Array.isArray(_employeeDirectoryData[rowIndex].externalAccounts)) {
+        _employeeDirectoryData[rowIndex].externalAccounts = _normalizeEmployeeDirectoryExternalAccounts();
+    }
+    _employeeDirectoryData[rowIndex].externalAccounts[accountIndex] = value;
+}
+
+function addEmployeeDirectoryExternalColumn() {
+    _employeeDirectoryExternalHeaders.push(`외부계정${_employeeDirectoryExternalHeaders.length + 1}`);
+    _employeeDirectoryData = _employeeDirectoryData.map(row => _createEmptyEmployeeDirectoryRow(row));
+    renderEmployeeDirectoryTable();
+}
+
 function addEmployeeDirectoryRow() {
     _employeeDirectoryData.push(_createEmptyEmployeeDirectoryRow());
     renderEmployeeDirectoryTable();
@@ -3371,6 +3514,46 @@ function removeEmployeeDirectoryRow(index) {
 }
 
 async function saveEmployeeDirectory() {
+    {
+    const rows = _employeeDirectoryData.map(row => ({
+        id: row.id || null,
+        department: (row.department || '').trim(),
+        name: (row.name || '').trim(),
+        rank: (row.rank || '').trim(),
+        phone: (row.phone || '').trim(),
+        address: (row.address || '').trim(),
+        externalAccounts: _normalizeEmployeeDirectoryExternalAccounts(row.externalAccounts).map(value => String(value || '').trim()),
+        healthCheck: (row.healthCheck || '').trim()
+    }));
+    const externalHeaders = _normalizeEmployeeDirectoryExternalHeaders(_employeeDirectoryExternalHeaders).map(header => header.trim());
+    const invalidRow = rows.findIndex(row => !row.name && (
+        row.department || row.rank || row.phone || row.address || row.healthCheck ||
+        (row.externalAccounts || []).some(value => value)
+    ));
+    if (invalidRow >= 0) {
+        showCustomAlert('알림', `${invalidRow + 1}번 행의 이름을 입력해 주세요.`, 'warning');
+        return;
+    }
+    try {
+        const result = await eel.save_employee_directory(JSON.stringify({
+            externalHeaders,
+            rows
+        }))();
+        if (!result?.success) {
+            showToast(result?.message || '직원 명부 저장에 실패했습니다.', 'error');
+            return;
+        }
+        showToast('직원 명부가 저장되었습니다.', 'success');
+        await Promise.all([
+            loadEmployeeDirectory(),
+            loadLeaveEmployeeList()
+        ]);
+    } catch (e) {
+        console.error('직원 명부 저장 실패:', e);
+        showToast('직원 명부 저장 중 오류가 발생했습니다.', 'error');
+    }
+    return;
+    }
     const rows = _employeeDirectoryData.map(row => ({
         id: row.id || null,
         department: (row.department || '').trim(),

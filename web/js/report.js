@@ -362,10 +362,14 @@ async function loadDailyReport() {
 
 function changeNightReportDate(days) {
     const el = document.getElementById('nightReportDate');
-    if (!el || !el.value) return;
+    if (!el) return;
+    if (!el.value) {
+        const today = new Date();
+        el.value = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    }
     const d = new Date(el.value + 'T00:00:00');
     d.setDate(d.getDate() + days);
-    el.value = d.toISOString().split('T')[0];
+    el.value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     loadNightReport();
 }
 

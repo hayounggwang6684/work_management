@@ -2337,7 +2337,11 @@ def get_employee_names_for_leave() -> List[str]:
 def get_employee_directory() -> Dict[str, Any]:
     """직원 명부 조회"""
     try:
-        return {'success': True, 'employees': db.get_employee_directory()}
+        return {
+            'success': True,
+            'employees': db.get_employee_directory(),
+            'externalHeaders': db.get_employee_directory_external_headers()
+        }
     except Exception as e:
         logger.error(f"직원 명부 조회 오류: {e}")
         return {'success': False, 'message': '직원 명부를 불러오지 못했습니다.', 'employees': []}
@@ -2347,10 +2351,16 @@ def get_employee_directory() -> Dict[str, Any]:
 def save_employee_directory(rows_json: str) -> Dict[str, Any]:
     """직원 명부 저장"""
     try:
-        rows = json.loads(rows_json or '[]')
+        payload = json.loads(rows_json or '[]')
+        external_headers = None
+        if isinstance(payload, dict):
+            rows = payload.get('rows', [])
+            external_headers = payload.get('externalHeaders', [])
+        else:
+            rows = payload
         if not isinstance(rows, list):
             return {'success': False, 'message': '직원 명부 형식이 올바르지 않습니다.'}
-        success, message = db.save_employee_directory(rows)
+        success, message = db.save_employee_directory(rows, external_headers)
         return {'success': success, 'message': message}
     except Exception as e:
         logger.error(f"직원 명부 저장 오류: {e}")
