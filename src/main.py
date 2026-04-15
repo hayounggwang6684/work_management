@@ -1,11 +1,35 @@
 # src/main.py - 메인 애플리케이션
 
 import os
+import socket
 import subprocess
 import sys
 import threading
+import time
 import webbrowser
 from pathlib import Path
+
+# ── 관리자 권한 자동 요청 ────────────────────────────────────────────────────
+# ERP 매크로의 SetForegroundWindow가 관리자 권한 없이는 차단됨.
+# 비관리자로 실행된 경우 UAC 프롬프트를 띄워 관리자로 재실행.
+def _is_admin() -> bool:
+    try:
+        import ctypes
+        return bool(ctypes.windll.shell32.IsUserAnAdmin())
+    except Exception:
+        return False
+
+if not _is_admin():
+    try:
+        import ctypes
+        # ShellExecuteEx 'runas' → UAC 프롬프트 후 관리자로 재실행
+        ctypes.windll.shell32.ShellExecuteW(
+            None, 'runas', sys.executable, ' '.join(f'"{a}"' for a in sys.argv), None, 1
+        )
+    except Exception:
+        pass
+    sys.exit(0)
+# ─────────────────────────────────────────────────────────────────────────────
 
 # 선택적 패키지 자동 설치 (현장 PC 대응)
 _OPTIONAL_PACKAGES = ['xlrd']
@@ -210,6 +234,34 @@ def _detect_browser_mode() -> str:
     return 'default'
 
 
+def _is_local_port_in_use(host: str, port: int, timeout: float = 0.5) -> bool:
+    """지정 포트가 현재 사용 중인지 확인"""
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
+def _wait_for_local_port_release(host: str, port: int, timeout: float = 15.0, interval: float = 0.5) -> bool:
+    """자동 재시작 직후 이전 인스턴스가 포트를 놓을 때까지 잠시 대기"""
+    deadline = time.time() + timeout
+    waited = False
+
+    while time.time() < deadline:
+        if not _is_local_port_in_use(host, port):
+            if waited:
+                logger.info(f"포트 {host}:{port} 해제 확인 후 앱 시작")
+            return True
+        if not waited:
+            logger.info(f"포트 {host}:{port} 사용 중 — 이전 인스턴스 종료 대기")
+            waited = True
+        time.sleep(interval)
+
+    logger.warning(f"포트 {host}:{port}가 {timeout:.1f}초 내 해제되지 않았습니다.")
+    return False
+
+
 def main():
     """메인 애플리케이션 실행"""
     logger.info("="*60)
@@ -326,6 +378,14 @@ def main():
         'position': 'center',
         'disable_cache': config.get('ui.enable_dev_tools', False)
     }
+
+    if _restart_count > 0:
+        _wait_for_local_port_release(
+            window_options['host'],
+            window_options['port'],
+            timeout=15.0,
+            interval=0.5
+        )
 
     # DB에서 텔레그램 설정 보완 로드 (다른 PC에서 settings.json에 토큰이 없을 때)
     if not config.get('telegram.bot_token', ''):
