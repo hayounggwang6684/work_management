@@ -2261,10 +2261,16 @@ def get_employee_leave_info(employee_name: str) -> Dict[str, Any]:
 
 
 @eel.expose
-def save_employee_annual_config(employee_name: str, generation_month: int, note: str) -> Dict[str, Any]:
+def save_employee_annual_config(employee_name: str, generation_month: int, note: str,
+                                generation_day: int = 1) -> Dict[str, Any]:
     """직원 연차 설정 저장"""
     try:
-        success = db.save_employee_annual_config(employee_name.strip(), int(generation_month), note or '')
+        success = db.save_employee_annual_config(
+            employee_name.strip(),
+            int(generation_month),
+            note or '',
+            int(generation_day or 1)
+        )
         return {'success': success}
     except Exception as e:
         logger.error(f"직원 연차 설정 저장 오류: {e}")
@@ -2368,6 +2374,28 @@ def save_employee_directory(rows_json: str) -> Dict[str, Any]:
 
 
 @eel.expose
+def save_work_hours_ot_override(name: str, date: str, start_time: str, end_time: str,
+                                note: str = '') -> Dict[str, Any]:
+    """근로시간관리 달력에서 수정한 연장근로 시작/종료 시간을 저장"""
+    try:
+        if not name or not name.strip():
+            return {'success': False, 'message': '직원명을 입력하세요.'}
+        if not date:
+            return {'success': False, 'message': '날짜가 없습니다.'}
+        success = db.save_work_hours_ot_override(
+            name.strip(),
+            date,
+            (start_time or '').strip(),
+            (end_time or '').strip(),
+            note or ''
+        )
+        return {'success': success, 'message': '저장되었습니다.' if success else '저장 실패'}
+    except Exception as e:
+        logger.error(f"근로시간 OT 오버라이드 저장 오류: {e}")
+        return {'success': False, 'message': '요청 처리 중 오류가 발생했습니다.'}
+
+
+@eel.expose
 def get_work_hours_by_month(name: str, year: int, month: int,
                              meal_deduct: bool = True) -> Dict[str, Any]:
     """직원 월별 근로 시간 조회 (달력용)
@@ -2393,6 +2421,7 @@ def get_work_hours_by_month(name: str, year: int, month: int,
             return {'success': False, 'message': '유효하지 않은 연도/월입니다.'}
 
         import datetime as _dt
+        today = _dt.date.today()
         days_in_month = _cal.monthrange(year, month)[1]
         first_day = _dt.date(year, month, 1)
         last_day = _dt.date(year, month, days_in_month)
@@ -2430,6 +2459,19 @@ def get_work_hours_by_month(name: str, year: int, month: int,
             d, et = row[0], row[1] or ''
             if d not in night_map or et > night_map[d]:
                 night_map[d] = et
+
+        override_rows = db.execute_query(
+            "SELECT work_date, start_time, end_time, note FROM work_hours_ot_overrides "
+            "WHERE employee_name = ? AND work_date BETWEEN ? AND ?",
+            (name, range_start, range_end)
+        ) or []
+        override_map: Dict[str, Any] = {}
+        for row in override_rows:
+            override_map[row[0]] = {
+                'start_time': row[1] or '',
+                'end_time': row[2] or '',
+                'note': row[3] or ''
+            }
 
         # ── 3. 달력에 표시할 주 범위 전체 휴일 근무 (holiday_work_entries) ──
         holiday_ot_map: Dict[str, float] = {}  # date → OT hours
@@ -2483,6 +2525,34 @@ def get_work_hours_by_month(name: str, year: int, month: int,
             except Exception:
                 return 0.0
 
+        def _parse_time_to_minutes(value: str) -> int | None:
+            try:
+                text = (value or '').strip()
+                if not text:
+                    return None
+                if ':' in text:
+                    h, m = text.split(':', 1)
+                elif len(text) in (3, 4) and text.isdigit():
+                    h, m = text[:-2], text[-2:]
+                else:
+                    return None
+                hour = int(h)
+                minute = int(m)
+                if not (0 <= hour <= 23 and 0 <= minute <= 59):
+                    return None
+                return hour * 60 + minute
+            except Exception:
+                return None
+
+        def _parse_override_ot(start_time: str, end_time: str) -> float:
+            start_min = _parse_time_to_minutes(start_time)
+            end_min = _parse_time_to_minutes(end_time)
+            if start_min is None or end_min is None:
+                return 0.0
+            if end_min < start_min:
+                end_min += 24 * 60
+            return round(max(0, end_min - start_min) / 60.0, 2)
+
         # ── 일별 계산 ──
         result_days: Dict[str, Any] = {}
         current_day = calendar_start
@@ -2493,8 +2563,12 @@ def get_work_hours_by_month(name: str, year: int, month: int,
 
             leave_info = leave_map.get(date_str)
             leave_type = leave_info['leave_type'] if leave_info else None
+            is_future = current_day > today
 
-            if is_weekend:
+            if is_future:
+                regular = 0.0
+                leave_type = None
+            elif is_weekend:
                 regular = 0.0
             elif leave_type == '연차':
                 regular = max(0.0, 8.0 - 8.0 * leave_info['days'])
@@ -2504,17 +2578,25 @@ def get_work_hours_by_month(name: str, year: int, month: int,
                 regular = 8.0
 
             ot = 0.0
-            if date_str in night_map:
-                ot += _parse_ot(night_map[date_str])
-            if date_str in holiday_ot_map:
-                ot += holiday_ot_map[date_str]
+            override_info = override_map.get(date_str)
+            if not is_future:
+                if override_info:
+                    ot += _parse_override_ot(override_info.get('start_time'), override_info.get('end_time'))
+                elif date_str in night_map:
+                    ot += _parse_ot(night_map[date_str])
+                if date_str in holiday_ot_map:
+                    ot += holiday_ot_map[date_str]
 
             result_days[date_str] = {
                 'regular': regular,
                 'ot': round(ot, 2),
+                'ot_start_time': override_info.get('start_time', '') if override_info else ('17:00' if date_str in night_map else ''),
+                'ot_end_time': override_info.get('end_time', '') if override_info else night_map.get(date_str, ''),
+                'ot_overridden': bool(override_info),
                 'leave_type': leave_type,
                 'is_weekend': is_weekend,
-                'is_current_month': current_day.month == month
+                'is_current_month': current_day.month == month,
+                'is_future': is_future
             }
             current_day += _dt.timedelta(days=1)
 

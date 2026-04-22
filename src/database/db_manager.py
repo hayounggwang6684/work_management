@@ -242,9 +242,14 @@ class DatabaseManager:
                 CREATE TABLE IF NOT EXISTS employee_annual_config (
                     employee_name TEXT PRIMARY KEY,
                     generation_month INTEGER NOT NULL DEFAULT 1,
+                    generation_day INTEGER NOT NULL DEFAULT 1,
                     note TEXT DEFAULT ''
                 )
             ''')
+            try:
+                cursor.execute("ALTER TABLE employee_annual_config ADD COLUMN generation_day INTEGER NOT NULL DEFAULT 1")
+            except sqlite3.OperationalError:
+                pass
 
             # 직원 명부
             cursor.execute('''
@@ -280,6 +285,24 @@ class DatabaseManager:
                     note        TEXT DEFAULT '',
                     created_at  TEXT DEFAULT CURRENT_TIMESTAMP
                 )
+            ''')
+
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS work_hours_ot_overrides (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    employee_name TEXT NOT NULL,
+                    work_date TEXT NOT NULL,
+                    start_time TEXT DEFAULT '',
+                    end_time TEXT DEFAULT '',
+                    note TEXT DEFAULT '',
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(employee_name, work_date)
+                )
+            ''')
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_work_hours_ot_overrides_emp_date
+                ON work_hours_ot_overrides(employee_name, work_date)
             ''')
 
             # 연차 사용 내역
@@ -1143,7 +1166,7 @@ class DatabaseManager:
         this_year = today.year
 
         info = {
-            'config': {'generation_month': 1, 'note': ''},
+            'config': {'generation_month': 1, 'generation_day': 1, 'note': ''},
             'grants': [],
             'usage_this_year': [],
             'all_usage_count': 0,
@@ -1154,13 +1177,23 @@ class DatabaseManager:
                 cursor = conn.cursor()
 
                 # 설정 조회
-                cursor.execute(
-                    'SELECT generation_month, note FROM employee_annual_config WHERE employee_name = ?',
-                    (employee_name,)
-                )
+                try:
+                    cursor.execute(
+                        'SELECT generation_month, generation_day, note FROM employee_annual_config WHERE employee_name = ?',
+                        (employee_name,)
+                    )
+                except sqlite3.OperationalError:
+                    cursor.execute(
+                        'SELECT generation_month, 1 AS generation_day, note FROM employee_annual_config WHERE employee_name = ?',
+                        (employee_name,)
+                    )
                 row = cursor.fetchone()
                 if row:
-                    info['config'] = {'generation_month': row['generation_month'], 'note': row['note'] or ''}
+                    info['config'] = {
+                        'generation_month': row['generation_month'],
+                        'generation_day': row['generation_day'] or 1,
+                        'note': row['note'] or ''
+                    }
 
                 # 부여 이력 (최신순)
                 cursor.execute('''
@@ -1237,17 +1270,21 @@ class DatabaseManager:
             logger.error(f"직원 연차 정보 조회 실패: {e}")
         return info
 
-    def save_employee_annual_config(self, employee_name: str, generation_month: int, note: str) -> bool:
+    def save_employee_annual_config(self, employee_name: str, generation_month: int, note: str,
+                                    generation_day: int = 1) -> bool:
         """직원 연차 설정 upsert"""
         try:
+            generation_month = max(1, min(12, int(generation_month)))
+            generation_day = max(1, min(31, int(generation_day)))
             with self.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
-                    INSERT INTO employee_annual_config (employee_name, generation_month, note)
-                    VALUES (?, ?, ?)
+                    INSERT INTO employee_annual_config (employee_name, generation_month, generation_day, note)
+                    VALUES (?, ?, ?, ?)
                     ON CONFLICT(employee_name)
-                    DO UPDATE SET generation_month = ?, note = ?
-                ''', (employee_name, generation_month, note, generation_month, note))
+                    DO UPDATE SET generation_month = ?, generation_day = ?, note = ?
+                ''', (employee_name, generation_month, generation_day, note,
+                      generation_month, generation_day, note))
             return True
         except Exception as e:
             logger.error(f"직원 연차 설정 저장 실패: {e}")
@@ -1268,6 +1305,34 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"연차 부여 이력 추가 실패: {e}")
             return -1
+
+    def save_work_hours_ot_override(self, employee_name: str, work_date: str,
+                                    start_time: str, end_time: str, note: str = '') -> bool:
+        """근로시간관리 달력에서 수정한 연장근로 시작/종료 시간을 저장한다."""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                if not start_time and not end_time:
+                    cursor.execute(
+                        "DELETE FROM work_hours_ot_overrides WHERE employee_name = ? AND work_date = ?",
+                        (employee_name, work_date)
+                    )
+                    return True
+                cursor.execute('''
+                    INSERT INTO work_hours_ot_overrides
+                        (employee_name, work_date, start_time, end_time, note, updated_at)
+                    VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                    ON CONFLICT(employee_name, work_date)
+                    DO UPDATE SET
+                        start_time = excluded.start_time,
+                        end_time = excluded.end_time,
+                        note = excluded.note,
+                        updated_at = CURRENT_TIMESTAMP
+                ''', (employee_name, work_date, start_time, end_time, note))
+            return True
+        except Exception as e:
+            logger.error(f"연장근로 시간 오버라이드 저장 실패: {e}")
+            return False
 
     def delete_leave_grant(self, grant_id: int) -> bool:
         """연차 부여 이력 삭제"""
@@ -1632,12 +1697,21 @@ class DatabaseManager:
                 ).fetchall()
                 monthly = {r[0]: round(r[1], 1) for r in rows}  # {1: 0.5, 3: 1.0, ...}
 
-                # 연차 생성월
-                cfg = conn.execute(
-                    "SELECT generation_month FROM employee_annual_config WHERE employee_name = ?",
-                    (name,)
-                ).fetchone()
-                gen_month = cfg[0] if cfg else 1
+                # 연차 생성월/일
+                try:
+                    cfg = conn.execute(
+                        "SELECT generation_month, generation_day FROM employee_annual_config WHERE employee_name = ?",
+                        (name,)
+                    ).fetchone()
+                    gen_month = cfg[0] if cfg else 1
+                    gen_day = cfg[1] if cfg else 1
+                except sqlite3.OperationalError:
+                    cfg = conn.execute(
+                        "SELECT generation_month FROM employee_annual_config WHERE employee_name = ?",
+                        (name,)
+                    ).fetchone()
+                    gen_month = cfg[0] if cfg else 1
+                    gen_day = 1
 
                 # 누적 잔여 (전체 기간)
                 grant_sum = conn.execute(
@@ -1654,6 +1728,7 @@ class DatabaseManager:
                     'name': name,
                     'monthly': monthly,
                     'generation_month': gen_month,
+                    'generation_day': gen_day,
                     'remaining': round(grant_sum - use_sum, 1)
                 })
         return result

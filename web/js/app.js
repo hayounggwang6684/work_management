@@ -3741,7 +3741,7 @@ function renderLeaveMonthlyReport(data, year) {
     for (let m = 1; m <= maxMonth; m++) {
         html += `<th class="border border-gray-400 px-2 py-2 text-center whitespace-nowrap">${monthNames[m-1]}</th>`;
     }
-    html += `<th class="border border-gray-400 px-2 py-2 text-center whitespace-nowrap">연차 생성월</th>
+    html += `<th class="border border-gray-400 px-2 py-2 text-center whitespace-nowrap">연차 생성일</th>
                     <th class="border border-gray-400 px-2 py-2 text-center whitespace-nowrap">잔여 연차</th>
                     <th class="border border-gray-400 px-4 py-2 text-center whitespace-nowrap">서명</th>
                 </tr>
@@ -3763,7 +3763,7 @@ function renderLeaveMonthlyReport(data, year) {
         }
         const remaining = emp.remaining;
         const remColor = remaining < 0 ? 'text-red-600 font-bold' : remaining === 0 ? 'text-slate-500' : 'text-green-700 font-semibold';
-        html += `<td class="border border-gray-400 px-2 py-2 text-center">${emp.generation_month}월</td>
+        html += `<td class="border border-gray-400 px-2 py-2 text-center">${emp.generation_month}월 ${emp.generation_day || 1}일</td>
             <td class="border border-gray-400 px-2 py-2 text-center ${remColor}">${remaining}</td>
             <td class="border border-gray-400 px-4 py-2 text-center">&nbsp;</td>
         </tr>`;
@@ -3799,8 +3799,10 @@ function printLeaveReport() {
 function showAddLeaveRowModal() {
     const modal = document.getElementById('addLeaveRowModal');
     const nameEl = document.getElementById('addLeaveRowName');
+    const dayEl = document.getElementById('addLeaveRowDay');
     if (!modal) return;
     if (nameEl) nameEl.value = '';
+    if (dayEl) dayEl.value = '1';
     modal.classList.remove('hidden');
     if (nameEl) nameEl.focus();
 }
@@ -3808,11 +3810,13 @@ function showAddLeaveRowModal() {
 async function confirmAddLeaveRow() {
     const nameEl = document.getElementById('addLeaveRowName');
     const monthEl = document.getElementById('addLeaveRowMonth');
+    const dayEl = document.getElementById('addLeaveRowDay');
     const name = nameEl ? nameEl.value.trim() : '';
     const month = parseInt(monthEl ? monthEl.value : '1') || 1;
+    const day = parseInt(dayEl ? dayEl.value : '1') || 1;
     if (!name) { showToast('직원명을 입력해주세요.', 'error'); return; }
     try {
-        const r = await eel.save_employee_annual_config(name, month, '')();
+        const r = await eel.save_employee_annual_config(name, month, '', day)();
         document.getElementById('addLeaveRowModal').classList.add('hidden');
         if (r && r.success) {
             showToast(escapeHtml(name) + ' 추가 완료');
@@ -3928,6 +3932,7 @@ async function loadLeaveEmployeeList() {
     try {
         const names = await eel.get_employee_names_for_leave()();
         const datalist = document.getElementById('leaveEmployeeList');
+        const leaveSelect = document.getElementById('leaveEmployeeSelect');
         const workHoursSelect = document.getElementById('workHoursEmployeeInput');
         if (!datalist) return;
         datalist.innerHTML = '';
@@ -3936,6 +3941,19 @@ async function loadLeaveEmployeeList() {
             opt.value = name;
             datalist.appendChild(opt);
         });
+        if (leaveSelect) {
+            const currentValue = document.getElementById('leaveEmployeeInput')?.value?.trim() || leaveSelect.value;
+            leaveSelect.innerHTML = '<option value="">목록 선택</option>';
+            (names || []).forEach(name => {
+                const opt = document.createElement('option');
+                opt.value = name;
+                opt.textContent = name;
+                leaveSelect.appendChild(opt);
+            });
+            if ((names || []).includes(currentValue)) {
+                leaveSelect.value = currentValue;
+            }
+        }
         if (workHoursSelect) {
             const currentValue = workHoursSelect.value;
             workHoursSelect.innerHTML = '<option value="">직원 선택</option>';
@@ -3952,6 +3970,20 @@ async function loadLeaveEmployeeList() {
     } catch (e) {
         console.error('직원 목록 로드 실패:', e);
     }
+}
+
+function selectLeaveEmployeeFromDropdown(name) {
+    const input = document.getElementById('leaveEmployeeInput');
+    if (!input || !name) return;
+    input.value = name;
+    searchEmployeeLeave();
+}
+
+function syncLeaveEmployeeSelect(name) {
+    const sel = document.getElementById('leaveEmployeeSelect');
+    if (!sel) return;
+    const value = String(name || '').trim();
+    sel.value = Array.from(sel.options).some(opt => opt.value === value) ? value : '';
 }
 
 async function searchEmployeeLeave() {
@@ -4109,9 +4141,12 @@ function renderLeaveResult(info, name) {
       <div class="bg-white border border-slate-200 rounded-xl p-5">
         <h3 class="text-lg font-semibold text-slate-700 mb-4">⚙️ 연차 설정</h3>
         <div class="flex gap-3 items-center flex-wrap">
-          <label class="text-sm text-slate-600 font-medium">연차 생성 월:</label>
+          <label class="text-sm text-slate-600 font-medium">연차 생성 월/일:</label>
           <select id="leaveGenMonth" class="border border-slate-300 rounded-lg px-3 py-2 text-sm">
             ${Array.from({length:12},(_,i)=>`<option value="${i+1}" ${cfg.generation_month===(i+1)?'selected':''}>${i+1}월</option>`).join('')}
+          </select>
+          <select id="leaveGenDay" class="border border-slate-300 rounded-lg px-3 py-2 text-sm">
+            ${Array.from({length:31},(_,i)=>`<option value="${i+1}" ${(cfg.generation_day||1)===(i+1)?'selected':''}>${i+1}일</option>`).join('')}
           </select>
           <label class="text-sm text-slate-600 font-medium ml-2">메모:</label>
           <input type="text" id="leaveConfigNote" value="${escapeHtml(cfg.note||'')}"
@@ -4167,7 +4202,7 @@ function renderLeaveResult(info, name) {
           <select id="grantMonth" class="border border-slate-300 rounded-lg px-2 py-1.5 text-sm">
             ${Array.from({length:12},(_,i)=>`<option value="${i+1}">${i+1}월</option>`).join('')}
           </select>
-          <input type="number" id="grantDays" value="15" step="0.5" min="0.5"
+          <input type="number" id="grantDays" value="15" step="0.5"
                  class="border border-slate-300 rounded-lg px-2 py-1.5 text-sm w-16" placeholder="일수">
           <input type="text" id="grantNote"
                  class="border border-slate-300 rounded-lg px-2 py-1.5 text-sm w-36" placeholder="메모 (선택)">
@@ -4250,9 +4285,10 @@ function renderLeaveResult(info, name) {
 
 async function saveLeaveConfig(name) {
     const genMonth = parseInt(document.getElementById('leaveGenMonth').value);
+    const genDay = parseInt(document.getElementById('leaveGenDay').value);
     const note = document.getElementById('leaveConfigNote').value.trim();
     try {
-        const result = await eel.save_employee_annual_config(name, genMonth, note)();
+        const result = await eel.save_employee_annual_config(name, genMonth, note, genDay)();
         if (result && result.success) {
             showCustomAlert('성공', '연차 설정이 저장되었습니다.', 'success');
         } else {
@@ -4268,8 +4304,8 @@ async function addLeaveGrant(name) {
     const month = parseInt(document.getElementById('grantMonth').value);
     const days  = parseFloat(document.getElementById('grantDays').value);
     const note  = document.getElementById('grantNote').value.trim();
-    if (!year || !month || isNaN(days) || days <= 0) {
-        showCustomAlert('알림', '연도, 월, 일수를 올바르게 입력하세요.', 'warning');
+    if (!year || !month || isNaN(days) || days === 0) {
+        showCustomAlert('알림', '연도, 월, 일수를 올바르게 입력하세요. 일수는 음수도 입력할 수 있지만 0은 사용할 수 없습니다.', 'warning');
         return;
     }
     try {
@@ -5027,6 +5063,45 @@ function _toggleMealDeduct(dateStr, containerId) {
     renderWorkHoursCalendar(container._whData, container);
 }
 
+async function editWorkHoursOt(dateStr, containerId) {
+    const container = document.getElementById(containerId);
+    const dayData = container?._whData?.days?.[dateStr] || {};
+    if (!container || dayData.is_future) return;
+
+    const name = document.getElementById('workHoursEmployeeInput')?.value?.trim();
+    if (!name) {
+        showToast('직원명을 먼저 선택하세요.', 'warning');
+        return;
+    }
+
+    const currentStart = dayData.ot_start_time || '17:00';
+    const currentEnd = dayData.ot_end_time || '';
+    const startInput = prompt(`${dateStr} 연장근로 시작 시간을 입력하세요.\n예: 1700 또는 17:00\n비우고 저장하면 이 날짜의 수동 수정값을 지웁니다.`, currentStart);
+    if (startInput === null) return;
+    const endInput = prompt(`${dateStr} 연장근로 종료 시간을 입력하세요.\n예: 2100 또는 21:00\n비우고 저장하면 이 날짜의 수동 수정값을 지웁니다.`, currentEnd);
+    if (endInput === null) return;
+
+    const start = normalizeEndTimeValue(startInput);
+    const end = normalizeEndTimeValue(endInput);
+    if ((startInput.trim() || endInput.trim()) && (!start || !end)) {
+        showCustomAlert('입력 오류', '시작 시간과 종료 시간을 1700 또는 17:00 형식으로 입력해 주세요.', 'warning');
+        return;
+    }
+
+    try {
+        const result = await eel.save_work_hours_ot_override(name, dateStr, start, end, '')();
+        if (!result || !result.success) {
+            showToast(result?.message || '연장근로 시간 저장 실패', 'error');
+            return;
+        }
+        showToast(start && end ? '연장근로 시간이 수정되었습니다.' : '연장근로 수동 수정값을 삭제했습니다.', 'success');
+        await searchWorkHours({ silent: true });
+    } catch (e) {
+        console.error('연장근로 시간 수정 오류:', e);
+        showToast('연장근로 시간 수정 중 오류가 발생했습니다.', 'error');
+    }
+}
+
 function renderWorkHoursCalendar(data, container) {
     if (!container) return;
     // 데이터·상태 보존 (innerHTML 재렌더 후에도 유지)
@@ -5096,38 +5171,56 @@ function renderWorkHoursCalendar(data, container) {
             const lt = dayData.leave_type;
             const leaveBadge = lt ? `<span class="inline-block mt-0.5 px-1 text-xs rounded ${leaveColors[lt] || 'bg-slate-100'}">${lt}</span>` : '';
             const dayNum = parseInt(dateStr.slice(-2), 10);
+            const isFuture = !!dayData.is_future;
 
             weekRegular += dayData.regular || 0;
             weekOt += dayData.ot || 0;
 
             const cellBg = isOutsideMonth
                 ? (isWeekend ? 'bg-slate-100' : 'bg-slate-50')
-                : (isWeekend ? 'bg-slate-100' : 'bg-white hover:bg-blue-50');
+                : isFuture
+                    ? 'bg-slate-50'
+                    : (isWeekend ? 'bg-slate-100 hover:bg-blue-50' : 'bg-white hover:bg-blue-50');
             const dayNumColor = isOutsideMonth
                 ? (col === 0 ? 'text-red-400' : col === 6 ? 'text-blue-400' : 'text-slate-400')
-                : (col === 0 ? 'text-red-600' : col === 6 ? 'text-blue-600' : 'text-slate-700');
-            const regularDisplay = dayData.regular > 0
+                : isFuture
+                    ? 'text-slate-300'
+                    : (col === 0 ? 'text-red-600' : col === 6 ? 'text-blue-600' : 'text-slate-700');
+            const regularDisplay = isFuture
+                ? '<span class="text-slate-200">&nbsp;</span>'
+                : dayData.regular > 0
                 ? `<span class="text-blue-700 font-medium">${dayData.regular.toFixed(1)}h</span>`
                 : '<span class="text-slate-300">-</span>';
-            const otDisplay = dayData.ot > 0
+            const otDisplay = !isFuture && dayData.ot > 0
                 ? `<span class="text-orange-500 font-medium">+${dayData.ot.toFixed(1)}h</span>`
                 : '';
+            const otTimeDisplay = !isFuture && dayData.ot_start_time && dayData.ot_end_time
+                ? `<div class="text-[10px] text-slate-400 leading-tight">${escapeHtml(dayData.ot_start_time)}-${escapeHtml(dayData.ot_end_time)}</div>`
+                : '';
+            const overrideBadge = dayData.ot_overridden
+                ? `<div class="text-xs text-emerald-600 leading-tight">수정</div>` : '';
             const mealBadge = dayData.meal_deducted
                 ? `<div class="text-xs text-amber-600 leading-tight">-석식</div>` : '';
 
             // 야간 근무일(원본 OT > 0)에만 더블클릭 허용
             const hasRawOt = (days[dateStr]?.ot || 0) > 0;
-            const dblAttr = (!isWeekend && hasRawOt)
+            const dblAttr = (!isWeekend && hasRawOt && !isFuture)
                 ? `ondblclick="_toggleMealDeduct('${dateStr}','${containerId}')" style="cursor:pointer" title="더블클릭: 석식 공제 ${dayData.meal_deducted ? '해제' : '적용'}"`
                 : '';
+            const contextAttr = !isFuture
+                ? `oncontextmenu="event.preventDefault(); editWorkHoursOt('${dateStr}','${containerId}'); return false;" title="우클릭: 연장근로 시작/종료 시간 수정"`
+                : '';
             const mealRing = dayData.meal_deducted ? ' ring-2 ring-inset ring-amber-300' : '';
+            const overrideRing = dayData.ot_overridden ? ' ring-2 ring-inset ring-emerald-300' : '';
 
             html += `
-            <td class="border border-slate-200 p-1 align-top ${cellBg}${mealRing} h-16 select-none" style="min-width:56px" ${dblAttr}>
+            <td class="border border-slate-200 p-1 align-top ${cellBg}${mealRing}${overrideRing} h-16 select-none" style="min-width:56px" ${dblAttr} ${contextAttr}>
               <div class="text-xs font-semibold ${dayNumColor} mb-0.5">${dayNum}</div>
               ${leaveBadge}
               <div class="text-xs leading-tight">${regularDisplay}</div>
               ${otDisplay ? `<div class="text-xs leading-tight">${otDisplay}</div>` : ''}
+              ${otTimeDisplay}
+              ${overrideBadge}
               ${mealBadge}
             </td>`;
         });
@@ -5145,7 +5238,7 @@ function renderWorkHoursCalendar(data, container) {
     html += `
         </tbody></table>
       </div>
-      <p class="text-xs text-slate-400">* 야간 근무일 더블클릭 → 석식 공제(1h) 적용/해제 &nbsp;|&nbsp; 주황 테두리 = 석식 공제 적용</p>
+      <p class="text-xs text-slate-400">* 오늘 이후 날짜는 근로시간을 표시하지 않습니다. &nbsp;|&nbsp; 야간 근무일 더블클릭 → 석식 공제(1h) 적용/해제 &nbsp;|&nbsp; 달력 우클릭 → 연장근로 시작/종료 시간 수정 &nbsp;|&nbsp; 초록 테두리 = 수동 수정</p>
     </div>`;
 
     container.innerHTML = html;

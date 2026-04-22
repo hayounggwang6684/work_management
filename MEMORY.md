@@ -2,6 +2,7 @@
 
 ## Bug Fixes Applied
 
+- 2026-04-22: Updated 직원 관리 > 연차/근로시간 flows so the 연차 직원명 picker now has an always-open selectable list beside the typed input, annual configuration stores both generation month and day, leave grant history accepts negative day adjustments, and the work-hours calendar hides future work-hour values while supporting right-click OT start/end overrides persisted in `work_hours_ot_overrides`.
 - 2026-04-16: Fixed automatic patch restart on installed PCs so the relaunched process now waits for `localhost:8686` to be released by the previous instance before starting Eel, preventing the post-patch `[WinError 10048]` port collision that made updates look like they had not applied.
 - 2026-04-16: Expanded 직원 관리 > `직원 명부` so 외부 계정 columns are no longer fixed to `외부계정1/2`; headers can now be renamed inline, new account columns can be appended on demand, and the extra header/value data is persisted through the employee directory API/DB using dynamic external account arrays.
 - 2026-04-15: Fixed stale update detection by refreshing `UpdateManager` runtime version/token on every check and effectively disabling long-lived cache for `최신 버전` results, so a release published the same day is no longer hidden for up to 24 hours by old cache data.
