@@ -35,27 +35,40 @@ class PatchSystem:
     def _correct_version_from_applied_patches(self):
         """applied_patches.json 기반 버전 보정 (구버전 patch_system 호환)"""
         try:
-            applied = self.get_applied_patches()
-            if not applied:
+            latest_applied = self._get_latest_applied_version()
+            if latest_applied is None:
                 return
-            versions = []
-            for pid in applied:
-                m = re.search(r'(\d+\.\d+\.\d+)', pid)
-                if m:
-                    versions.append(version.parse(m.group(1)))
-            if not versions:
-                return
-            latest_applied = max(versions)
             current_ver = version.parse(self.current_version)
-            if latest_applied > current_ver:
-                new_ver = str(latest_applied)
-                logger.info(f"버전 자동 보정: {self.current_version} → {new_ver} (적용된 패치 기반)")
-                config.set('app.version', new_ver)
-                config.set('update.current_version', new_ver)
-                config.save()
-                self.current_version = new_ver
+            update_ver = version.parse(str(config.get('update.current_version', self.current_version)))
+            effective_current = max(current_ver, update_ver)
+            if latest_applied > effective_current or current_ver != update_ver:
+                new_ver = str(max(latest_applied, effective_current))
+                logger.info(
+                    f"버전 자동 보정: app={self.current_version}, "
+                    f"update={update_ver} → {new_ver} (적용된 패치 기반)"
+                )
+                self._sync_config_version(new_ver)
         except Exception as e:
             logger.warning(f"버전 보정 실패 (무시): {e}")
+
+    def _get_latest_applied_version(self):
+        """applied_patches.json에 기록된 최신 패치 버전 반환"""
+        versions = []
+        for patch_id in self.get_applied_patches():
+            m = re.search(r'(\d+\.\d+\.\d+)', str(patch_id))
+            if m:
+                try:
+                    versions.append(version.parse(m.group(1)))
+                except Exception:
+                    pass
+        return max(versions) if versions else None
+
+    def _sync_config_version(self, new_ver: str):
+        """앱 표시 버전과 업데이트 기준 버전을 항상 함께 저장"""
+        config.set('app.version', new_ver)
+        config.set('update.current_version', new_ver)
+        config.save()
+        self.current_version = new_ver
 
     def _cleanup_old_patch_dirs(self):
         """현재 버전 이하 패치 디렉토리 정리 (재다운로드 루프 방지)"""
@@ -198,20 +211,17 @@ class PatchSystem:
                 logger.error(f"패치 파일을 하나도 복사하지 못함: {patch_id}")
                 return False
 
-            # 패치 적용 기록
-            self.save_applied_patch(patch_id)
-            logger.info(f"패치 적용 완료: {patch_id}")
-
-            # ① settings.json 버전 갱신 — 재시작 후에도 올바른 버전 표시
+            # ① settings.json 버전 갱신 — 적용 이력 저장 전에 먼저 맞춰 last_updated도 최신화
             try:
                 new_ver = str(patch_info.get('version', self.current_version))
-                config.set('app.version', new_ver)
-                config.set('update.current_version', new_ver)
-                config.save()
-                self.current_version = new_ver
+                self._sync_config_version(new_ver)
                 logger.info(f"버전 갱신 완료: {new_ver}")
             except Exception as ve:
                 logger.warning(f"버전 갱신 실패 (무시): {ve}")
+
+            # 패치 적용 기록
+            self.save_applied_patch(patch_id)
+            logger.info(f"패치 적용 완료: {patch_id}")
 
             # ② 패치 디렉토리 정리 — 재다운로드 무한 루프 방지
             try:

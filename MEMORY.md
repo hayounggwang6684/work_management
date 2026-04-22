@@ -2,6 +2,7 @@
 
 ## Bug Fixes Applied
 
+- 2026-04-22: Hardened patch version self-repair so PCs that successfully applied a patch but kept an old `settings.json` version now reconcile `app.version` and `update.current_version` from `applied_patches.json` during startup, app-info lookup, and update checks; patch application now writes the new version before recording the applied patch.
 - 2026-04-22: Broadened permission/Telegram recipient checks from only `active` users to all valid `active`/`approved` users, and routed write-user reminders through shared recipient helpers so a single background-running PC can send scheduled Telegram reminders to every linked user instead of only the locally active operator.
 - 2026-04-22: Corrected the 연차 관리 employee picker UX by removing the extra side dropdown and attaching an always-visible-on-focus employee list to the original name input, so other names remain selectable even after a name has already been typed or searched.
 - 2026-04-22: Updated 직원 관리 > 연차/근로시간 flows so the 연차 직원명 picker now has an always-open selectable list beside the typed input, annual configuration stores both generation month and day, leave grant history accepts negative day adjustments, and the work-hours calendar hides future work-hour values while supporting right-click OT start/end overrides persisted in `work_hours_ot_overrides`.

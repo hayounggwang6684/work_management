@@ -3494,6 +3494,11 @@ def disconnect_from_cloud() -> Dict[str, Any]:
 @eel.expose
 def get_app_info() -> Dict[str, Any]:
     """앱 정보 조회"""
+    try:
+        from src.utils.patch_system import patch_system
+        patch_system._correct_version_from_applied_patches()
+    except Exception:
+        pass
     return {
         'name': config.app_name,
         'version': config.version,
@@ -4269,6 +4274,7 @@ def get_startup_patch_result() -> Dict[str, Any]:
     """앱 시작 시 자동 적용된 패치 결과 반환 (로그인 후 JS에서 호출)"""
     try:
         from src.utils.patch_system import patch_system
+        patch_system._correct_version_from_applied_patches()
         applied = getattr(patch_system, '_startup_patches_applied', 0)
         version = config.version
 

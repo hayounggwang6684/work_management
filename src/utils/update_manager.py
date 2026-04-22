@@ -10,6 +10,7 @@ import requests
 import json
 import zipfile
 import tempfile
+import re
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 from datetime import datetime
@@ -38,17 +39,55 @@ class UpdateManager:
         self.data_dir = self.app_root / "data"
         self.update_cache_file = Path(config.db_path).parent / "update_cache.json"
         self.downloaded_patches_file = self.data_dir / "downloaded_patches.json"
-        self.update_check_interval = 86400  # Cache positive update results for 24h
-        self.no_update_cache_interval = 0   # Do not cache 'up to date' results
+        self.update_check_interval = 86400  # 업데이트 발견 시 캐시 24시간
+        self.no_update_cache_interval = 0   # 최신 버전 결과는 캐시하지 않음
 
         # 디렉토리 생성
         self.patches_dir.mkdir(parents=True, exist_ok=True)
         self.data_dir.mkdir(parents=True, exist_ok=True)
 
     def _refresh_runtime_state(self):
-        """Refresh version/token from config at call time."""
-        self.current_version = config.version
+        """설정 파일/패치 이력 기준 현재 버전/토큰을 매 호출마다 재동기화"""
+        self.current_version = self._get_effective_current_version()
         self.github_token = config.get('update.github_token', '')
+
+    def _get_effective_current_version(self) -> str:
+        """app/update 설정과 적용 이력 중 가장 높은 버전을 현재 버전으로 사용"""
+        candidates = []
+        for raw in (
+            config.get('app.version', ''),
+            config.get('update.current_version', ''),
+        ):
+            try:
+                if raw:
+                    candidates.append(version.parse(str(raw).lstrip('v')))
+            except Exception:
+                pass
+
+        try:
+            applied_file = self.data_dir / "applied_patches.json"
+            if applied_file.exists():
+                data = json.loads(applied_file.read_text(encoding='utf-8'))
+                for patch_id in data.get('patches', []):
+                    m = re.search(r'(\d+\.\d+\.\d+)', str(patch_id))
+                    if m:
+                        candidates.append(version.parse(m.group(1)))
+        except Exception as e:
+            logger.warning(f"적용 패치 기반 버전 확인 실패 (무시): {e}")
+
+        if not candidates:
+            return config.version
+
+        effective = str(max(candidates))
+        if effective != str(config.get('app.version', '')) or effective != str(config.get('update.current_version', '')):
+            try:
+                config.set('app.version', effective)
+                config.set('update.current_version', effective)
+                config.save()
+                logger.info(f"설정 버전 자가복구 완료: {effective}")
+            except Exception as e:
+                logger.warning(f"설정 버전 자가복구 실패 (무시): {e}")
+        return effective
 
     def _get_headers(self, with_token: bool = True) -> Dict[str, str]:
         """GitHub API 요청 헤더"""
@@ -71,11 +110,17 @@ class UpdateManager:
             logger.error(f"다운로드 이력 로드 실패: {e}")
         return []
 
+    _MAX_PATCH_HISTORY = 100  # 보관할 최대 패치 이력 수
+
     def _save_downloaded_patch(self, asset_name: str):
-        """다운로드 완료 기록"""
+        """다운로드 완료 기록 (최대 100개 유지)"""
         downloaded = self._get_downloaded_patches()
         if asset_name not in downloaded:
             downloaded.append(asset_name)
+
+        # 오래된 이력 정리 (최신 MAX_PATCH_HISTORY 개만 유지)
+        if len(downloaded) > self._MAX_PATCH_HISTORY:
+            downloaded = downloaded[-self._MAX_PATCH_HISTORY:]
 
         data = {
             'downloaded': downloaded,
@@ -185,74 +230,91 @@ class UpdateManager:
             }
 
     def _find_new_patch_assets(self) -> List[Dict[str, Any]]:
-        """GitHub Release에서 아직 다운로드하지 않은 패치 ZIP 찾기"""
+        """GitHub Release에서 아직 다운로드하지 않은 패치 ZIP 찾기
+
+        페이지네이션으로 모든 릴리스를 순회 — 오래된 사용자(패치 다수 누락)도 지원.
+        현재 버전 이하 릴리스를 만나면 더 이하 페이지는 조회하지 않는다.
+        """
         downloaded = self._get_downloaded_patches()
         new_patches = []
 
         try:
-            # 최근 10개 릴리스 확인
-            releases = self._get_all_releases(per_page=10)
+            page = 1
+            while True:
+                releases = self._get_all_releases(page=page, per_page=50)
+                if not releases:
+                    break
 
-            for release in releases:
-                release_tag = release.get('tag_name', '')
+                hit_old_or_equal = False
 
-                # 현재 버전 이하의 릴리스는 건너뜀 (이미 적용됐거나 더 낮은 버전)
-                try:
-                    release_ver = release_tag.lstrip('v')
-                    if version.parse(release_ver) <= version.parse(self.current_version):
-                        continue
-                except Exception:
-                    pass  # 버전 파싱 실패 시 포함 (안전한 기본값)
+                for release in releases:
+                    release_tag = release.get('tag_name', '')
 
-                assets = release.get('assets', [])
+                    # 현재 버전 이하의 릴리스는 건너뜀 (이미 적용됐거나 더 낮은 버전)
+                    try:
+                        release_ver = release_tag.lstrip('v')
+                        if version.parse(release_ver) <= version.parse(self.current_version):
+                            hit_old_or_equal = True
+                            continue
+                    except Exception:
+                        pass  # 버전 파싱 실패 시 포함 (안전한 기본값)
 
-                for asset in assets:
-                    name = asset['name']
-                    # ZIP 파일이면 모두 패치 에셋으로 인식 (파일명 형식 무관)
-                    if name.endswith('.zip'):
-                        asset_id = asset['id']
-                        api_download_url = (
-                            f"{self.api_base_url}/repos/"
-                            f"{self.github_repo_owner}/{self.github_repo_name}"
-                            f"/releases/assets/{asset_id}"
-                        )
-                        patch_entry = {
-                            'name': name,
-                            'size': asset['size'],
-                            'url': api_download_url,
-                            'browser_url': asset.get('browser_download_url', ''),
-                            'release_tag': release_tag,
-                            'asset_id': asset_id
-                        }
-                        if name not in downloaded:
-                            new_patches.append(patch_entry)
-                        else:
-                            # 다운로드 기록은 있지만:
-                            # 1) patches/ 폴더에 내용이 있으면 → 재처리 (미완료 복구)
-                            # 2) patches/ 폴더 없고 applied_patches에도 없으면 → 재처리
-                            #    (ZIP 구조 오류로 추출 실패한 경우 복구)
-                            extracted_name = name[:-4]  # .zip 제거
-                            extracted_dir = self.patches_dir / extracted_name
-                            try:
-                                if extracted_dir.exists() and any(extracted_dir.iterdir()):
-                                    logger.warning(
-                                        f"패치 {name}: 다운로드 기록 있으나 "
-                                        f"미적용 콘텐츠 발견 → 재처리"
-                                    )
-                                    new_patches.append(patch_entry)
-                                else:
-                                    # patches/ 폴더 없음 → applied_patches 확인
-                                    # 미적용 상태이면 재다운로드 (추출 실패 복구)
-                                    from .patch_system import patch_system
-                                    applied = patch_system.get_applied_patches()
-                                    if extracted_name not in applied:
+                    assets = release.get('assets', [])
+
+                    for asset in assets:
+                        name = asset['name']
+                        # ZIP 파일이면 모두 패치 에셋으로 인식 (파일명 형식 무관)
+                        if name.endswith('.zip'):
+                            asset_id = asset['id']
+                            api_download_url = (
+                                f"{self.api_base_url}/repos/"
+                                f"{self.github_repo_owner}/{self.github_repo_name}"
+                                f"/releases/assets/{asset_id}"
+                            )
+                            patch_entry = {
+                                'name': name,
+                                'size': asset['size'],
+                                'url': api_download_url,
+                                'browser_url': asset.get('browser_download_url', ''),
+                                'release_tag': release_tag,
+                                'asset_id': asset_id
+                            }
+                            if name not in downloaded:
+                                new_patches.append(patch_entry)
+                            else:
+                                # 다운로드 기록은 있지만:
+                                # 1) patches/ 폴더에 내용이 있으면 → 재처리 (미완료 복구)
+                                # 2) patches/ 폴더 없고 applied_patches에도 없으면 → 재처리
+                                #    (ZIP 구조 오류로 추출 실패한 경우 복구)
+                                extracted_name = name[:-4]  # .zip 제거
+                                extracted_dir = self.patches_dir / extracted_name
+                                try:
+                                    if extracted_dir.exists() and any(extracted_dir.iterdir()):
                                         logger.warning(
                                             f"패치 {name}: 다운로드 기록 있으나 "
-                                            f"미적용 → 재처리"
+                                            f"미적용 콘텐츠 발견 → 재처리"
                                         )
                                         new_patches.append(patch_entry)
-                            except Exception:
-                                pass
+                                    else:
+                                        # patches/ 폴더 없음 → applied_patches 확인
+                                        # 미적용 상태이면 재다운로드 (추출 실패 복구)
+                                        from .patch_system import patch_system
+                                        applied = patch_system.get_applied_patches()
+                                        if extracted_name not in applied:
+                                            logger.warning(
+                                                f"패치 {name}: 다운로드 기록 있으나 "
+                                                f"미적용 → 재처리"
+                                            )
+                                            new_patches.append(patch_entry)
+                                except Exception:
+                                    pass
+
+                # GitHub 릴리스는 최신순이므로, 현재 버전 이하를 만났거나
+                # 한 페이지 결과가 50개 미만이면 더 이상 페이지 없음
+                if hit_old_or_equal or len(releases) < 50:
+                    break
+                page += 1
+                logger.info(f"릴리스 목록 추가 페이지 조회: {page}페이지")
 
         except Exception as e:
             logger.error(f"패치 검색 실패: {e}")
@@ -314,6 +376,7 @@ class UpdateManager:
             # patch_system으로 실제 적용
             from .patch_system import patch_system
             patches_applied = patch_system.check_and_apply_patches()
+            self._refresh_runtime_state()
 
             if applied_count > 0 and patches_applied == 0 and not errors:
                 # 다운로드는 됐지만 patch.json 없어서 적용 파일 없음 → 최신 버전으로 처리
@@ -332,6 +395,7 @@ class UpdateManager:
                 'downloaded_count': applied_count,
                 'applied_count': patches_applied,
                 'errors': errors,
+                'current_version': self.current_version,
                 'needs_restart': patches_applied > 0
             }
 
