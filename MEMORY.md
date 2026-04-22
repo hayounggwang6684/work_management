@@ -2,6 +2,8 @@
 
 ## Bug Fixes Applied
 
+- 2026-04-22: Broadened permission/Telegram recipient checks from only `active` users to all valid `active`/`approved` users, and routed write-user reminders through shared recipient helpers so a single background-running PC can send scheduled Telegram reminders to every linked user instead of only the locally active operator.
+- 2026-04-22: Corrected the 연차 관리 employee picker UX by removing the extra side dropdown and attaching an always-visible-on-focus employee list to the original name input, so other names remain selectable even after a name has already been typed or searched.
 - 2026-04-22: Updated 직원 관리 > 연차/근로시간 flows so the 연차 직원명 picker now has an always-open selectable list beside the typed input, annual configuration stores both generation month and day, leave grant history accepts negative day adjustments, and the work-hours calendar hides future work-hour values while supporting right-click OT start/end overrides persisted in `work_hours_ot_overrides`.
 - 2026-04-16: Fixed automatic patch restart on installed PCs so the relaunched process now waits for `localhost:8686` to be released by the previous instance before starting Eel, preventing the post-patch `[WinError 10048]` port collision that made updates look like they had not applied.
 - 2026-04-16: Expanded 직원 관리 > `직원 명부` so 외부 계정 columns are no longer fixed to `외부계정1/2`; headers can now be renamed inline, new account columns can be appended on demand, and the extra header/value data is persisted through the employee directory API/DB using dynamic external account arrays.

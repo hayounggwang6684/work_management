@@ -474,17 +474,19 @@
                         <h2 class="text-2xl font-bold mb-4">연차 관리</h2>
                         <div class="flex gap-2 mb-6 items-center">
                             <label class="font-semibold text-slate-700">직원명:</label>
-                            <input type="text" id="leaveEmployeeInput" list="leaveEmployeeList"
-                                   class="px-4 py-2 border rounded-lg w-48"
-                                   placeholder="이름 입력"
-                                   oninput="syncLeaveEmployeeSelect(this.value)"
-                                   onkeydown="if(event.key==='Enter') searchEmployeeLeave()">
-                            <datalist id="leaveEmployeeList"></datalist>
-                            <select id="leaveEmployeeSelect"
-                                    class="px-3 py-2 border rounded-lg w-40 bg-white"
-                                    onchange="selectLeaveEmployeeFromDropdown(this.value)">
-                                <option value="">목록 선택</option>
-                            </select>
+                            <div class="relative w-48">
+                                <input type="text" id="leaveEmployeeInput"
+                                       class="px-4 py-2 border rounded-lg w-full"
+                                       placeholder="이름 입력"
+                                       autocomplete="off"
+                                       onfocus="showLeaveEmployeeDropdown()"
+                                       onclick="showLeaveEmployeeDropdown()"
+                                       oninput="renderLeaveEmployeeDropdown(this.value)"
+                                       onkeydown="handleLeaveEmployeeInputKeydown(event)">
+                                <datalist id="leaveEmployeeList"></datalist>
+                                <div id="leaveEmployeeDropdown"
+                                     class="hidden absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-56 overflow-y-auto z-50 text-sm"></div>
+                            </div>
                             <button onclick="searchEmployeeLeave()"
                                     class="px-6 py-2 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700">조회</button>
                         </div>

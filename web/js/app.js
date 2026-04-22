@@ -3928,62 +3928,128 @@ async function toggleErpInput(userId, enabled) {
     }
 }
 
+let _leaveEmployeeNames = [];
+let _leaveEmployeeDropdownIndex = -1;
+
 async function loadLeaveEmployeeList() {
     try {
         const names = await eel.get_employee_names_for_leave()();
+        _leaveEmployeeNames = Array.isArray(names) ? names : [];
         const datalist = document.getElementById('leaveEmployeeList');
-        const leaveSelect = document.getElementById('leaveEmployeeSelect');
         const workHoursSelect = document.getElementById('workHoursEmployeeInput');
         if (!datalist) return;
         datalist.innerHTML = '';
-        (names || []).forEach(name => {
+        _leaveEmployeeNames.forEach(name => {
             const opt = document.createElement('option');
             opt.value = name;
             datalist.appendChild(opt);
         });
-        if (leaveSelect) {
-            const currentValue = document.getElementById('leaveEmployeeInput')?.value?.trim() || leaveSelect.value;
-            leaveSelect.innerHTML = '<option value="">목록 선택</option>';
-            (names || []).forEach(name => {
-                const opt = document.createElement('option');
-                opt.value = name;
-                opt.textContent = name;
-                leaveSelect.appendChild(opt);
-            });
-            if ((names || []).includes(currentValue)) {
-                leaveSelect.value = currentValue;
-            }
-        }
         if (workHoursSelect) {
             const currentValue = workHoursSelect.value;
             workHoursSelect.innerHTML = '<option value="">직원 선택</option>';
-            (names || []).forEach(name => {
+            _leaveEmployeeNames.forEach(name => {
                 const opt = document.createElement('option');
                 opt.value = name;
                 opt.textContent = name;
                 workHoursSelect.appendChild(opt);
             });
-            if ((names || []).includes(currentValue)) {
+            if (_leaveEmployeeNames.includes(currentValue)) {
                 workHoursSelect.value = currentValue;
             }
         }
+        renderLeaveEmployeeDropdown(document.getElementById('leaveEmployeeInput')?.value || '');
     } catch (e) {
         console.error('직원 목록 로드 실패:', e);
     }
 }
 
-function selectLeaveEmployeeFromDropdown(name) {
+function _getLeaveEmployeeDisplayNames(query = '') {
+    const normalizedQuery = String(query || '').trim().toLowerCase();
+    if (!normalizedQuery) return _leaveEmployeeNames;
+    const matches = [];
+    const others = [];
+    _leaveEmployeeNames.forEach(name => {
+        const text = String(name || '');
+        if (text.toLowerCase().includes(normalizedQuery)) {
+            matches.push(name);
+        } else {
+            others.push(name);
+        }
+    });
+    return [...matches, ...others];
+}
+
+function showLeaveEmployeeDropdown() {
+    renderLeaveEmployeeDropdown(document.getElementById('leaveEmployeeInput')?.value || '');
+    const dropdown = document.getElementById('leaveEmployeeDropdown');
+    if (dropdown && _leaveEmployeeNames.length > 0) dropdown.classList.remove('hidden');
+    _bindLeaveEmployeeDropdownClose();
+}
+
+function hideLeaveEmployeeDropdown() {
+    const dropdown = document.getElementById('leaveEmployeeDropdown');
+    if (dropdown) dropdown.classList.add('hidden');
+    _leaveEmployeeDropdownIndex = -1;
+}
+
+function _bindLeaveEmployeeDropdownClose() {
+    if (window._leaveEmployeeDropdownCloseBound) return;
+    window._leaveEmployeeDropdownCloseBound = true;
+    document.addEventListener('mousedown', event => {
+        const input = document.getElementById('leaveEmployeeInput');
+        const dropdown = document.getElementById('leaveEmployeeDropdown');
+        if (!input || !dropdown) return;
+        if (event.target === input || dropdown.contains(event.target)) return;
+        hideLeaveEmployeeDropdown();
+    });
+}
+
+function renderLeaveEmployeeDropdown(query = '') {
+    const dropdown = document.getElementById('leaveEmployeeDropdown');
+    if (!dropdown) return;
+    const names = _getLeaveEmployeeDisplayNames(query);
+    _leaveEmployeeDropdownIndex = -1;
+    if (!names.length) {
+        dropdown.innerHTML = '<div class="px-3 py-2 text-slate-400">등록된 직원이 없습니다.</div>';
+        return;
+    }
+    dropdown.innerHTML = names.map((name, index) => `
+        <button type="button"
+                class="leave-employee-option block w-full text-left px-3 py-2 hover:bg-blue-50 focus:bg-blue-50 focus:outline-none ${index === 0 ? 'rounded-t-lg' : ''}"
+                data-name="${escapeHtml(name)}"
+                onclick="selectLeaveEmployeeName('${escapeJs(name)}')"
+                onmousedown="event.preventDefault()">
+            ${escapeHtml(name)}
+        </button>
+    `).join('');
+    dropdown.classList.remove('hidden');
+}
+
+function selectLeaveEmployeeName(name) {
     const input = document.getElementById('leaveEmployeeInput');
     if (!input || !name) return;
     input.value = name;
+    hideLeaveEmployeeDropdown();
     searchEmployeeLeave();
 }
 
-function syncLeaveEmployeeSelect(name) {
-    const sel = document.getElementById('leaveEmployeeSelect');
-    if (!sel) return;
-    const value = String(name || '').trim();
-    sel.value = Array.from(sel.options).some(opt => opt.value === value) ? value : '';
+function handleLeaveEmployeeInputKeydown(event) {
+    const dropdown = document.getElementById('leaveEmployeeDropdown');
+    const options = dropdown ? Array.from(dropdown.querySelectorAll('.leave-employee-option')) : [];
+    if (event.key === 'ArrowDown' && options.length) {
+        event.preventDefault();
+        _leaveEmployeeDropdownIndex = Math.min(_leaveEmployeeDropdownIndex + 1, options.length - 1);
+        options[_leaveEmployeeDropdownIndex].focus();
+        return;
+    }
+    if (event.key === 'Escape') {
+        hideLeaveEmployeeDropdown();
+        return;
+    }
+    if (event.key === 'Enter') {
+        hideLeaveEmployeeDropdown();
+        searchEmployeeLeave();
+    }
 }
 
 async function searchEmployeeLeave() {
@@ -3993,6 +4059,7 @@ async function searchEmployeeLeave() {
         showCustomAlert('알림', '직원명을 입력하세요.', 'warning');
         return;
     }
+    hideLeaveEmployeeDropdown();
     const resultDiv = document.getElementById('leaveResult');
     if (resultDiv) resultDiv.innerHTML = '<p class="text-slate-400">조회 중...</p>';
     try {

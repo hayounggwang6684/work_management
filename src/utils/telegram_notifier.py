@@ -444,23 +444,9 @@ class TelegramNotifier:
             return
 
         from ..database.auth_manager import auth_manager
-        from ..database.db_manager import db
 
-        # can_write=1 이고 텔레그램 연결된 사용자 조회
-        try:
-            with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute('''
-                    SELECT user_id, full_name, telegram_chat_id
-                    FROM auth_users
-                    WHERE telegram_chat_id IS NOT NULL
-                      AND status = 'active'
-                      AND (can_write = 1 OR role = 'admin')
-                ''')
-                target_users = [dict(row) for row in cursor.fetchall()]
-        except Exception as e:
-            logger.error(f"휴일 알림 대상 조회 실패: {e}")
-            return
+        # 이 앱 인스턴스가 백그라운드에서 실행 중이면 전체 연동 사용자에게 대신 발송한다.
+        target_users = auth_manager.get_write_linked_chat_ids()
 
         if not target_users:
             logger.info("휴일 알림: 대상 사용자 없음")
@@ -481,22 +467,10 @@ class TelegramNotifier:
         if not self.enabled or not self.bot_token:
             return
 
-        from ..database.db_manager import db
+        from ..database.auth_manager import auth_manager
 
-        try:
-            with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute('''
-                    SELECT user_id, full_name, telegram_chat_id
-                    FROM auth_users
-                    WHERE telegram_chat_id IS NOT NULL
-                      AND status = 'active'
-                      AND (can_write = 1 OR role = 'admin')
-                ''')
-                target_users = [dict(row) for row in cursor.fetchall()]
-        except Exception as e:
-            logger.error(f"야간 보고 알림 대상 조회 실패: {e}")
-            return
+        # 이 앱 인스턴스가 백그라운드에서 실행 중이면 전체 연동 사용자에게 대신 발송한다.
+        target_users = auth_manager.get_write_linked_chat_ids()
 
         if not target_users:
             logger.info("야간 보고 알림: 대상 사용자 없음")

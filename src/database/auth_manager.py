@@ -426,7 +426,7 @@ class AuthManager:
             with self.get_connection() as conn:
                 row = conn.execute(
                     "SELECT can_write, role FROM auth_users "
-                    "WHERE full_name = ? AND status = 'active'",
+                    "WHERE full_name = ? AND COALESCE(status, 'active') IN ('active', 'approved')",
                     (full_name,)
                 ).fetchone()
             if not row:
@@ -638,13 +638,33 @@ class AuthManager:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
-                    SELECT user_id, full_name, telegram_chat_id
+                    SELECT user_id, full_name, telegram_chat_id, role, status, can_write
                     FROM auth_users
-                    WHERE telegram_chat_id IS NOT NULL AND status = 'active'
+                    WHERE telegram_chat_id IS NOT NULL
+                      AND TRIM(telegram_chat_id) != ''
+                      AND COALESCE(status, 'active') IN ('active', 'approved')
                 ''')
                 return [dict(row) for row in cursor.fetchall()]
         except Exception as e:
             logger.error(f"텔레그램 사용자 목록 조회 실패: {e}")
+            return []
+
+    def get_write_linked_chat_ids(self) -> List[Dict[str, Any]]:
+        """쓰기 권한이 있고 텔레그램이 연결된 사용자 조회"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT user_id, full_name, telegram_chat_id, role, status, can_write
+                    FROM auth_users
+                    WHERE telegram_chat_id IS NOT NULL
+                      AND TRIM(telegram_chat_id) != ''
+                      AND COALESCE(status, 'active') IN ('active', 'approved')
+                      AND (COALESCE(can_write, 0) = 1 OR role = 'admin')
+                ''')
+                return [dict(row) for row in cursor.fetchall()]
+        except Exception as e:
+            logger.error(f"텔레그램 쓰기권한 사용자 목록 조회 실패: {e}")
             return []
 
     def get_user_by_chat_id(self, chat_id: int) -> Optional[Dict[str, Any]]:
@@ -654,7 +674,8 @@ class AuthManager:
                 cursor = conn.cursor()
                 cursor.execute('''
                     SELECT user_id, full_name FROM auth_users
-                    WHERE telegram_chat_id = ? AND status = 'active'
+                    WHERE telegram_chat_id = ?
+                      AND COALESCE(status, 'active') IN ('active', 'approved')
                 ''', (str(chat_id),))
                 row = cursor.fetchone()
                 return dict(row) if row else None
