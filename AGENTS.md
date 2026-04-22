@@ -153,7 +153,13 @@ work_hours_ot_overrides (employee_name, work_date, start_time, end_time, note)
 6. **add_activity_log는 with 블록 밖에서 호출** — 데드락 방지
 7. **설치파일에 `config/settings.json` 포함 금지** — Inno Setup은 반드시 `settings.example.json`만 배포용 기본값으로 복사하고, 운영 토큰이 들어 있는 실제 settings.json은 제외
 8. **`settings.example.json` 버전 동기화 필수** — 설치본이 예전 버전으로 초기화되지 않게 `app.version` / `update.current_version`을 현재 릴리스와 같이 올릴 것
-9. **코드 수정 시 문서 동시 업데이트 필수** — 아래 기준에 따라 해당 문서 업데이트:
+9. **패치 릴리스에는 버전 자가검증 포함 필수** — 패치가 적용됐는데 `settings.json` 버전이 남는 사고를 막기 위해, 업데이트/패치 엔진 변경 여부와 관계없이 릴리스 전 아래를 확인할 것:
+   - `patch.json`의 `version`이 릴리스 태그와 같은지 확인
+   - `config/settings.example.json`의 `app.version`과 `update.current_version`이 같은지 확인
+   - `build_installer.iss`의 `AppVersion`과 `OutputBaseFilename`이 같은 버전인지 확인
+   - 패치 적용 코드가 `app.version`과 `update.current_version`을 함께 갱신하거나, 최소한 `applied_patches.json` 기반 자가복구 경로를 포함하는지 확인
+   - 패치 ZIP 안에 버전/업데이트 로직을 수정한 파일이 누락되지 않았는지 확인
+10. **코드 수정 시 문서 동시 업데이트 필수** — 아래 기준에 따라 해당 문서 업데이트:
 
    | 수정 유형 | 업데이트할 문서 |
    |-----------|----------------|
