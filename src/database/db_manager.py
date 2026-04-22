@@ -208,7 +208,7 @@ class DatabaseManager:
                 except sqlite3.OperationalError:
                     pass  # 이미 존재
 
-            # 휴가자 현황 테이블 (날짜별 연차/반차/공가)
+            # 휴가자 현황 테이블 (날짜별 연차/반차/반반차/공가)
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS vacation_records (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -374,7 +374,7 @@ class DatabaseManager:
             # ── vacation_records → employee_leave_usage 초기 마이그레이션 ──
             # 앱 시작 시 auto_vacation 레코드가 없는 날짜만 한 번 동기화
             try:
-                _days_map = {'연차': 1.0, '반차': 0.5, '공가': 0.0}
+                _days_map = {'연차': 1.0, '반차': 0.5, '반반차': 0.25, '공가': 0.0}
                 cursor.execute('''
                     SELECT DISTINCT vr.date
                     FROM vacation_records vr
@@ -1097,15 +1097,16 @@ class DatabaseManager:
     # =========================================================================
 
     def save_vacation_records(self, date: str, data: dict, username: str) -> bool:
-        """날짜별 휴가자 현황 저장 (연차/반차/공가) + employee_leave_usage 자동 연동"""
+        """날짜별 휴가자 현황 저장 (연차/반차/반반차/공가) + employee_leave_usage 자동 연동"""
         try:
             now = datetime.now().isoformat()
-            days_map = {'연차': 1.0, '반차': 0.5, '공가': 0.0}
+            vacation_categories = ('연차', '반차', '반반차', '공가')
+            days_map = {'연차': 1.0, '반차': 0.5, '반반차': 0.25, '공가': 0.0}
             with self.get_connection() as conn:
                 cursor = conn.cursor()
 
                 # vacation_records 저장
-                for category in ('연차', '반차', '공가'):
+                for category in vacation_categories:
                     names = data.get(category, '')
                     cursor.execute('''
                         INSERT INTO vacation_records (date, category, names, updated_at, updated_by)
@@ -1121,7 +1122,7 @@ class DatabaseManager:
                     "DELETE FROM employee_leave_usage WHERE use_date = ? AND created_by = 'auto_vacation'",
                     (date,)
                 )
-                for category in ('연차', '반차', '공가'):
+                for category in vacation_categories:
                     names_str = data.get(category, '') or ''
                     days = days_map[category]
                     for raw_name in names_str.split(','):
@@ -1142,7 +1143,7 @@ class DatabaseManager:
 
     def load_vacation_records(self, date: str) -> dict:
         """날짜별 휴가자 현황 로드"""
-        result = {'연차': '', '반차': '', '공가': ''}
+        result = {'연차': '', '반차': '', '반반차': '', '공가': ''}
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
@@ -1252,18 +1253,18 @@ class DatabaseManager:
                 ''', (employee_name, this_year * 100 + today.month))
                 total_granted = cursor.fetchone()['total']
 
-                # 총 사용: 연차 + 반차만 차감 (공가 제외)
+                # 총 사용: 연차 + 반차 + 반반차만 차감 (공가 제외)
                 cursor.execute('''
                     SELECT COALESCE(SUM(days), 0.0) as total
                     FROM employee_leave_usage
-                    WHERE employee_name = ? AND leave_type IN ('연차', '반차')
+                    WHERE employee_name = ? AND leave_type IN ('연차', '반차', '반반차')
                 ''', (employee_name,))
                 total_used = cursor.fetchone()['total']
 
                 info['summary'] = {
-                    'total_granted': round(total_granted, 1),
-                    'total_used': round(total_used, 1),
-                    'remaining': round(total_granted - total_used, 1)
+                    'total_granted': round(total_granted, 2),
+                    'total_used': round(total_used, 2),
+                    'remaining': round(total_granted - total_used, 2)
                 }
 
         except Exception as e:
@@ -1348,7 +1349,7 @@ class DatabaseManager:
     def add_leave_usage(self, employee_name: str, use_date: str, leave_type: str,
                         note: str, created_by: str = '') -> int:
         """연차 사용 내역 추가. days는 leave_type 기반 자동 결정. → id 반환 (실패 시 -1)"""
-        days_map = {'연차': 1.0, '반차': 0.5, '공가': 0.0}
+        days_map = {'연차': 1.0, '반차': 0.5, '반반차': 0.25, '공가': 0.0}
         days = days_map.get(leave_type, 1.0)
         try:
             with self.get_connection() as conn:
@@ -1687,15 +1688,15 @@ class DatabaseManager:
         result = []
         with self.get_connection() as conn:
             for name in names:
-                # 해당 연도 월별 사용량 (연차+반차만, 공가 제외)
+                # 해당 연도 월별 사용량 (연차+반차+반반차만, 공가 제외)
                 rows = conn.execute(
                     "SELECT CAST(strftime('%m', use_date) AS INTEGER) AS m, SUM(days) "
                     "FROM employee_leave_usage "
                     "WHERE employee_name = ? AND strftime('%Y', use_date) = ? "
-                    "AND leave_type IN ('연차', '반차') GROUP BY m",
+                    "AND leave_type IN ('연차', '반차', '반반차') GROUP BY m",
                     (name, str(year))
                 ).fetchall()
-                monthly = {r[0]: round(r[1], 1) for r in rows}  # {1: 0.5, 3: 1.0, ...}
+                monthly = {r[0]: round(r[1], 2) for r in rows}  # {1: 0.25, 3: 1.0, ...}
 
                 # 연차 생성월/일
                 try:
@@ -1720,7 +1721,7 @@ class DatabaseManager:
                 ).fetchone()[0]
                 use_sum = conn.execute(
                     "SELECT COALESCE(SUM(days), 0) FROM employee_leave_usage "
-                    "WHERE employee_name = ? AND leave_type IN ('연차', '반차')",
+                    "WHERE employee_name = ? AND leave_type IN ('연차', '반차', '반반차')",
                     (name,)
                 ).fetchone()[0]
 
@@ -1729,7 +1730,7 @@ class DatabaseManager:
                     'monthly': monthly,
                     'generation_month': gen_month,
                     'generation_day': gen_day,
-                    'remaining': round(grant_sum - use_sum, 1)
+                    'remaining': round(grant_sum - use_sum, 2)
                 })
         return result
 

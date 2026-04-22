@@ -5,7 +5,7 @@
 // 전역 변수 (auth.js와 공유)
 // currentUser, currentDate는 auth.js에서 정의됨
 let workRecords = [];
-let vacationData = { '연차': '', '반차': '', '공가': '' };
+let vacationData = { '연차': '', '반차': '', '반반차': '', '공가': '' };
 let isDirty = false;
 let dayIsDirty = false;
 let nightIsDirty = false;
@@ -1446,12 +1446,14 @@ async function loadWorkRecords() {
         // 휴가자 현황 로드
         try {
             const vData = await eel.load_vacation_data(dateStr)();
-            vacationData = { '연차': '', '반차': '', '공가': '', ...vData };
+            vacationData = { '연차': '', '반차': '', '반반차': '', '공가': '', ...vData };
             const annualEl = document.getElementById('vacation_annual');
             const halfEl   = document.getElementById('vacation_half');
+            const quarterEl = document.getElementById('vacation_quarter');
             const specEl   = document.getElementById('vacation_special');
             if (annualEl) annualEl.value = vacationData['연차'];
             if (halfEl)   halfEl.value   = vacationData['반차'];
+            if (quarterEl) quarterEl.value = vacationData['반반차'];
             if (specEl)   specEl.value   = vacationData['공가'];
         } catch (e) {
             console.error('휴가자 현황 로드 오류:', e);
@@ -3759,12 +3761,12 @@ function renderLeaveMonthlyReport(data, year) {
             <td class="border border-gray-400 px-3 py-2 text-center font-medium">${escapeHtml(emp.name)}</td>`;
         for (let m = 1; m <= maxMonth; m++) {
             const used = emp.monthly[m];
-            html += `<td class="border border-gray-400 px-2 py-2 text-center">${used != null ? used : '-'}</td>`;
+            html += `<td class="border border-gray-400 px-2 py-2 text-center">${used != null ? formatLeaveDays(used) : '-'}</td>`;
         }
         const remaining = emp.remaining;
         const remColor = remaining < 0 ? 'text-red-600 font-bold' : remaining === 0 ? 'text-slate-500' : 'text-green-700 font-semibold';
         html += `<td class="border border-gray-400 px-2 py-2 text-center">${emp.generation_month}월 ${emp.generation_day || 1}일</td>
-            <td class="border border-gray-400 px-2 py-2 text-center ${remColor}">${remaining}</td>
+            <td class="border border-gray-400 px-2 py-2 text-center ${remColor}">${formatLeaveDays(remaining)}</td>
             <td class="border border-gray-400 px-4 py-2 text-center">&nbsp;</td>
         </tr>`;
     });
@@ -4165,6 +4167,12 @@ function _showEmployeeProfileModal(data) {
     }
 }
 
+function formatLeaveDays(value) {
+    const num = Number(value || 0);
+    if (!Number.isFinite(num)) return '0';
+    return num.toFixed(2).replace(/\.?0+$/, '');
+}
+
 function renderLeaveResult(info, name) {
     const resultDiv = document.getElementById('leaveResult');
     if (!resultDiv) return;
@@ -4192,15 +4200,15 @@ function renderLeaveResult(info, name) {
       <div class="grid grid-cols-3 gap-4">
         <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 text-center">
           <p class="text-sm text-slate-500 mb-1">총 부여</p>
-          <p class="text-3xl font-bold text-blue-600">${summary.total_granted.toFixed(1)}</p>
+          <p class="text-3xl font-bold text-blue-600">${formatLeaveDays(summary.total_granted)}</p>
         </div>
         <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 text-center">
           <p class="text-sm text-slate-500 mb-1">총 사용</p>
-          <p class="text-3xl font-bold text-amber-500">${summary.total_used.toFixed(1)}</p>
+          <p class="text-3xl font-bold text-amber-500">${formatLeaveDays(summary.total_used)}</p>
         </div>
         <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 text-center">
           <p class="text-sm text-slate-500 mb-1">잔여</p>
-          <p class="text-3xl font-bold ${remainingColor}">${summary.remaining.toFixed(1)}</p>
+          <p class="text-3xl font-bold ${remainingColor}">${formatLeaveDays(summary.remaining)}</p>
         </div>
       </div>
 
@@ -4304,6 +4312,7 @@ function renderLeaveResult(info, name) {
                 `<span class="font-medium text-amber-600">${u.days}</span>`;
             const typeBadge = u.leave_type === '연차' ? 'bg-blue-100 text-blue-700' :
                               u.leave_type === '반차' ? 'bg-purple-100 text-purple-700' :
+                              u.leave_type === '반반차' ? 'bg-fuchsia-100 text-fuchsia-700' :
                               'bg-slate-100 text-slate-600';
             const noteDisplay = isAuto
                 ? `<span class="text-slate-400 text-xs">일일작업현황</span>${u.note && u.note !== '일일작업현황 자동' ? ' ' + escapeHtml(u.note) : ''}`
@@ -4337,6 +4346,7 @@ function renderLeaveResult(info, name) {
           <select id="usageType" class="border border-slate-300 rounded-lg px-2 py-1.5 text-sm">
             <option value="연차">연차 (1공)</option>
             <option value="반차">반차 (0.5공)</option>
+            <option value="반반차">반반차 (0.25공)</option>
             <option value="공가">공가 (차감없음)</option>
           </select>
           <input type="text" id="usageNote"
@@ -5196,6 +5206,7 @@ function renderWorkHoursCalendar(data, container) {
     const leaveColors = {
         '연차': 'bg-blue-100 text-blue-700',
         '반차': 'bg-purple-100 text-purple-700',
+        '반반차': 'bg-fuchsia-100 text-fuchsia-700',
         '공가': 'bg-slate-100 text-slate-500'
     };
     const dayLabels = ['일', '월', '화', '수', '목', '금', '토'];

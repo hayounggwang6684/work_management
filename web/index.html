@@ -284,6 +284,15 @@
                                                placeholder="이름 입력">
                                     </td>
                                 </tr>
+                                <tr class="border-b">
+                                    <td class="border-r px-4 py-2 font-medium bg-orange-50 text-center whitespace-nowrap">반반차</td>
+                                    <td class="px-2 py-1">
+                                        <input id="vacation_quarter" type="text"
+                                               oninput="updateVacation('반반차', this.value)"
+                                               class="w-full px-2 py-1 border-0 focus:bg-yellow-50 outline-none"
+                                               placeholder="이름 입력">
+                                    </td>
+                                </tr>
                                 <tr>
                                     <td class="border-r px-4 py-2 font-medium bg-orange-50 text-center whitespace-nowrap">공 가</td>
                                     <td class="px-2 py-1">
@@ -533,7 +542,7 @@
                             <select id="workHoursMonth" class="px-3 py-2 border rounded-lg text-sm"></select>
                         </div>
                         <div class="mb-2 text-xs text-slate-400">
-                            * 정규: 기본 8h (연차 -8h / 반차 -4h 적용) &nbsp;|&nbsp; 연장: 17시 이후 야간·휴일 근무 &nbsp;|&nbsp; 야간 근무일 더블클릭 → 석식 공제(1h) 적용/해제
+                            * 정규: 기본 8h (연차 -8h / 반차 -4h / 반반차 -2h 적용) &nbsp;|&nbsp; 연장: 17시 이후 야간·휴일 근무 &nbsp;|&nbsp; 야간 근무일 더블클릭 → 석식 공제(1h) 적용/해제
                         </div>
                         <div id="workHoursResult">
                             <p class="text-slate-400">직원명과 월을 선택하면 자동으로 조회됩니다.</p>

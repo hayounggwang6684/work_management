@@ -2230,7 +2230,7 @@ def load_vacation_data(date: str) -> Dict[str, str]:
         return db.load_vacation_records(date)
     except Exception as e:
         logger.error(f"휴가자 현황 로드 오류: {e}")
-        return {'연차': '', '반차': '', '공가': ''}
+        return {'연차': '', '반차': '', '반반차': '', '공가': ''}
 
 
 @eel.expose
@@ -2307,7 +2307,7 @@ def delete_leave_grant(grant_id: int) -> Dict[str, Any]:
 def add_leave_usage(employee_name: str, use_date: str, leave_type: str, note: str) -> Dict[str, Any]:
     """연차 사용 내역 추가"""
     try:
-        if leave_type not in ('연차', '반차', '공가'):
+        if leave_type not in ('연차', '반차', '반반차', '공가'):
             return {'success': False, 'message': '유효하지 않은 휴가 종류입니다.'}
         new_id = db.add_leave_usage(employee_name.strip(), use_date, leave_type, note or '')
         if new_id >= 0:
@@ -2570,10 +2570,8 @@ def get_work_hours_by_month(name: str, year: int, month: int,
                 leave_type = None
             elif is_weekend:
                 regular = 0.0
-            elif leave_type == '연차':
+            elif leave_type in ('연차', '반차', '반반차'):
                 regular = max(0.0, 8.0 - 8.0 * leave_info['days'])
-            elif leave_type == '반차':
-                regular = 4.0
             else:
                 regular = 8.0
 
