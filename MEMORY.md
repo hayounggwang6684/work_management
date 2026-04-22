@@ -2,6 +2,7 @@
 
 ## Bug Fixes Applied
 
+- 2026-04-22: Released a new v2.3.24 patch to unblock PCs stuck on v2.3.21 with stale downloaded/applied patch history, and added an explicit post-update restart API/UI path so manual patch application no longer leaves the running UI showing the old version until the user restarts by hand.
 - 2026-04-22: Hardened patch version self-repair so PCs that successfully applied a patch but kept an old `settings.json` version now reconcile `app.version` and `update.current_version` from `applied_patches.json` during startup, app-info lookup, and update checks; patch application now writes the new version before recording the applied patch.
 - 2026-04-22: Broadened permission/Telegram recipient checks from only `active` users to all valid `active`/`approved` users, and routed write-user reminders through shared recipient helpers so a single background-running PC can send scheduled Telegram reminders to every linked user instead of only the locally active operator.
 - 2026-04-22: Corrected the 연차 관리 employee picker UX by removing the extra side dropdown and attaching an always-visible-on-focus employee list to the original name input, so other names remain selectable even after a name has already been typed or searched.

@@ -159,6 +159,7 @@ work_hours_ot_overrides (employee_name, work_date, start_time, end_time, note)
    - `build_installer.iss`의 `AppVersion`과 `OutputBaseFilename`이 같은 버전인지 확인
    - 패치 적용 코드가 `app.version`과 `update.current_version`을 함께 갱신하거나, 최소한 `applied_patches.json` 기반 자가복구 경로를 포함하는지 확인
    - 패치 ZIP 안에 버전/업데이트 로직을 수정한 파일이 누락되지 않았는지 확인
+   - 이미 실패한 패치가 사용자 PC의 `downloaded_patches.json` 또는 `applied_patches.json`에 기록됐을 수 있으면 같은 버전 재업로드로 해결하지 말고 반드시 새 패치 버전으로 릴리스할 것
 10. **코드 수정 시 문서 동시 업데이트 필수** — 아래 기준에 따라 해당 문서 업데이트:
 
    | 수정 유형 | 업데이트할 문서 |

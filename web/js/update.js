@@ -175,10 +175,19 @@ async function startUpdate() {
 
         if (result.success) {
             const msg = result.needs_restart
-                ? result.message + '\n\n프로그램을 재시작해주세요.'
+                ? result.message + '\n\n잠시 후 프로그램을 자동 재시작합니다.'
                 : result.message;
             showCustomAlert('업데이트 완료', msg, 'success');
             closeUpdateModal();
+            if (result.needs_restart && typeof eel.restart_app_after_update === 'function') {
+                setTimeout(() => {
+                    try {
+                        eel.restart_app_after_update()();
+                    } catch (e) {
+                        console.error('업데이트 후 자동 재시작 오류:', e);
+                    }
+                }, 1200);
+            }
         } else {
             showCustomAlert('패치 적용 실패', result.message, 'error');
             resetUpdateButtons();

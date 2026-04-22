@@ -4330,6 +4330,28 @@ def download_and_apply_patches() -> Dict[str, Any]:
 
 
 @eel.expose
+def restart_app_after_update() -> Dict[str, Any]:
+    """수동 패치 적용 후 앱을 재시작."""
+    try:
+        import os
+        import subprocess
+        import sys
+        import time
+
+        def _restart():
+            time.sleep(0.8)
+            subprocess.Popen([sys.executable] + sys.argv)
+            os._exit(0)
+
+        thread = threading.Thread(target=_restart, daemon=True)
+        thread.start()
+        return {'success': True, 'message': '프로그램을 재시작합니다.'}
+    except Exception as e:
+        logger.error(f"업데이트 후 재시작 오류: {e}")
+        return {'success': False, 'message': '재시작 중 오류가 발생했습니다.'}
+
+
+@eel.expose
 def get_release_notes_for_version(version_tag: str) -> Dict[str, Any]:
     """특정 버전의 릴리즈 노트 조회"""
     try:
