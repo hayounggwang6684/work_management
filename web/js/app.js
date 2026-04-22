@@ -1474,7 +1474,7 @@ function _checkDuplicateCNLocation(records) {
     const seen = new Map();
     const warnings = [];
     records.forEach((row, i) => {
-        const cn  = (row.contractNumber || '').trim().toUpperCase();
+        const cn  = (row.contractNumber || row.contract_number || '').trim().toUpperCase();
         const loc = (row.location || '').trim();
         if (!cn) return;                          // 계약번호 없으면 검사 제외
         const key = `${cn}||${loc}`;
@@ -1487,6 +1487,28 @@ function _checkDuplicateCNLocation(records) {
     return warnings;
 }
 
+function _collectContractNumbers(records) {
+    return [...new Set((records || [])
+        .map(r => (r.contractNumber || r.contract_number || '').trim().toUpperCase())
+        .filter(Boolean))];
+}
+
+async function _validateContractNumbersForSave(records, alertMode = 'modal') {
+    for (const cn of _collectContractNumbers(records)) {
+        const v = await eel.validate_contract_number(cn)();
+        if (!v || !v.valid) {
+            const message = `[${cn}] ${v?.message || '계약번호 형식이 올바르지 않습니다.'}`;
+            if (alertMode === 'toast') {
+                showToast(`계약번호 오류: ${message}`, 'error', 5000);
+            } else {
+                showCustomAlert('계약번호 오류', message, 'error');
+            }
+            return false;
+        }
+    }
+    return true;
+}
+
 async function saveWorkRecords() {
     if (_isSaving) return;  // 중복 저장 방지
     _isSaving = true;
@@ -1497,16 +1519,7 @@ async function saveWorkRecords() {
         }
 
         // 계약번호 형식 유효성 검사
-        const cns = [...new Set(
-            workRecords.map(r => (r.contract_number || '').trim().toUpperCase()).filter(cn => cn)
-        )];
-        for (const cn of cns) {
-            const v = await eel.validate_contract_number(cn)();
-            if (!v.valid) {
-                showCustomAlert('계약번호 오류', `[${cn}] ${v.message}`, 'error');
-                return;
-            }
-        }
+        if (!await _validateContractNumbersForSave(workRecords)) return;
 
         // G: 같은 계약번호 + 같은 장소 중복 경고
         const dupWarnings = _checkDuplicateCNLocation(workRecords);
@@ -1619,6 +1632,8 @@ async function _autoSaveWorkRecords() {
 
     _isSaving = true;
     try {
+        if (!await _validateContractNumbersForSave(workRecords, 'toast')) return;
+
         const result = await eel.save_work_records(dateStr, workRecords, currentUser.full_name, 'day')();
         if (result.success) {
             _setDirtyForTab('day', false);
@@ -1821,6 +1836,8 @@ async function saveNightWorkRecords() {
         }
         const dateStr = document.getElementById('dateInput')?.value;
         if (!dateStr) return;
+
+        if (!await _validateContractNumbersForSave(nightWorkRecords)) return;
 
         normalizeNightEndTimes();
         showLoading(true, '저장 중...');

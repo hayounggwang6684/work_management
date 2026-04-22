@@ -1484,13 +1484,37 @@ def get_project_start_dates_batch(contract_numbers: list, ship_names: list) -> d
     return result
 
 
+def _parse_time_to_minutes(value: str) -> int | None:
+    """HH:MM, HHMM, HMM, HH 형식 시간을 분 단위로 변환한다."""
+    try:
+        text = str(value or '').strip()
+        if not text:
+            return None
+        if ':' in text:
+            hour_text, minute_text = text.split(':', 1)
+        else:
+            digits = ''.join(ch for ch in text if ch.isdigit())
+            if len(digits) in (3, 4):
+                hour_text, minute_text = digits[:-2], digits[-2:]
+            elif len(digits) in (1, 2):
+                hour_text, minute_text = digits, '00'
+            else:
+                return None
+        hour = int(hour_text)
+        minute = int(minute_text)
+        if not (0 <= hour <= 23 and 0 <= minute <= 59):
+            return None
+        return hour * 60 + minute
+    except Exception:
+        return None
+
+
 def _parse_search_ot(end_time: str) -> float:
     """조회 탭 OT 계산용 헬퍼 (17:00 이후 시간, 석식 공제 없음)"""
     try:
-        parts = str(end_time or '').strip().split(':')
-        h = int(parts[0])
-        m = int(parts[1]) if len(parts) > 1 else 0
-        total_min = h * 60 + m
+        total_min = _parse_time_to_minutes(end_time)
+        if total_min is None:
+            return 0.0
         ot_min = total_min - 17 * 60
         if ot_min <= 0:
             return 0.0
@@ -2438,12 +2462,17 @@ def get_work_hours_by_month(name: str, year: int, month: int,
             "WHERE employee_name = ? AND use_date BETWEEN ? AND ? ORDER BY use_date",
             (name, range_start, range_end)
         ) or []
-        # date → {leave_type, days}
+        # date → {leave_type, days}. 같은 날짜에 여러 휴가가 있으면 차감일수를 합산한다.
         leave_map: Dict[str, Any] = {}
         for row in leave_rows:
-            d, lt, dy = row[0], row[1], float(row[2]) if row[2] else 1.0
+            d, lt, dy = row[0], row[1], float(row[2]) if row[2] is not None else 1.0
             if d not in leave_map:
-                leave_map[d] = {'leave_type': lt, 'days': dy}
+                leave_map[d] = {'leave_type': lt, 'days': dy, 'types': [lt] if lt else []}
+            else:
+                leave_map[d]['days'] += dy
+                if lt:
+                    leave_map[d]['types'].append(lt)
+                leave_map[d]['leave_type'] = '+'.join(leave_map[d]['types'])
 
         # ── 2. 달력에 표시할 주 범위 전체 야간 근무 레코드 (work_type='night') ──
         night_rows = db.execute_query(
@@ -2455,10 +2484,14 @@ def get_work_hours_by_month(name: str, year: int, month: int,
         ) or []
         # date → max end_time (한 날에 여러 레코드 가능)
         night_map: Dict[str, str] = {}
+        night_minute_map: Dict[str, int] = {}
         for row in night_rows:
             d, et = row[0], row[1] or ''
-            if d not in night_map or et > night_map[d]:
+            et_min = _parse_time_to_minutes(et)
+            compare_min = et_min if et_min is not None else -1
+            if d not in night_map or compare_min > night_minute_map.get(d, -1):
                 night_map[d] = et
+                night_minute_map[d] = compare_min
 
         override_rows = db.execute_query(
             "SELECT work_date, start_time, end_time, note FROM work_hours_ot_overrides "
@@ -2512,9 +2545,9 @@ def get_work_hours_by_month(name: str, year: int, month: int,
         def _parse_ot(end_time: str) -> float:
             """end_time 문자열(HH:MM)에서 17:00 기준 OT 시간 계산"""
             try:
-                parts = end_time.strip().split(':')
-                h, m = int(parts[0]), int(parts[1]) if len(parts) > 1 else 0
-                total_min = h * 60 + m
+                total_min = _parse_time_to_minutes(end_time)
+                if total_min is None:
+                    return 0.0
                 ot_min = total_min - 17 * 60  # 17:00 이후
                 if ot_min <= 0:
                     return 0.0
@@ -2524,25 +2557,6 @@ def get_work_hours_by_month(name: str, year: int, month: int,
                 return round(ot_hours, 2)
             except Exception:
                 return 0.0
-
-        def _parse_time_to_minutes(value: str) -> int | None:
-            try:
-                text = (value or '').strip()
-                if not text:
-                    return None
-                if ':' in text:
-                    h, m = text.split(':', 1)
-                elif len(text) in (3, 4) and text.isdigit():
-                    h, m = text[:-2], text[-2:]
-                else:
-                    return None
-                hour = int(h)
-                minute = int(m)
-                if not (0 <= hour <= 23 and 0 <= minute <= 59):
-                    return None
-                return hour * 60 + minute
-            except Exception:
-                return None
 
         def _parse_override_ot(start_time: str, end_time: str) -> float:
             start_min = _parse_time_to_minutes(start_time)
@@ -2570,7 +2584,7 @@ def get_work_hours_by_month(name: str, year: int, month: int,
                 leave_type = None
             elif is_weekend:
                 regular = 0.0
-            elif leave_type in ('연차', '반차', '반반차'):
+            elif leave_info and float(leave_info.get('days') or 0.0) > 0:
                 regular = max(0.0, 8.0 - 8.0 * leave_info['days'])
             else:
                 regular = 8.0

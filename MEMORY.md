@@ -2,6 +2,7 @@
 
 ## Bug Fixes Applied
 
+- 2026-04-23: Fixed three audit findings for v2.3.26 by validating `contractNumber`/`contract_number` before both day and night saves, normalizing compact OT end times such as `2100` in backend calculations, and summing same-day leave usage entries so work-hours regular time matches annual leave totals.
 - 2026-04-22: Added `반반차` to the daily vacation status flow and wired it through automatic leave usage, work-hours regular-time reduction, leave summaries, and monthly leave reports as a 0.25-day deduction instead of a half-day deduction.
 - 2026-04-22: Released a new v2.3.24 patch to unblock PCs stuck on v2.3.21 with stale downloaded/applied patch history, and added an explicit post-update restart API/UI path so manual patch application no longer leaves the running UI showing the old version until the user restarts by hand.
 - 2026-04-22: Hardened patch version self-repair so PCs that successfully applied a patch but kept an old `settings.json` version now reconcile `app.version` and `update.current_version` from `applied_patches.json` during startup, app-info lookup, and update checks; patch application now writes the new version before recording the applied patch.
