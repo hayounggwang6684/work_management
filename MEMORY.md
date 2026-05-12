@@ -2,6 +2,8 @@
 
 ## Bug Fixes Applied
 
+- 2026-05-12: Increased only the post-paste settle delay for the ERP worker field from `0.15s` to `0.4s` so the final worker cell has more time to commit pasted names before focus changes, without slowing the navigation steps themselves.
+- 2026-05-12: Added `tools/erp_worker_gap_diagnostic.py` to separate ERP worker-field blank issues into formatter/data problems versus ERP focus/paste problems by scanning `work_records`, running the ERP worker formatter offline, and exporting representative Mock/real-ERP test bundles and checklists.
 - 2026-04-23: Fixed three audit findings for v2.3.26 by validating `contractNumber`/`contract_number` before both day and night saves, normalizing compact OT end times such as `2100` in backend calculations, and summing same-day leave usage entries so work-hours regular time matches annual leave totals.
 - 2026-04-22: Added `반반차` to the daily vacation status flow and wired it through automatic leave usage, work-hours regular-time reduction, leave summaries, and monthly leave reports as a 0.25-day deduction instead of a half-day deduction.
 - 2026-04-22: Released a new v2.3.24 patch to unblock PCs stuck on v2.3.21 with stale downloaded/applied patch history, and added an explicit post-update restart API/UI path so manual patch application no longer leaves the running UI showing the old version until the user restarts by hand.
