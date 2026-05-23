@@ -2,6 +2,7 @@
 
 ## Bug Fixes Applied
 
+- 2026-05-23: Added daily work input convenience controls: a pictogram-only today navigation button between the next-day and previous-work buttons, plus a contract-number list popup before refresh with sticky headers and scrollable contract/company/ship/engine/work-content rows.
 - 2026-05-12: Increased only the post-paste settle delay for the ERP worker field from `0.15s` to `0.4s` so the final worker cell has more time to commit pasted names before focus changes, without slowing the navigation steps themselves.
 - 2026-05-12: Added `tools/erp_worker_gap_diagnostic.py` to separate ERP worker-field blank issues into formatter/data problems versus ERP focus/paste problems by scanning `work_records`, running the ERP worker formatter offline, and exporting representative Mock/real-ERP test bundles and checklists.
 - 2026-04-23: Fixed three audit findings for v2.3.26 by validating `contractNumber`/`contract_number` before both day and night saves, normalizing compact OT end times such as `2100` in backend calculations, and summing same-day leave usage entries so work-hours regular time matches annual leave totals.

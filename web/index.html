@@ -222,12 +222,22 @@
                         <span id="dateDayOfWeek" class="font-bold text-lg px-1 text-slate-700"></span>
                         <button onclick="changeDate(1)"
                                 class="px-3 py-2 bg-slate-200 hover:bg-slate-300 rounded-lg text-lg font-bold" title="다음일">▶</button>
+                        <button onclick="goToToday()" id="btnGoToday"
+                                class="w-10 h-10 inline-flex items-center justify-center bg-slate-200 hover:bg-slate-300 rounded-lg text-slate-700"
+                                title="오늘 날짜로 이동" aria-label="오늘 날짜로 이동">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3M5 11h14M7 5h10a2 2 0 012 2v12a2 2 0 01-2 2H7a2 2 0 01-2-2V7a2 2 0 012-2zm3 11h4"></path>
+                            </svg>
+                        </button>
                         <button onclick="loadYesterdayRecords()" id="btnYesterdayWork"
                                 class="px-4 py-2 bg-cyan-600 text-white rounded-lg ml-2">어제 작업</button>
                         <button onclick="loadDayRecordsIntoNight()" id="btnLoadDayWork"
                                 class="px-4 py-2 bg-cyan-600 text-white rounded-lg ml-2 hidden">주간 작업</button>
                     </div>
                     <div class="flex items-center gap-2">
+                        <button onclick="openContractNumberList()" id="btnContractNumberList"
+                                class="px-4 py-2 bg-slate-200 text-slate-700 rounded-lg font-semibold hover:bg-slate-300"
+                                title="계약 번호 목록 보기">번호 목록</button>
                         <button onclick="refreshCurrentWorkRecords()" id="btnRefreshRecords"
                                 class="px-4 py-2 bg-slate-200 text-slate-700 rounded-lg font-semibold hover:bg-slate-300"
                                 title="현재 탭 새로고침 (F5)">리프레쉬</button>

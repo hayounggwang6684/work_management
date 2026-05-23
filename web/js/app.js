@@ -190,6 +190,17 @@ function changeDate(days) {
     }
 }
 
+function goToToday() {
+    if (!checkUnsavedChanges()) return;
+    currentDate = new Date();
+    updateDateInput();
+    if (currentWorkTab === 'night') {
+        loadNightRecords();
+    } else {
+        loadWorkRecords();
+    }
+}
+
 function onDateChange() {
     const dateInput = document.getElementById('dateInput');
     if (dateInput && dateInput.value) {
@@ -1743,6 +1754,80 @@ async function refreshCurrentWorkRecords() {
     }
 }
 
+async function openContractNumberList() {
+    try {
+        document.getElementById('contractNumberListModal')?.remove();
+        showLoading(true);
+        const result = await eel.get_contract_number_list()();
+        showLoading(false);
+
+        if (!result || !result.success) {
+            showCustomAlert('오류', result?.message || '계약 번호 목록을 불러오지 못했습니다.', 'error');
+            return;
+        }
+
+        const contracts = result.contracts || [];
+        const modal = document.createElement('div');
+        modal.id = 'contractNumberListModal';
+        modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4';
+        modal.innerHTML = `
+            <div class="bg-white rounded-lg shadow-xl w-full max-w-[1100px] max-h-[80vh] flex flex-col">
+                <div class="px-5 py-4 border-b flex items-center justify-between">
+                    <h3 class="text-lg font-bold text-slate-800">계약 번호 목록</h3>
+                    <button onclick="closeContractNumberList()" class="w-9 h-9 inline-flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700" title="닫기" aria-label="닫기">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                    </button>
+                </div>
+                <div class="overflow-auto max-h-[520px]">
+                    <table class="w-full min-w-[980px] border-collapse text-sm">
+                        <thead>
+                            <tr class="bg-slate-100 sticky top-0 z-10 text-slate-700">
+                                <th class="border border-slate-200 px-3 py-2 text-center w-40">계약 번호</th>
+                                <th class="border border-slate-200 px-3 py-2 text-center w-32">선사</th>
+                                <th class="border border-slate-200 px-3 py-2 text-center w-32">선명</th>
+                                <th class="border border-slate-200 px-3 py-2 text-center w-36">엔진모델</th>
+                                <th class="border border-slate-200 px-3 py-2 text-center">작업내용</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${contracts.length ? contracts.map(row => `
+                                <tr class="hover:bg-blue-50">
+                                    <td class="border border-slate-100 px-3 py-2 text-center font-semibold text-blue-700">${escapeHtml(row.contractNumber || '')}</td>
+                                    <td class="border border-slate-100 px-3 py-2 text-center">${escapeHtml(row.company || '')}</td>
+                                    <td class="border border-slate-100 px-3 py-2 text-center">${escapeHtml(row.shipName || '')}</td>
+                                    <td class="border border-slate-100 px-3 py-2 text-center">${escapeHtml(row.engineModel || '')}</td>
+                                    <td class="border border-slate-100 px-3 py-2">${escapeHtml(row.workContent || '')}</td>
+                                </tr>
+                            `).join('') : `
+                                <tr>
+                                    <td colspan="5" class="px-4 py-10 text-center text-slate-500">표시할 계약 번호가 없습니다.</td>
+                                </tr>
+                            `}
+                        </tbody>
+                    </table>
+                </div>
+                <div class="px-5 py-3 border-t text-xs text-slate-500">
+                    총 ${contracts.length}건
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+        modal.addEventListener('click', e => {
+            if (e.target === modal) closeContractNumberList();
+        });
+    } catch (error) {
+        showLoading(false);
+        console.error('계약 번호 목록 로드 오류:', error);
+        showCustomAlert('오류', '계약 번호 목록을 불러오는 중 오류가 발생했습니다.', 'error');
+    }
+}
+
+function closeContractNumberList() {
+    document.getElementById('contractNumberListModal')?.remove();
+}
+
 // ============================================================================
 // 테이블 렌더링
 // ============================================================================
@@ -3130,6 +3215,7 @@ document.addEventListener('keydown', function(e) {
             { id: 'commentModal',      close: closeCommentModal },
             { id: 'newProjectModal',   close: closeNewProjectModal },
             { id: 'startProjectModal', close: closeStartProjectModal },
+            { id: 'contractNumberListModal', close: closeContractNumberList },
         ];
         for (const m of modals) {
             const el = document.getElementById(m.id);

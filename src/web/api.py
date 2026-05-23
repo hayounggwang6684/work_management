@@ -2230,6 +2230,82 @@ def get_latest_contract_number() -> str:
 
 
 @eel.expose
+def get_contract_number_list() -> Dict[str, Any]:
+    """일일 작업 입력 화면의 계약 번호 목록 팝업용 데이터 조회."""
+    try:
+        query = '''
+            WITH contracts AS (
+                SELECT DISTINCT TRIM(contract_number) AS contract_number
+                FROM work_records
+                WHERE contract_number IS NOT NULL AND TRIM(contract_number) != ''
+                UNION
+                SELECT DISTINCT TRIM(contract_number) AS contract_number
+                FROM board_projects
+                WHERE contract_number IS NOT NULL AND TRIM(contract_number) != ''
+            ),
+            latest_work AS (
+                SELECT
+                    TRIM(contract_number) AS contract_number,
+                    company,
+                    ship_name,
+                    engine_model,
+                    work_content,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY TRIM(contract_number)
+                        ORDER BY date DESC, record_number DESC, id DESC
+                    ) AS rn
+                FROM work_records
+                WHERE contract_number IS NOT NULL AND TRIM(contract_number) != ''
+            ),
+            latest_board AS (
+                SELECT
+                    TRIM(contract_number) AS contract_number,
+                    company,
+                    ship_name,
+                    engine_model,
+                    work_content,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY TRIM(contract_number)
+                        ORDER BY updated_at DESC, created_at DESC, id DESC
+                    ) AS rn
+                FROM board_projects
+                WHERE contract_number IS NOT NULL AND TRIM(contract_number) != ''
+            )
+            SELECT
+                c.contract_number,
+                COALESCE(NULLIF(lw.company, ''), NULLIF(lb.company, ''), '') AS company,
+                COALESCE(NULLIF(lw.ship_name, ''), NULLIF(lb.ship_name, ''), '') AS ship_name,
+                COALESCE(NULLIF(lw.engine_model, ''), NULLIF(lb.engine_model, ''), '') AS engine_model,
+                COALESCE(NULLIF(lw.work_content, ''), NULLIF(lb.work_content, ''), '') AS work_content
+            FROM contracts c
+            LEFT JOIN latest_work lw
+                ON lw.contract_number = c.contract_number AND lw.rn = 1
+            LEFT JOIN latest_board lb
+                ON lb.contract_number = c.contract_number AND lb.rn = 1
+            ORDER BY c.contract_number DESC
+        '''
+        rows = db.execute_query(query)
+        contracts = []
+        for row in rows or []:
+            contracts.append({
+                'contractNumber': row[0] or '',
+                'company': row[1] or '',
+                'shipName': row[2] or '',
+                'engineModel': row[3] or '',
+                'workContent': row[4] or '',
+            })
+        return {
+            'success': True,
+            'contracts': contracts,
+            'count': len(contracts),
+            'message': f'{len(contracts)}건 조회됨',
+        }
+    except Exception as e:
+        logger.error(f"계약 번호 목록 조회 오류: {e}")
+        return {'success': False, 'contracts': [], 'message': '계약 번호 목록 조회 중 오류가 발생했습니다.'}
+
+
+@eel.expose
 def validate_contract_number(contract_number: str) -> Dict[str, Any]:
     """계약번호 형식 유효성 검사 (SH-YYYY-NNN-X 형식)"""
     import re
