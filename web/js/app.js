@@ -12,6 +12,8 @@ let nightIsDirty = false;
 let _isSaving = false;  // 중복 저장 방지 플래그
 let _autoSaveTimer = null;  // 자동 저장 타이머 핸들
 let _dateLoadedAt = null; // 현재 날짜 데이터 로드 시각 (충돌 감지용)
+let _workRecordsSnapshot = [];
+let _nightWorkRecordsSnapshot = [];
 let _searchSortState = { records: [], container: null, term: '', type: '', key: 'date', dir: -1, summary: null }; // 검색 결과 정렬 상태
 
 // 아카이브 달 네비게이션 상태
@@ -1435,6 +1437,129 @@ function updateVacation(category, value) {
     _setDirtyForTab('day', true);
 }
 
+function _cloneRecordsForPreview(records) {
+    return JSON.parse(JSON.stringify(records || []));
+}
+
+function _recordPreviewValue(record, key) {
+    const value = record ? record[key] : '';
+    if (Array.isArray(value)) return value.join(', ');
+    if (value === null || value === undefined) return '';
+    return String(value).trim();
+}
+
+function _isPreviewEmpty(record) {
+    const keys = ['contractNumber', 'company', 'shipName', 'engineModel', 'workContent', 'location', 'leader', 'teammates', 'manpower', 'endTime'];
+    return keys.every(key => !_recordPreviewValue(record, key));
+}
+
+function _buildRecordChangePreview(beforeRecords, afterRecords) {
+    const fields = [
+        ['contractNumber', '계약번호'],
+        ['company', '선사'],
+        ['shipName', '선명'],
+        ['engineModel', '엔진모델'],
+        ['workContent', '작업내용'],
+        ['location', '장소'],
+        ['leader', '팀장'],
+        ['teammates', '작업자'],
+        ['manpower', '공수'],
+        ['endTime', '종료시간'],
+    ];
+    const maxRows = Math.max((beforeRecords || []).length, (afterRecords || []).length, 10);
+    const changes = [];
+    for (let i = 0; i < maxRows; i++) {
+        const before = beforeRecords?.[i] || {};
+        const after = afterRecords?.[i] || {};
+        if (_isPreviewEmpty(before) && _isPreviewEmpty(after)) continue;
+        const changed = fields
+            .map(([key, label]) => {
+                const oldValue = _recordPreviewValue(before, key);
+                const newValue = _recordPreviewValue(after, key);
+                return oldValue === newValue ? null : { label, oldValue, newValue };
+            })
+            .filter(Boolean);
+        if (changed.length) {
+            const state = _isPreviewEmpty(before) ? '추가' : (_isPreviewEmpty(after) ? '삭제' : '수정');
+            changes.push({ row: i + 1, state, changed });
+        }
+    }
+    return changes;
+}
+
+function _showRecordChangePreviewModal(title, changes) {
+    if (!changes.length) return Promise.resolve(true);
+    return new Promise(resolve => {
+        document.getElementById('recordChangePreviewModal')?.remove();
+        const rowsHtml = changes.map(item => `
+            <tr class="border-b border-slate-100 align-top">
+                <td class="px-3 py-2 text-center font-semibold">${item.row}</td>
+                <td class="px-3 py-2 text-center">
+                    <span class="px-2 py-0.5 rounded bg-blue-50 text-blue-700 text-xs font-semibold">${escapeHtml(item.state)}</span>
+                </td>
+                <td class="px-3 py-2">
+                    <div class="space-y-1">
+                        ${item.changed.map(c => `
+                            <div class="grid grid-cols-[88px_1fr] gap-2 text-xs">
+                                <span class="font-semibold text-slate-500">${escapeHtml(c.label)}</span>
+                                <span><span class="text-slate-400">${escapeHtml(c.oldValue || '-')}</span>
+                                <span class="text-slate-300 mx-1">→</span>
+                                <span class="font-semibold text-slate-800">${escapeHtml(c.newValue || '-')}</span></span>
+                            </div>
+                        `).join('')}
+                    </div>
+                </td>
+            </tr>
+        `).join('');
+        const modal = document.createElement('div');
+        modal.id = 'recordChangePreviewModal';
+        modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4';
+        modal.innerHTML = `
+            <div class="bg-white rounded-lg shadow-xl w-full max-w-[860px] max-h-[82vh] flex flex-col">
+                <div class="px-5 py-4 border-b flex items-center justify-between">
+                    <h3 class="font-bold text-lg">${escapeHtml(title)}</h3>
+                    <button type="button" class="text-slate-400 hover:text-slate-700 text-xl leading-none" data-preview-cancel>&times;</button>
+                </div>
+                <div class="px-5 py-3 text-sm text-slate-600 border-b">
+                    변경된 행 ${changes.length}개만 표시합니다.
+                </div>
+                <div class="overflow-y-auto" style="max-height: 52vh;">
+                    <table class="w-full text-sm">
+                        <thead class="sticky top-0 bg-slate-100 z-10">
+                            <tr>
+                                <th class="px-3 py-2 text-center w-16">행</th>
+                                <th class="px-3 py-2 text-center w-20">상태</th>
+                                <th class="px-3 py-2 text-left">변경 내용</th>
+                            </tr>
+                        </thead>
+                        <tbody>${rowsHtml}</tbody>
+                    </table>
+                </div>
+                <div class="px-5 py-4 border-t flex justify-end gap-2">
+                    <button type="button" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-sm font-semibold" data-preview-cancel>취소</button>
+                    <button type="button" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-semibold" data-preview-save>저장</button>
+                </div>
+            </div>
+        `;
+        const finish = value => {
+            modal.remove();
+            resolve(value);
+        };
+        modal.addEventListener('click', e => {
+            if (e.target === modal || e.target.closest('[data-preview-cancel]')) finish(false);
+            if (e.target.closest('[data-preview-save]')) finish(true);
+        });
+        document.body.appendChild(modal);
+    });
+}
+
+async function _confirmRecordChangesBeforeSave(workType, records) {
+    const before = workType === 'night' ? _nightWorkRecordsSnapshot : _workRecordsSnapshot;
+    const changes = _buildRecordChangePreview(before, records);
+    const title = workType === 'night' ? '야간 작업 저장 미리보기' : '일일 작업 저장 미리보기';
+    return _showRecordChangePreviewModal(title, changes);
+}
+
 async function loadWorkRecords() {
     try {
         updateDateInput();
@@ -1443,6 +1568,7 @@ async function loadWorkRecords() {
         
         const records = await eel.load_work_records(dateStr, 'day')();
         workRecords = records || [];
+        _workRecordsSnapshot = _cloneRecordsForPreview(workRecords);
 
         renderTable();
         _applyWritePermissionUI();
@@ -1537,6 +1663,8 @@ async function saveWorkRecords() {
             if (!proceed) return;
         }
 
+        if (!await _confirmRecordChangesBeforeSave('day', workRecords)) return;
+
         const dateStr = formatDateForInput(currentDate);
         showLoading(true, '저장 중...');
 
@@ -1552,6 +1680,7 @@ async function saveWorkRecords() {
                 console.error('휴가자 현황 저장 오류:', e);
             }
             _setDirtyForTab('day', false);
+            _workRecordsSnapshot = _cloneRecordsForPreview(workRecords);
             _dateLoadedAt = new Date().toISOString(); // 저장 성공 시 로드 시각 갱신
             const _saveNow = new Date();
             const _saveEl = document.getElementById('saveStatusText');
@@ -1884,6 +2013,7 @@ async function loadNightRecords() {
         showLoading(true);
         const records = await eel.load_work_records(dateStr, 'night')();
         nightWorkRecords = records || [];
+        _nightWorkRecordsSnapshot = _cloneRecordsForPreview(nightWorkRecords);
         renderNightTable();
         _setDirtyForTab('night', false);
         _nightDateLoadedAt = new Date().toISOString();
@@ -1929,12 +2059,14 @@ async function saveNightWorkRecords() {
         if (!await _validateContractNumbersForSave(nightWorkRecords)) return;
 
         normalizeNightEndTimes();
+        if (!await _confirmRecordChangesBeforeSave('night', nightWorkRecords)) return;
         showLoading(true, '저장 중...');
         const result = await eel.save_work_records(dateStr, nightWorkRecords, currentUser.full_name, 'night')();
         showLoading(false);
 
         if (result.success) {
             _setDirtyForTab('night', false);
+            _nightWorkRecordsSnapshot = _cloneRecordsForPreview(nightWorkRecords);
             _nightDateLoadedAt = new Date().toISOString();
             showToast('야간 작업 저장되었습니다.', 'success');
         } else {
@@ -4280,6 +4412,34 @@ function formatLeaveDays(value) {
     return num.toFixed(2).replace(/\.?0+$/, '');
 }
 
+function _leaveAuditUser() {
+    return currentUser?.full_name || currentUser?.user_id || '';
+}
+
+async function loadLeaveChangeHistory(name) {
+    const target = document.getElementById('leaveChangeHistoryBody');
+    if (!target) return;
+    target.innerHTML = '<tr><td colspan="4" class="px-3 py-3 text-center text-slate-400">불러오는 중...</td></tr>';
+    try {
+        const result = await eel.get_leave_change_logs(name || '', 30)();
+        const logs = result?.logs || [];
+        if (!result?.success || logs.length === 0) {
+            target.innerHTML = '<tr><td colspan="4" class="px-3 py-3 text-center text-slate-400">변경 이력이 없습니다.</td></tr>';
+            return;
+        }
+        target.innerHTML = logs.map(log => `
+            <tr class="hover:bg-slate-50">
+                <td class="px-3 py-2 border border-slate-100 whitespace-nowrap">${escapeHtml((log.timestamp || '').replace('T', ' ').slice(0, 16))}</td>
+                <td class="px-3 py-2 border border-slate-100">${escapeHtml(log.user || '')}</td>
+                <td class="px-3 py-2 border border-slate-100">${escapeHtml(log.action || '')}</td>
+                <td class="px-3 py-2 border border-slate-100 text-slate-600">${escapeHtml(log.details || '')}</td>
+            </tr>
+        `).join('');
+    } catch (e) {
+        target.innerHTML = '<tr><td colspan="4" class="px-3 py-3 text-center text-red-500">변경 이력을 불러오지 못했습니다.</td></tr>';
+    }
+}
+
 function renderLeaveResult(info, name) {
     const resultDiv = document.getElementById('leaveResult');
     if (!resultDiv) return;
@@ -4464,7 +4624,33 @@ function renderLeaveResult(info, name) {
       </div>
     </div>`;
 
+    html += `
+      <div class="bg-white border border-slate-200 rounded-xl p-5">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-lg font-semibold text-slate-700">최근 연차 변경 이력</h3>
+          <button onclick="loadLeaveChangeHistory('${escapeJs(name)}')"
+                  class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-semibold">새로고침</button>
+        </div>
+        <div class="overflow-y-auto max-h-72">
+          <table class="w-full text-sm border-collapse">
+            <thead class="sticky top-0 bg-slate-100 z-10">
+              <tr>
+                <th class="px-3 py-2 text-left border border-slate-200">시간</th>
+                <th class="px-3 py-2 text-left border border-slate-200">사용자</th>
+                <th class="px-3 py-2 text-left border border-slate-200">작업</th>
+                <th class="px-3 py-2 text-left border border-slate-200">내용</th>
+              </tr>
+            </thead>
+            <tbody id="leaveChangeHistoryBody">
+              <tr><td colspan="4" class="px-3 py-3 text-center text-slate-400">불러오는 중...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+
     resultDiv.innerHTML = html;
+    loadLeaveChangeHistory(name);
 }
 
 async function saveLeaveConfig(name) {
@@ -4472,9 +4658,10 @@ async function saveLeaveConfig(name) {
     const genDay = parseInt(document.getElementById('leaveGenDay').value);
     const note = document.getElementById('leaveConfigNote').value.trim();
     try {
-        const result = await eel.save_employee_annual_config(name, genMonth, note, genDay)();
+        const result = await eel.save_employee_annual_config(name, genMonth, note, genDay, _leaveAuditUser())();
         if (result && result.success) {
             showCustomAlert('성공', '연차 설정이 저장되었습니다.', 'success');
+            await loadLeaveChangeHistory(name);
         } else {
             showCustomAlert('오류', (result && result.error) || '저장 실패', 'error');
         }
@@ -4493,7 +4680,7 @@ async function addLeaveGrant(name) {
         return;
     }
     try {
-        const result = await eel.add_leave_grant(name, year, month, days, note)();
+        const result = await eel.add_leave_grant(name, year, month, days, note, _leaveAuditUser())();
         if (result && result.success) {
             await searchEmployeeLeave();
         } else {
@@ -4507,7 +4694,7 @@ async function addLeaveGrant(name) {
 async function deleteLeaveGrant(id, employeeName) {
     if (!confirm('이 부여 이력을 삭제하시겠습니까?')) return;
     try {
-        const result = await eel.delete_leave_grant(id)();
+        const result = await eel.delete_leave_grant(id, _leaveAuditUser())();
         if (result && result.success) {
             document.getElementById('leaveEmployeeInput').value = employeeName;
             await searchEmployeeLeave();
@@ -4528,7 +4715,7 @@ async function addLeaveUsage(name) {
         return;
     }
     try {
-        const result = await eel.add_leave_usage(name, useDate, leaveType, note)();
+        const result = await eel.add_leave_usage(name, useDate, leaveType, note, _leaveAuditUser())();
         if (result && result.success) {
             await searchEmployeeLeave();
         } else {
@@ -4542,7 +4729,7 @@ async function addLeaveUsage(name) {
 async function deleteLeaveUsage(id, employeeName) {
     if (!confirm('이 사용 내역을 삭제하시겠습니까?')) return;
     try {
-        const result = await eel.delete_leave_usage(id)();
+        const result = await eel.delete_leave_usage(id, _leaveAuditUser())();
         if (result && result.success) {
             document.getElementById('leaveEmployeeInput').value = employeeName;
             await searchEmployeeLeave();
@@ -4992,6 +5179,84 @@ function renderErpRecordList(dates) {
             </ul>
         </div>
     `).join('');
+}
+
+async function _getSelectedErpRecords() {
+    const checks = document.querySelectorAll('.erpDayCheck:checked');
+    if (checks.length === 0) {
+        showToast('입력할 날짜를 선택하세요.', 'warning');
+        return null;
+    }
+    const startDate = document.getElementById('erpStartDate')?.value;
+    const endDate   = document.getElementById('erpEndDate')?.value;
+    const res = await eel.get_records_for_erp(startDate, endDate, currentUser?.user_id || '')();
+    if (!res.success) {
+        showToast(res.message || '레코드 조회 실패', 'error');
+        return null;
+    }
+    const selectedDates = new Set(Array.from(checks).map(c => c.dataset.date));
+    const filtered = (res.dates || []).filter(d => selectedDates.has(d.date));
+    if (filtered.length === 0) {
+        showToast('선택한 날짜에 레코드가 없습니다.', 'warning');
+        return null;
+    }
+    return filtered;
+}
+
+function _showErpDryRunModal(dates) {
+    document.getElementById('erpDryRunModal')?.remove();
+    const total = (dates || []).reduce((sum, day) => sum + (day.records || []).length, 0);
+    const bodyHtml = (dates || []).map(day => `
+        <section class="border-b border-slate-100 last:border-b-0">
+            <div class="sticky top-0 bg-slate-50 px-4 py-2 font-semibold text-sm text-slate-700 border-b border-slate-100">
+                ${escapeHtml(day.date)} (${(day.records || []).length}건)
+            </div>
+            <div class="divide-y divide-slate-100">
+                ${(day.records || []).map((r, idx) => `
+                    <div class="grid grid-cols-[44px_130px_1fr] gap-3 px-4 py-2 text-xs">
+                        <div class="text-slate-400 text-right">${idx + 1}</div>
+                        <div class="font-semibold text-slate-700">${escapeHtml(r.contractNumber || '')}</div>
+                        <div>
+                            <div class="font-medium text-slate-800">${escapeHtml(r.workContent || '')}</div>
+                            <div class="text-slate-500 mt-0.5">${escapeHtml(r.company || '')} / ${escapeHtml(r.shipName || '')} / ${escapeHtml(r.engineModel || '')}</div>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        </section>
+    `).join('');
+    const modal = document.createElement('div');
+    modal.id = 'erpDryRunModal';
+    modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4';
+    modal.innerHTML = `
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-[920px] max-h-[82vh] flex flex-col">
+            <div class="px-5 py-4 border-b flex items-center justify-between">
+                <h3 class="font-bold text-lg">ERP 입력 미리보기</h3>
+                <button type="button" onclick="document.getElementById('erpDryRunModal')?.remove()"
+                        class="text-slate-400 hover:text-slate-700 text-xl leading-none">&times;</button>
+            </div>
+            <div class="px-5 py-3 border-b text-sm text-slate-600">
+                실제 ERP에는 입력하지 않습니다. 선택한 날짜 ${dates.length}개, 입력 예정 ${total}건입니다.
+            </div>
+            <div class="overflow-y-auto" style="max-height: 58vh;">${bodyHtml}</div>
+            <div class="px-5 py-4 border-t flex justify-end">
+                <button type="button" onclick="document.getElementById('erpDryRunModal')?.remove()"
+                        class="px-4 py-2 bg-slate-700 hover:bg-slate-800 text-white rounded-lg text-sm font-semibold">닫기</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+    modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+}
+
+async function showErpDryRunPreview() {
+    try {
+        const filtered = await _getSelectedErpRecords();
+        if (!filtered) return;
+        _showErpDryRunModal(filtered);
+    } catch (e) {
+        showToast('ERP 입력 미리보기 생성 중 오류가 발생했습니다.', 'error');
+    }
 }
 
 async function openErpInputWindow() {

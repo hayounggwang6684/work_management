@@ -37,6 +37,7 @@ build/
 # 패치/업데이트 캐시
 # ============================================================
 patches/
+patch_build/
 data/downloaded_patches.json
 data/update_cache.json
 

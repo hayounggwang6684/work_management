@@ -2353,6 +2353,14 @@ def save_vacation_data(date: str, data: Dict, username: str) -> Dict[str, Any]:
 # 직원 연차 관리 API
 # ============================================================================
 
+def _leave_log_user(username: str = '') -> str:
+    return (username or '').strip() or 'system'
+
+
+def _log_leave_change(username: str, action: str, employee_name: str, details: str = '') -> None:
+    db.add_activity_log(_leave_log_user(username), action, employee_name or '', details or '')
+
+
 @eel.expose
 def get_employee_leave_info(employee_name: str) -> Dict[str, Any]:
     """직원 연차 전체 정보 조회"""
@@ -2367,15 +2375,23 @@ def get_employee_leave_info(employee_name: str) -> Dict[str, Any]:
 
 @eel.expose
 def save_employee_annual_config(employee_name: str, generation_month: int, note: str,
-                                generation_day: int = 1) -> Dict[str, Any]:
+                                generation_day: int = 1, username: str = '') -> Dict[str, Any]:
     """직원 연차 설정 저장"""
     try:
+        target_name = employee_name.strip()
         success = db.save_employee_annual_config(
-            employee_name.strip(),
+            target_name,
             int(generation_month),
             note or '',
             int(generation_day or 1)
         )
+        if success:
+            _log_leave_change(
+                username,
+                '연차 설정 저장',
+                target_name,
+                f"{int(generation_month)}월 {int(generation_day or 1)}일 / {note or ''}".strip()
+            )
         return {'success': success}
     except Exception as e:
         logger.error(f"직원 연차 설정 저장 오류: {e}")
@@ -2384,12 +2400,19 @@ def save_employee_annual_config(employee_name: str, generation_month: int, note:
 
 @eel.expose
 def add_leave_grant(employee_name: str, grant_year: int, grant_month: int,
-                    days: float, note: str) -> Dict[str, Any]:
+                    days: float, note: str, username: str = '') -> Dict[str, Any]:
     """연차 부여 이력 추가"""
     try:
-        new_id = db.add_leave_grant(employee_name.strip(), int(grant_year), int(grant_month),
-                                    float(days), note or '')
+        target_name = employee_name.strip()
+        new_id = db.add_leave_grant(target_name, int(grant_year), int(grant_month),
+                                    float(days), note or '', _leave_log_user(username))
         if new_id >= 0:
+            _log_leave_change(
+                username,
+                '연차 부여 추가',
+                target_name,
+                f"{int(grant_year)}-{int(grant_month):02d} / {float(days):g}일 / {note or ''}".strip()
+            )
             return {'success': True, 'id': new_id}
         return {'success': False, 'message': '추가 실패'}
     except Exception as e:
@@ -2398,10 +2421,18 @@ def add_leave_grant(employee_name: str, grant_year: int, grant_month: int,
 
 
 @eel.expose
-def delete_leave_grant(grant_id: int) -> Dict[str, Any]:
+def delete_leave_grant(grant_id: int, username: str = '') -> Dict[str, Any]:
     """연차 부여 이력 삭제"""
     try:
+        before = db.get_leave_grant_by_id(int(grant_id))
         success = db.delete_leave_grant(int(grant_id))
+        if success and before:
+            _log_leave_change(
+                username,
+                '연차 부여 삭제',
+                before.get('employee_name', ''),
+                f"{before.get('grant_year')}-{int(before.get('grant_month') or 0):02d} / {before.get('days')}일 / {before.get('note') or ''}".strip()
+            )
         return {'success': success}
     except Exception as e:
         logger.error(f"연차 부여 이력 삭제 오류: {e}")
@@ -2409,13 +2440,20 @@ def delete_leave_grant(grant_id: int) -> Dict[str, Any]:
 
 
 @eel.expose
-def add_leave_usage(employee_name: str, use_date: str, leave_type: str, note: str) -> Dict[str, Any]:
+def add_leave_usage(employee_name: str, use_date: str, leave_type: str, note: str, username: str = '') -> Dict[str, Any]:
     """연차 사용 내역 추가"""
     try:
         if leave_type not in ('연차', '반차', '반반차', '공가'):
             return {'success': False, 'message': '유효하지 않은 휴가 종류입니다.'}
-        new_id = db.add_leave_usage(employee_name.strip(), use_date, leave_type, note or '')
+        target_name = employee_name.strip()
+        new_id = db.add_leave_usage(target_name, use_date, leave_type, note or '', _leave_log_user(username))
         if new_id >= 0:
+            _log_leave_change(
+                username,
+                '연차 사용 추가',
+                target_name,
+                f"{use_date} / {leave_type} / {note or ''}".strip()
+            )
             return {'success': True, 'id': new_id}
         return {'success': False, 'message': '추가 실패'}
     except Exception as e:
@@ -2424,14 +2462,50 @@ def add_leave_usage(employee_name: str, use_date: str, leave_type: str, note: st
 
 
 @eel.expose
-def delete_leave_usage(usage_id: int) -> Dict[str, Any]:
+def delete_leave_usage(usage_id: int, username: str = '') -> Dict[str, Any]:
     """연차 사용 내역 삭제"""
     try:
+        before = db.get_leave_usage_by_id(int(usage_id))
         success = db.delete_leave_usage(int(usage_id))
+        if success and before:
+            _log_leave_change(
+                username,
+                '연차 사용 삭제',
+                before.get('employee_name', ''),
+                f"{before.get('use_date')} / {before.get('leave_type')} / {before.get('note') or ''}".strip()
+            )
         return {'success': success}
     except Exception as e:
         logger.error(f"연차 사용 내역 삭제 오류: {e}")
         return {'success': False, 'message': '요청 처리 중 오류가 발생했습니다.'}
+
+
+@eel.expose
+def get_leave_change_logs(employee_name: str = '', limit: int = 30) -> Dict[str, Any]:
+    """최근 연차 변경 이력 조회"""
+    try:
+        actions = (
+            '연차 설정 저장',
+            '연차 부여 추가',
+            '연차 부여 삭제',
+            '연차 사용 추가',
+            '연차 사용 삭제',
+        )
+        params = list(actions)
+        query = f'''
+            SELECT timestamp, user, action, target, details
+            FROM activity_logs
+            WHERE action IN ({','.join(['?'] * len(actions))})
+        '''
+        if employee_name and employee_name.strip():
+            query += ' AND target = ?'
+            params.append(employee_name.strip())
+        query += ' ORDER BY timestamp DESC LIMIT ?'
+        params.append(max(1, min(200, int(limit or 30))))
+        return {'success': True, 'logs': db.select_rows(query, tuple(params))}
+    except Exception as e:
+        logger.error(f"연차 변경 이력 조회 오류: {e}")
+        return {'success': False, 'message': '연차 변경 이력을 불러오지 못했습니다.', 'logs': []}
 
 
 @eel.expose

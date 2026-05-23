@@ -886,6 +886,13 @@ class DatabaseManager:
             logger.error(f"쿼리 실행 실패: {e} | query='{query[:60]}'")
             return []
 
+    def select_rows(self, query: str, params: tuple = ()) -> List[dict]:
+        """Run a SELECT query and let database errors propagate to the caller."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(query, params)
+            return [dict(row) for row in cursor.fetchall()]
+
     # =========================================================================
     # 프로젝트 상태 관련 메서드 (칸반 보드)
     # =========================================================================
@@ -1291,6 +1298,18 @@ class DatabaseManager:
             logger.error(f"직원 연차 설정 저장 실패: {e}")
             return False
 
+    def get_leave_grant_by_id(self, grant_id: int) -> Optional[dict]:
+        """Return one leave grant row for audit logging."""
+        try:
+            rows = self.select_rows(
+                'SELECT * FROM leave_grant_history WHERE id = ?',
+                (int(grant_id),)
+            )
+            return rows[0] if rows else None
+        except Exception as e:
+            logger.error(f"연차 부여 이력 조회 실패: {e}")
+            return None
+
     def add_leave_grant(self, employee_name: str, grant_year: int, grant_month: int,
                         days: float, note: str, created_by: str = '') -> int:
         """연차 부여 이력 추가 → 신규 id 반환 (실패 시 -1)"""
@@ -1374,6 +1393,18 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"연차 사용 내역 삭제 실패: {e}")
             return False
+
+    def get_leave_usage_by_id(self, usage_id: int) -> Optional[dict]:
+        """Return one leave usage row for audit logging."""
+        try:
+            rows = self.select_rows(
+                'SELECT * FROM employee_leave_usage WHERE id = ?',
+                (int(usage_id),)
+            )
+            return rows[0] if rows else None
+        except Exception as e:
+            logger.error(f"연차 사용 이력 조회 실패: {e}")
+            return None
 
     def get_employee_names_for_leave(self) -> list:
         """연차 관련 직원 이름 목록 (직원 명부 + 인증 사용자 + 기존 config) 합집합, 정렬"""
