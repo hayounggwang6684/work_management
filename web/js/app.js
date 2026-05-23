@@ -179,26 +179,25 @@ function formatDateForInput(date) {
     return `${year}-${month}-${day}`;
 }
 
+function loadCurrentWorkTabRecords() {
+    if (currentWorkTab === 'night') {
+        return loadNightRecords();
+    }
+    return loadWorkRecords();
+}
+
 function changeDate(days) {
     if (!checkUnsavedChanges()) return;
     currentDate.setDate(currentDate.getDate() + days);
     updateDateInput();
-    if (currentWorkTab === 'night') {
-        loadNightRecords();
-    } else {
-        loadWorkRecords();
-    }
+    loadCurrentWorkTabRecords();
 }
 
 function goToToday() {
     if (!checkUnsavedChanges()) return;
     currentDate = new Date();
     updateDateInput();
-    if (currentWorkTab === 'night') {
-        loadNightRecords();
-    } else {
-        loadWorkRecords();
-    }
+    loadCurrentWorkTabRecords();
 }
 
 function onDateChange() {
@@ -209,11 +208,7 @@ function onDateChange() {
             return;
         }
         currentDate = new Date(dateInput.value + 'T00:00:00');
-        if (currentWorkTab === 'night') {
-            loadNightRecords();
-        } else {
-            loadWorkRecords();
-        }
+        loadCurrentWorkTabRecords();
     }
 }
 
@@ -1767,6 +1762,7 @@ async function openContractNumberList() {
         }
 
         const contracts = result.contracts || [];
+        const rowsHtml = renderContractNumberListRows(contracts);
         const modal = document.createElement('div');
         modal.id = 'contractNumberListModal';
         modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4';
@@ -1783,28 +1779,16 @@ async function openContractNumberList() {
                 <div class="overflow-auto max-h-[520px]">
                     <table class="w-full min-w-[980px] border-collapse text-sm">
                         <thead>
-                            <tr class="bg-slate-100 sticky top-0 z-10 text-slate-700">
-                                <th class="border border-slate-200 px-3 py-2 text-center w-40">계약 번호</th>
-                                <th class="border border-slate-200 px-3 py-2 text-center w-32">선사</th>
-                                <th class="border border-slate-200 px-3 py-2 text-center w-32">선명</th>
-                                <th class="border border-slate-200 px-3 py-2 text-center w-36">엔진모델</th>
-                                <th class="border border-slate-200 px-3 py-2 text-center">작업내용</th>
+                            <tr class="text-slate-700">
+                                <th class="sticky top-0 z-10 bg-slate-100 border border-slate-200 px-3 py-2 text-center w-40">계약 번호</th>
+                                <th class="sticky top-0 z-10 bg-slate-100 border border-slate-200 px-3 py-2 text-center w-32">선사</th>
+                                <th class="sticky top-0 z-10 bg-slate-100 border border-slate-200 px-3 py-2 text-center w-32">선명</th>
+                                <th class="sticky top-0 z-10 bg-slate-100 border border-slate-200 px-3 py-2 text-center w-36">엔진모델</th>
+                                <th class="sticky top-0 z-10 bg-slate-100 border border-slate-200 px-3 py-2 text-center">작업내용</th>
                             </tr>
                         </thead>
                         <tbody>
-                            ${contracts.length ? contracts.map(row => `
-                                <tr class="hover:bg-blue-50">
-                                    <td class="border border-slate-100 px-3 py-2 text-center font-semibold text-blue-700">${escapeHtml(row.contractNumber || '')}</td>
-                                    <td class="border border-slate-100 px-3 py-2 text-center">${escapeHtml(row.company || '')}</td>
-                                    <td class="border border-slate-100 px-3 py-2 text-center">${escapeHtml(row.shipName || '')}</td>
-                                    <td class="border border-slate-100 px-3 py-2 text-center">${escapeHtml(row.engineModel || '')}</td>
-                                    <td class="border border-slate-100 px-3 py-2">${escapeHtml(row.workContent || '')}</td>
-                                </tr>
-                            `).join('') : `
-                                <tr>
-                                    <td colspan="5" class="px-4 py-10 text-center text-slate-500">표시할 계약 번호가 없습니다.</td>
-                                </tr>
-                            `}
+                            ${rowsHtml}
                         </tbody>
                     </table>
                 </div>
@@ -1826,6 +1810,26 @@ async function openContractNumberList() {
 
 function closeContractNumberList() {
     document.getElementById('contractNumberListModal')?.remove();
+}
+
+function renderContractNumberListRows(contracts) {
+    if (!contracts || contracts.length === 0) {
+        return `
+            <tr>
+                <td colspan="5" class="px-4 py-10 text-center text-slate-500">표시할 계약 번호가 없습니다.</td>
+            </tr>
+        `;
+    }
+
+    return contracts.map(row => `
+        <tr class="hover:bg-blue-50">
+            <td class="border border-slate-100 px-3 py-2 text-center font-semibold text-blue-700">${escapeHtml(row.contractNumber || '')}</td>
+            <td class="border border-slate-100 px-3 py-2 text-center">${escapeHtml(row.company || '')}</td>
+            <td class="border border-slate-100 px-3 py-2 text-center">${escapeHtml(row.shipName || '')}</td>
+            <td class="border border-slate-100 px-3 py-2 text-center">${escapeHtml(row.engineModel || '')}</td>
+            <td class="border border-slate-100 px-3 py-2">${escapeHtml(row.workContent || '')}</td>
+        </tr>
+    `).join('');
 }
 
 // ============================================================================

@@ -2284,7 +2284,12 @@ def get_contract_number_list() -> Dict[str, Any]:
                 ON lb.contract_number = c.contract_number AND lb.rn = 1
             ORDER BY c.contract_number DESC
         '''
-        rows = db.execute_query(query)
+        with db.get_connection() as conn:
+            conn.row_factory = None
+            cursor = conn.cursor()
+            cursor.execute(query)
+            rows = cursor.fetchall()
+
         contracts = []
         for row in rows or []:
             contracts.append({
