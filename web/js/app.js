@@ -124,12 +124,20 @@ function _syncDirtyState() {
     isDirty = !!(dayIsDirty || nightIsDirty);
 }
 
+function _currentUserCanWrite() {
+    return !!(currentUser && currentUser.can_write);
+}
+
 function _hasUnsavedChanges(scope = 'current') {
+    if (!_currentUserCanWrite()) return false;
     if (scope === 'any') return !!(dayIsDirty || nightIsDirty);
     return currentWorkTab === 'night' ? !!nightIsDirty : !!dayIsDirty;
 }
 
 function _setDirtyForTab(tab, value) {
+    if (value && !_currentUserCanWrite()) {
+        value = false;
+    }
     if (tab === 'night') {
         nightIsDirty = !!value;
     } else {
@@ -139,6 +147,7 @@ function _setDirtyForTab(tab, value) {
 }
 
 function _markCurrentTabDirty() {
+    if (!_currentUserCanWrite()) return;
     _setDirtyForTab(currentWorkTab, true);
 }
 
@@ -1796,7 +1805,7 @@ function stopAutoSave() {
 
 // ── 쓰기 권한에 따른 UI 적용 ─────────────────────────────────────────
 function _applyWritePermissionUI() {
-    const canWrite = !!(currentUser && currentUser.can_write);
+    const canWrite = _currentUserCanWrite();
     const readOnly = !canWrite;
 
     // 입력 필드 읽기 전용 처리 (주간 + 야간 테이블 모두)
@@ -1820,6 +1829,8 @@ function _applyWritePermissionUI() {
 
     // 자동 저장 제어
     if (readOnly) {
+        _setDirtyForTab('day', false);
+        _setDirtyForTab('night', false);
         stopAutoSave();
     }
 }

@@ -2,6 +2,7 @@
 
 ## Bug Fixes Applied
 
+- 2026-06-09: Fixed a read-only daily work refresh freeze by making users without write permission opt out of dirty-state tracking, unsaved-change refresh prompts, and autosave state; applying read-only UI now also clears any stale day/night dirty flags.
 - 2026-05-24: Added save-before-commit previews for day/night work changes, detailed employee leave change history backed by activity logs, ERP dry-run input previews, a strict DB `select_rows()` helper for new failure-visible queries, and a release verifier to catch version/patch ZIP packaging drift before upload.
 - 2026-05-24: Hardened the v2.3.28 daily-work controls by moving the contract-list sticky header behavior onto each table header cell, making contract-list SQL errors surface as API failures instead of empty successful lists, and consolidating repeated current-tab reload logic.
 - 2026-05-23: Added daily work input convenience controls: a pictogram-only today navigation button between the next-day and previous-work buttons, plus a contract-number list popup before refresh with sticky headers and scrollable contract/company/ship/engine/work-content rows.
