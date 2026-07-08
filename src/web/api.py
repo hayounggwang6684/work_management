@@ -393,6 +393,8 @@ def admin_get_owner_company_catalog(admin_id: str = '') -> Dict[str, Any]:
             }
 
         owner_map: Dict[str, Dict[str, Any]] = {}
+        dismissed_owner_suggestions = _load_string_set_setting(OWNER_COMPANY_SUGGESTION_DISMISS_KEY)
+        dismissed_ship_suggestions = _load_string_set_setting(OWNER_SHIP_SUGGESTION_DISMISS_KEY)
 
         def _ensure_owner(owner_name: str) -> Dict[str, Any]:
             return owner_map.setdefault(owner_name, {
@@ -478,6 +480,7 @@ def admin_get_owner_company_catalog(admin_id: str = '') -> Dict[str, Any]:
                     'engineModels': sorted(list(ship['engineModels']), key=_mixed_locale_sort_key),
                 })
             ships.sort(key=lambda item: _mixed_locale_sort_key(item['shipName']))
+            ship_names = [item['shipName'] for item in ships]
             owners.append({
                 'name': owner_name,
                 'workRecordCount': owner['workRecordCount'],
@@ -486,14 +489,33 @@ def admin_get_owner_company_catalog(admin_id: str = '') -> Dict[str, Any]:
                 'totalCount': owner['workRecordCount'] + owner['holidayCount'] + owner['projectCount'],
                 'shipCount': len(ships),
                 'ships': ships,
-                'shipSuggestions': _build_merge_suggestions([item['shipName'] for item in ships]),
+                'shipSuggestions': _build_merge_suggestions(
+                    ship_names,
+                    ignored_keys=dismissed_ship_suggestions,
+                    suggestion_key_builder=lambda names, owner_name=owner_name: _build_owner_ship_suggestion_key(owner_name, names),
+                ),
+                'dismissedShipSuggestionCount': _count_dismissed_merge_suggestions(
+                    ship_names,
+                    dismissed_ship_suggestions,
+                    suggestion_key_builder=lambda names, owner_name=owner_name: _build_owner_ship_suggestion_key(owner_name, names),
+                ),
             })
 
         owners.sort(key=lambda item: _mixed_locale_sort_key(item['name']))
+        owner_names = [item['name'] for item in owners]
         return {
             'success': True,
             'owners': owners,
-            'ownerSuggestions': _build_merge_suggestions([item['name'] for item in owners]),
+            'ownerSuggestions': _build_merge_suggestions(
+                owner_names,
+                ignored_keys=dismissed_owner_suggestions,
+                suggestion_key_builder=_build_owner_company_suggestion_key,
+            ),
+            'dismissedOwnerSuggestionCount': _count_dismissed_merge_suggestions(
+                owner_names,
+                dismissed_owner_suggestions,
+                suggestion_key_builder=_build_owner_company_suggestion_key,
+            ),
         }
     except Exception as e:
         logger.error(f"선사 목록 조회 오류: {e}")
@@ -502,7 +524,90 @@ def admin_get_owner_company_catalog(admin_id: str = '') -> Dict[str, Any]:
             'message': '선사 목록 조회 중 오류가 발생했습니다.',
             'owners': [],
             'ownerSuggestions': [],
+            'dismissedOwnerSuggestionCount': 0,
         }
+
+
+@eel.expose
+def admin_dismiss_owner_company_suggestion(source_names: List[str], admin_id: str = '') -> Dict[str, Any]:
+    try:
+        if not _get_admin_user(admin_id):
+            return {'success': False, 'message': '관리자 권한이 필요합니다.'}
+        suggestion_key = _build_owner_company_suggestion_key(source_names or [])
+        normalized_sources = sorted({
+            _normalize_holiday_worker_name(name)
+            for name in (source_names or [])
+            if _normalize_holiday_worker_name(name)
+        })
+        if len(normalized_sources) < 2 or not suggestion_key:
+            return {'success': False, 'message': '해제할 중복 의심 선사를 2개 이상 선택하세요.'}
+        dismissed = _load_string_set_setting(OWNER_COMPANY_SUGGESTION_DISMISS_KEY)
+        dismissed.add(suggestion_key)
+        _save_string_set_setting(OWNER_COMPANY_SUGGESTION_DISMISS_KEY, dismissed)
+        db.add_activity_log(admin_id, 'dismiss_owner_company_suggestion', ', '.join(normalized_sources), '')
+        return {'success': True, 'message': '선사 중복 의심을 해제했습니다.'}
+    except Exception as e:
+        logger.error(f"선사 중복 의심 해제 오류: {e}")
+        return {'success': False, 'message': '선사 중복 의심 해제 중 오류가 발생했습니다.'}
+
+
+@eel.expose
+def admin_reset_owner_company_suggestion_dismissals(admin_id: str = '') -> Dict[str, Any]:
+    try:
+        if not _get_admin_user(admin_id):
+            return {'success': False, 'message': '관리자 권한이 필요합니다.'}
+        _save_string_set_setting(OWNER_COMPANY_SUGGESTION_DISMISS_KEY, set())
+        db.add_activity_log(admin_id, 'reset_owner_company_suggestion_dismissals', '', '')
+        return {'success': True, 'message': '해제한 선사 중복 의심 목록을 초기화했습니다.'}
+    except Exception as e:
+        logger.error(f"선사 중복 의심 초기화 오류: {e}")
+        return {'success': False, 'message': '선사 중복 의심 초기화 중 오류가 발생했습니다.'}
+
+
+@eel.expose
+def admin_dismiss_owner_ship_suggestion(owner_name: str, source_names: List[str], admin_id: str = '') -> Dict[str, Any]:
+    try:
+        if not _get_admin_user(admin_id):
+            return {'success': False, 'message': '관리자 권한이 필요합니다.'}
+        owner_display = str(owner_name or '').strip()
+        suggestion_key = _build_owner_ship_suggestion_key(owner_display, source_names or [])
+        normalized_sources = sorted({
+            _display_ship_label(name)
+            for name in (source_names or [])
+            if _display_ship_label(name) and _display_ship_label(name) != EMPTY_SHIP_LABEL
+        })
+        if not owner_display or len(normalized_sources) < 2 or not suggestion_key:
+            return {'success': False, 'message': '해제할 중복 의심 선박을 2개 이상 선택하세요.'}
+        dismissed = _load_string_set_setting(OWNER_SHIP_SUGGESTION_DISMISS_KEY)
+        dismissed.add(suggestion_key)
+        _save_string_set_setting(OWNER_SHIP_SUGGESTION_DISMISS_KEY, dismissed)
+        db.add_activity_log(admin_id, 'dismiss_owner_ship_suggestion', f'{owner_display}: {", ".join(normalized_sources)}', '')
+        return {'success': True, 'message': '선박 중복 의심을 해제했습니다.'}
+    except Exception as e:
+        logger.error(f"선박 중복 의심 해제 오류: {e}")
+        return {'success': False, 'message': '선박 중복 의심 해제 중 오류가 발생했습니다.'}
+
+
+@eel.expose
+def admin_reset_owner_ship_suggestion_dismissals(owner_name: str, admin_id: str = '') -> Dict[str, Any]:
+    try:
+        if not _get_admin_user(admin_id):
+            return {'success': False, 'message': '관리자 권한이 필요합니다.'}
+        owner_display = str(owner_name or '').strip()
+        owner_key = _normalize_company_label(owner_display)
+        if not owner_key:
+            return {'success': False, 'message': '선사를 먼저 선택하세요.'}
+        dismissed = _load_string_set_setting(OWNER_SHIP_SUGGESTION_DISMISS_KEY)
+        filtered = {
+            item for item in dismissed
+            if not item.startswith(f'{owner_key}::')
+        }
+        _save_string_set_setting(OWNER_SHIP_SUGGESTION_DISMISS_KEY, filtered)
+        db.add_activity_log(admin_id, 'reset_owner_ship_suggestion_dismissals', owner_display, '')
+        return {'success': True, 'message': '해제한 선박 중복 의심 목록을 초기화했습니다.'}
+    except Exception as e:
+        logger.error(f"선박 중복 의심 초기화 오류: {e}")
+        return {'success': False, 'message': '선박 중복 의심 초기화 중 오류가 발생했습니다.'}
 
 
 @eel.expose
@@ -1592,6 +1697,8 @@ def _holiday_value_to_ot(work_value: Any) -> float:
 
 EMPTY_SHIP_LABEL = '(선박 미입력)'
 LAST_MERGE_UNDO_KEY = 'admin.last_merge_undo'
+OWNER_COMPANY_SUGGESTION_DISMISS_KEY = 'admin.dismissed_owner_company_suggestions'
+OWNER_SHIP_SUGGESTION_DISMISS_KEY = 'admin.dismissed_owner_ship_suggestions'
 
 
 def _normalize_holiday_worker_name(name: Any) -> str:
@@ -1627,6 +1734,54 @@ def _normalize_merge_suggestion_key(name: Any) -> str:
     if not text or text == EMPTY_SHIP_LABEL:
         return ''
     return ''.join(ch.casefold() for ch in text if ch.isalnum())
+
+
+def _build_suggestion_group_key(names: List[str], ship_mode: bool = False) -> str:
+    normalized_names = set()
+    for raw_name in names or []:
+        if ship_mode:
+            text = _display_ship_label(raw_name)
+            if not text or text == EMPTY_SHIP_LABEL:
+                continue
+        else:
+            text = _normalize_holiday_worker_name(raw_name)
+            if not text:
+                continue
+        normalized_names.add(text.casefold())
+    return '||'.join(sorted(normalized_names))
+
+
+def _build_owner_company_suggestion_key(names: List[str]) -> str:
+    return _build_suggestion_group_key(names, ship_mode=False)
+
+
+def _build_owner_ship_suggestion_key(owner_name: str, names: List[str]) -> str:
+    owner_key = _normalize_company_label(owner_name)
+    group_key = _build_suggestion_group_key(names, ship_mode=True)
+    if not owner_key or not group_key:
+        return ''
+    return f'{owner_key}::{group_key}'
+
+
+def _load_string_set_setting(setting_key: str) -> set[str]:
+    raw_value = db.get_setting(setting_key, '')
+    if not raw_value:
+        return set()
+    try:
+        parsed = json.loads(raw_value)
+        if not isinstance(parsed, list):
+            return set()
+        return {
+            str(item).strip()
+            for item in parsed
+            if str(item).strip()
+        }
+    except Exception:
+        return set()
+
+
+def _save_string_set_setting(setting_key: str, values: set[str]) -> None:
+    db.set_setting(setting_key, json.dumps(sorted(values), ensure_ascii=False))
 
 
 def _levenshtein_distance_limit_one(left: str, right: str) -> int:
@@ -1673,7 +1828,9 @@ def _is_likely_merge_suggestion_pair(left_key: str, right_key: str) -> bool:
     return ratio >= 0.84
 
 
-def _build_merge_suggestions(names: List[str], limit: int = 6) -> List[Dict[str, Any]]:
+def _build_merge_suggestions(names: List[str], limit: int = 6,
+                             ignored_keys: Optional[set[str]] = None,
+                             suggestion_key_builder=None) -> List[Dict[str, Any]]:
     unique_names: List[str] = []
     seen_names = set()
     for raw_name in names or []:
@@ -1699,8 +1856,12 @@ def _build_merge_suggestions(names: List[str], limit: int = 6) -> List[Dict[str,
         if names_key in seen_groups:
             continue
         seen_groups.add(names_key)
+        suggestion_names = list(group)
+        suggestion_key = suggestion_key_builder(suggestion_names) if suggestion_key_builder else _build_owner_company_suggestion_key(suggestion_names)
+        if ignored_keys and suggestion_key in ignored_keys:
+            continue
         suggestions.append({
-            'names': list(group),
+            'names': suggestion_names,
             'label': ' / '.join(group),
             'reason': '형식 차이',
         })
@@ -1723,8 +1884,12 @@ def _build_merge_suggestions(names: List[str], limit: int = 6) -> List[Dict[str,
             if names_key in seen_groups:
                 continue
             seen_groups.add(names_key)
+            suggestion_names = [left_name, right_name]
+            suggestion_key = suggestion_key_builder(suggestion_names) if suggestion_key_builder else _build_owner_company_suggestion_key(suggestion_names)
+            if ignored_keys and suggestion_key in ignored_keys:
+                continue
             suggestions.append({
-                'names': [left_name, right_name],
+                'names': suggestion_names,
                 'label': f'{left_name} / {right_name}',
                 'reason': '유사 이름',
             })
@@ -1732,6 +1897,21 @@ def _build_merge_suggestions(names: List[str], limit: int = 6) -> List[Dict[str,
                 return suggestions
 
     return suggestions
+
+
+def _count_dismissed_merge_suggestions(names: List[str], ignored_keys: set[str],
+                                       suggestion_key_builder=None) -> int:
+    if not ignored_keys:
+        return 0
+    dismissed_count = 0
+    seen_keys = set()
+    for suggestion in _build_merge_suggestions(names, limit=1000):
+        suggestion_names = suggestion.get('names') or []
+        suggestion_key = suggestion_key_builder(suggestion_names) if suggestion_key_builder else _build_owner_company_suggestion_key(suggestion_names)
+        if suggestion_key and suggestion_key in ignored_keys and suggestion_key not in seen_keys:
+            dismissed_count += 1
+            seen_keys.add(suggestion_key)
+    return dismissed_count
 
 
 def _build_undo_snapshot(action: str, target: str, details: str,

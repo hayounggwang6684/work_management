@@ -350,6 +350,7 @@ const _adminDbState = {
     subtab: 'excel',
     owners: [],
     ownerSuggestions: [],
+    dismissedOwnerSuggestionCount: 0,
     selectedOwner: '',
     selectedOwners: new Set(),
     selectedOwnerShips: new Set(),
@@ -386,20 +387,42 @@ function decodeSuggestionPayload(payload) {
     }
 }
 
-function renderMergeSuggestionButtons(suggestions, applyHandlerName, emptyMessage) {
+function renderMergeSuggestionButtons(suggestions, applyHandlerName, emptyMessage, options = {}) {
     if (!Array.isArray(suggestions) || suggestions.length === 0) {
         return `<div class="text-xs text-slate-400">${escapeHtml(emptyMessage)}</div>`;
     }
+    const dismissHandlerName = options?.dismissHandlerName || '';
+    const extraArgs = Array.isArray(options?.extraArgs) ? options.extraArgs : [];
     return suggestions.map(suggestion => {
         const names = Array.isArray(suggestion?.names) ? suggestion.names.filter(Boolean) : [];
         const payload = encodeSuggestionPayload(names);
         const reason = suggestion?.reason ? `<div class="text-[11px] text-slate-500 mt-1">${escapeHtml(suggestion.reason)}</div>` : '';
+        const extraArgSource = extraArgs.map(arg => `'${escapeJs(String(arg))}'`).join(', ');
+        const callArgs = extraArgSource ? `${extraArgSource}, '${escapeJs(payload)}'` : `'${escapeJs(payload)}'`;
+        if (!dismissHandlerName) {
+            return `
+                <button onclick="${applyHandlerName}(${callArgs})"
+                        class="w-full text-left rounded-lg border border-amber-200 bg-amber-50 hover:bg-amber-100 px-3 py-2 transition">
+                    <div class="text-sm font-semibold text-amber-900">${escapeHtml(suggestion?.label || names.join(', '))}</div>
+                    ${reason}
+                </button>
+            `;
+        }
         return `
-            <button onclick="${applyHandlerName}('${escapeJs(payload)}')"
-                    class="w-full text-left rounded-lg border border-amber-200 bg-amber-50 hover:bg-amber-100 px-3 py-2 transition">
+            <div class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
                 <div class="text-sm font-semibold text-amber-900">${escapeHtml(suggestion?.label || names.join(', '))}</div>
                 ${reason}
-            </button>
+                <div class="mt-2 flex gap-2">
+                    <button onclick="${applyHandlerName}(${callArgs})"
+                            class="px-3 py-1.5 rounded-md bg-amber-500 text-white text-xs font-semibold hover:bg-amber-600 transition">
+                        병합
+                    </button>
+                    <button onclick="${dismissHandlerName}(${callArgs})"
+                            class="px-3 py-1.5 rounded-md border border-slate-300 bg-white text-slate-700 text-xs font-semibold hover:bg-slate-100 transition">
+                        중복 의심 해제
+                    </button>
+                </div>
+            </div>
         `;
     }).join('');
 }
@@ -475,17 +498,115 @@ function applyOwnerCompanySuggestion(payload) {
 }
 window.applyOwnerCompanySuggestion = applyOwnerCompanySuggestion;
 
-function applyOwnerShipSuggestion(payload) {
+async function dismissOwnerCompanySuggestion(payload) {
+    const names = decodeSuggestionPayload(payload);
+    if (names.length < 2) {
+        showToast('해제할 선사 후보가 충분하지 않습니다.', 'warning');
+        return;
+    }
+    if (!confirm(`"${names.join(', ')}" 조합을 선사 중복 의심 목록에서 제외할까요?`)) return;
+    try {
+        const result = await eel.admin_dismiss_owner_company_suggestion(
+            names,
+            currentUser?.user_id || ''
+        )();
+        if (!result || !result.success) {
+            showCustomAlert('오류', result?.message || '선사 중복 의심 해제에 실패했습니다.', 'error');
+            return;
+        }
+        showToast(result.message || '선사 중복 의심을 해제했습니다.', 'success');
+        await loadAdminOwnerCompanyCatalog(true);
+    } catch (error) {
+        console.error('선사 중복 의심 해제 오류:', error);
+        showCustomAlert('오류', '선사 중복 의심 해제 중 오류가 발생했습니다.', 'error');
+    }
+}
+window.dismissOwnerCompanySuggestion = dismissOwnerCompanySuggestion;
+
+async function resetOwnerCompanySuggestionDismissals() {
+    if (!confirm('해제한 선사 중복 의심 목록을 다시 표시할까요?')) return;
+    try {
+        const result = await eel.admin_reset_owner_company_suggestion_dismissals(
+            currentUser?.user_id || ''
+        )();
+        if (!result || !result.success) {
+            showCustomAlert('오류', result?.message || '선사 중복 의심 초기화에 실패했습니다.', 'error');
+            return;
+        }
+        showToast(result.message || '선사 중복 의심 해제를 초기화했습니다.', 'success');
+        await loadAdminOwnerCompanyCatalog(true);
+    } catch (error) {
+        console.error('선사 중복 의심 초기화 오류:', error);
+        showCustomAlert('오류', '선사 중복 의심 초기화 중 오류가 발생했습니다.', 'error');
+    }
+}
+window.resetOwnerCompanySuggestionDismissals = resetOwnerCompanySuggestionDismissals;
+
+function applyOwnerShipSuggestion(ownerName, payload) {
     const names = decodeSuggestionPayload(payload);
     if (names.length < 2) {
         showToast('추천 후보가 충분하지 않습니다.', 'warning');
         return;
     }
+    if (ownerName) _adminDbState.selectedOwner = ownerName;
     _adminDbState.selectedOwnerShips = new Set(names);
     renderAdminOwnerCompanyList();
     promptMergeSelectedOwnerShips();
 }
 window.applyOwnerShipSuggestion = applyOwnerShipSuggestion;
+
+async function dismissOwnerShipSuggestion(ownerName, payload) {
+    const names = decodeSuggestionPayload(payload);
+    if (names.length < 2) {
+        showToast('해제할 선박 후보가 충분하지 않습니다.', 'warning');
+        return;
+    }
+    if (!confirm(`"${names.join(', ')}" 조합을 선박 중복 의심 목록에서 제외할까요?`)) return;
+    try {
+        const result = await eel.admin_dismiss_owner_ship_suggestion(
+            ownerName || _adminDbState.selectedOwner || '',
+            names,
+            currentUser?.user_id || ''
+        )();
+        if (!result || !result.success) {
+            showCustomAlert('오류', result?.message || '선박 중복 의심 해제에 실패했습니다.', 'error');
+            return;
+        }
+        showToast(result.message || '선박 중복 의심을 해제했습니다.', 'success');
+        if (ownerName) _adminDbState.selectedOwner = ownerName;
+        await loadAdminOwnerCompanyCatalog(true);
+    } catch (error) {
+        console.error('선박 중복 의심 해제 오류:', error);
+        showCustomAlert('오류', '선박 중복 의심 해제 중 오류가 발생했습니다.', 'error');
+    }
+}
+window.dismissOwnerShipSuggestion = dismissOwnerShipSuggestion;
+
+async function resetOwnerShipSuggestionDismissals(ownerName) {
+    const effectiveOwnerName = ownerName || _adminDbState.selectedOwner || '';
+    if (!effectiveOwnerName) {
+        showToast('선사를 먼저 선택하세요.', 'warning');
+        return;
+    }
+    if (!confirm(`"${effectiveOwnerName}"의 해제한 선박 중복 의심 목록을 다시 표시할까요?`)) return;
+    try {
+        const result = await eel.admin_reset_owner_ship_suggestion_dismissals(
+            effectiveOwnerName,
+            currentUser?.user_id || ''
+        )();
+        if (!result || !result.success) {
+            showCustomAlert('오류', result?.message || '선박 중복 의심 초기화에 실패했습니다.', 'error');
+            return;
+        }
+        showToast(result.message || '선박 중복 의심 해제를 초기화했습니다.', 'success');
+        _adminDbState.selectedOwner = effectiveOwnerName;
+        await loadAdminOwnerCompanyCatalog(true);
+    } catch (error) {
+        console.error('선박 중복 의심 초기화 오류:', error);
+        showCustomAlert('오류', '선박 중복 의심 초기화 중 오류가 발생했습니다.', 'error');
+    }
+}
+window.resetOwnerShipSuggestionDismissals = resetOwnerShipSuggestionDismissals;
 
 function applyVendorWorkerSuggestion(payload) {
     const names = decodeSuggestionPayload(payload);
@@ -574,6 +695,7 @@ async function loadAdminOwnerCompanyCatalog(force = false) {
         }
         _adminDbState.owners = result.owners || [];
         _adminDbState.ownerSuggestions = result.ownerSuggestions || [];
+        _adminDbState.dismissedOwnerSuggestionCount = result.dismissedOwnerSuggestionCount || 0;
         if (!_adminDbState.selectedOwner && _adminDbState.owners.length > 0) {
             _adminDbState.selectedOwner = _adminDbState.owners[0].name;
         }
@@ -604,8 +726,21 @@ function renderAdminOwnerCompanyList() {
     if (suggestionsEl) {
         suggestionsEl.innerHTML = `
             <div class="space-y-2">
-                <div class="text-xs font-semibold text-amber-700">중복 의심 선사</div>
-                ${renderMergeSuggestionButtons(_adminDbState.ownerSuggestions, 'applyOwnerCompanySuggestion', '추천 후보가 없습니다.')}
+                <div class="flex items-center justify-between gap-3">
+                    <div class="text-xs font-semibold text-amber-700">중복 의심 선사</div>
+                    ${_adminDbState.dismissedOwnerSuggestionCount > 0 ? `
+                        <button onclick="resetOwnerCompanySuggestionDismissals()"
+                                class="px-2 py-1 rounded-md border border-slate-300 bg-white text-[11px] font-semibold text-slate-600 hover:bg-slate-100 transition">
+                            해제 초기화 ${_adminDbState.dismissedOwnerSuggestionCount}건
+                        </button>
+                    ` : ''}
+                </div>
+                ${renderMergeSuggestionButtons(
+                    _adminDbState.ownerSuggestions,
+                    'applyOwnerCompanySuggestion',
+                    '추천 후보가 없습니다.',
+                    { dismissHandlerName: 'dismissOwnerCompanySuggestion' }
+                )}
             </div>
         `;
     }
@@ -643,9 +778,22 @@ function renderAdminOwnerCompanyList() {
             <div class="text-xs text-slate-400 mt-2">선박도 Ctrl 선택 후 우클릭으로 병합할 수 있습니다.</div>
         </div>
         <div class="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3">
-            <div class="text-xs font-semibold text-amber-700 mb-2">중복 의심 선박</div>
+            <div class="mb-2 flex items-center justify-between gap-3">
+                <div class="text-xs font-semibold text-amber-700">중복 의심 선박</div>
+                ${owner.dismissedShipSuggestionCount > 0 ? `
+                    <button onclick="resetOwnerShipSuggestionDismissals('${escapeJs(owner.name)}')"
+                            class="px-2 py-1 rounded-md border border-slate-300 bg-white text-[11px] font-semibold text-slate-600 hover:bg-slate-100 transition">
+                        해제 초기화 ${owner.dismissedShipSuggestionCount}건
+                    </button>
+                ` : ''}
+            </div>
             <div class="space-y-2">
-                ${renderMergeSuggestionButtons(owner.shipSuggestions || [], 'applyOwnerShipSuggestion', '추천 후보가 없습니다.')}
+                ${renderMergeSuggestionButtons(
+                    owner.shipSuggestions || [],
+                    'applyOwnerShipSuggestion',
+                    '추천 후보가 없습니다.',
+                    { dismissHandlerName: 'dismissOwnerShipSuggestion', extraArgs: [owner.name] }
+                )}
             </div>
         </div>
         <div class="space-y-3">

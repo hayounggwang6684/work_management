@@ -2,6 +2,7 @@
 
 ## Bug Fixes Applied
 
+- 2026-07-08: Added dismissible duplicate-suspicion controls to 관리자 > DB 관리 > 선사 목록 so false-positive 선사/선박 merge suggestions can be marked as "중복 의심 해제", persisted in `app_settings`, filtered out of future suggestion lists, and restored later with per-section reset buttons.
 - 2026-06-09: Fixed a read-only daily work refresh freeze by making users without write permission opt out of dirty-state tracking, unsaved-change refresh prompts, and autosave state; applying read-only UI now also clears any stale day/night dirty flags.
 - 2026-05-24: Added save-before-commit previews for day/night work changes, detailed employee leave change history backed by activity logs, ERP dry-run input previews, a strict DB `select_rows()` helper for new failure-visible queries, and a release verifier to catch version/patch ZIP packaging drift before upload.
 - 2026-05-24: Hardened the v2.3.28 daily-work controls by moving the contract-list sticky header behavior onto each table header cell, making contract-list SQL errors surface as API failures instead of empty successful lists, and consolidating repeated current-tab reload logic.
