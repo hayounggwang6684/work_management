@@ -156,7 +156,7 @@ def login_as_guest() -> Dict[str, Any]:
     서버측에서는 @require('guest') 등급 함수만 통과한다.
     """
     try:
-        if not config.get('app.allow_guest_readonly', False):
+        if not config.get('app.allow_guest_readonly', True):
             return {'success': False, 'message': '조회 전용 접속이 비활성화되어 있습니다.'}
         session = begin_guest_session()
         return {
@@ -195,7 +195,7 @@ def logout() -> Dict[str, Any]:
 def get_guest_mode_enabled() -> Dict[str, Any]:
     """로그인 화면에 '조회 전용으로 둘러보기' 버튼을 띄울지 여부"""
     try:
-        return {'success': True, 'enabled': bool(config.get('app.allow_guest_readonly', False))}
+        return {'success': True, 'enabled': bool(config.get('app.allow_guest_readonly', True))}
     except Exception:
         return {'success': True, 'enabled': False}
 
