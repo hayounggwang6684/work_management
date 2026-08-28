@@ -16,6 +16,7 @@ build_patch.py - 표준 패치 ZIP 빌드 스크립트
     ★ 이 스크립트 대신 직접 zipfile.write()로 빌드하면 래퍼 폴더가 누락될 수 있음.
 """
 
+import re
 import sys
 import json
 import zipfile
@@ -31,6 +32,17 @@ def build_patch(version: str, source_files: list[str]):
 
     # 패치 디렉토리 생성
     patch_dir.mkdir(parents=True, exist_ok=True)
+
+    # index.html 의 ?v= 캐시버스터를 릴리스 버전으로 동기화.
+    # 이게 고정돼 있으면 브라우저가 옛 js 를 캐시에서 꺼내 써서 JS 패치가
+    # 통째로 무시된다 (v1.0.8 에 얼어붙어 있던 것을 v2.3.35 에서 발견).
+    index = repo_root / "web" / "index.html"
+    if index.exists():
+        html = index.read_text(encoding="utf-8")
+        bumped = re.sub(r'(\.js\?v=)[\d.]+', rf'\g<1>{version}', html)
+        if bumped != html:
+            index.write_text(bumped, encoding="utf-8", newline="")
+            print(f"  index.html 캐시버스터 → ?v={version}")
 
     # patch.json 생성
     files_list = []
