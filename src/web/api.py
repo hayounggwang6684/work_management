@@ -7,6 +7,11 @@ import re
 import threading
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
+
+from .permissions import (
+    require, begin_session, begin_guest_session, end_session,
+    current_user, is_guest, is_authenticated,
+)
 from ..business.work_record_service import work_record_service
 from ..business.calculations import separate_workers, split_manpower_by_type
 from ..database.db_manager import db
@@ -69,12 +74,14 @@ def _date_to_md(date_str: str) -> str:
 # ============================================================================
 
 @eel.expose
+@require('public')
 def ping() -> bool:
     """Python 백엔드 연결 확인용 (스플래시 → 로그인 전환 트리거)"""
     return True
 
 
 @eel.expose
+@require('guest')
 def open_external_url(url: str) -> bool:
     """시스템 기본 브라우저/앱으로 URL 열기 (Eel 앱 내 target=_blank 대체)"""
     try:
@@ -96,6 +103,7 @@ def open_external_url(url: str) -> bool:
 # ============================================================================
 
 @eel.expose
+@require('public')
 def authenticate(user_id: str, password: str) -> Dict[str, Any]:
     """사용자 인증"""
     try:
@@ -119,25 +127,81 @@ def authenticate(user_id: str, password: str) -> Dict[str, Any]:
                 return {'success': False, 'message': err}
         
         # 로그인 성공
-        return {
-            'success': True,
-            'user': {
-                'user_id': result['user_id'],
-                'full_name': result['full_name'],
-                'role': result['role'],
-                'client_version': result.get('client_version', ''),
-                'tray_mode': bool(result.get('tray_mode', 0)),
-                'leave_report_edit': bool(result.get('leave_report_edit', 0)),
-                'can_write': bool(result.get('can_write', 0)),
-                'erp_input': bool(result.get('erp_input', 0))
-            }
+        user_payload = {
+            'user_id': result['user_id'],
+            'full_name': result['full_name'],
+            'role': result['role'],
+            'client_version': result.get('client_version', ''),
+            'tray_mode': bool(result.get('tray_mode', 0)),
+            'leave_report_edit': bool(result.get('leave_report_edit', 0)),
+            'can_write': bool(result.get('can_write', 0)),
+            'erp_input': bool(result.get('erp_input', 0))
         }
+        # 서버측 세션 기록 — 이후 모든 권한 판정의 유일한 근거
+        begin_session(user_payload)
+        return {'success': True, 'user': user_payload}
     except Exception as e:
         logger.error(f"인증 오류: {e}")
         return {'success': False, 'message': '인증 중 오류가 발생했습니다.'}
 
 
 @eel.expose
+@require('public')
+def login_as_guest() -> Dict[str, Any]:
+    """
+    로그인 없이 조회 전용으로 접속 (게스트 세션).
+
+    게스트는 can_write=0 이므로 프론트엔드의 기존 _applyWritePermissionUI() 경로가
+    그대로 적용되어 입력 readonly / 저장 버튼 숨김 / 자동저장 중단이 걸린다.
+    서버측에서는 @require('guest') 등급 함수만 통과한다.
+    """
+    try:
+        if not config.get('app.allow_guest_readonly', False):
+            return {'success': False, 'message': '조회 전용 접속이 비활성화되어 있습니다.'}
+        session = begin_guest_session()
+        return {
+            'success': True,
+            'user': {
+                'user_id': session['user_id'],
+                'full_name': session['full_name'],
+                'role': session['role'],
+                'client_version': '',
+                'tray_mode': False,
+                'leave_report_edit': False,
+                'can_write': False,
+                'erp_input': False,
+                'is_guest': True,
+            }
+        }
+    except Exception as e:
+        logger.error(f"게스트 접속 오류: {e}")
+        return {'success': False, 'message': '요청 처리 중 오류가 발생했습니다.'}
+
+
+@eel.expose
+@require('public')
+def logout() -> Dict[str, Any]:
+    """로그아웃 — 서버측 세션 파기"""
+    try:
+        end_session()
+        return {'success': True}
+    except Exception as e:
+        logger.error(f"로그아웃 오류: {e}")
+        return {'success': False, 'message': '요청 처리 중 오류가 발생했습니다.'}
+
+
+@eel.expose
+@require('public')
+def get_guest_mode_enabled() -> Dict[str, Any]:
+    """로그인 화면에 '조회 전용으로 둘러보기' 버튼을 띄울지 여부"""
+    try:
+        return {'success': True, 'enabled': bool(config.get('app.allow_guest_readonly', False))}
+    except Exception:
+        return {'success': True, 'enabled': False}
+
+
+@eel.expose
+@require('login')
 def create_remember_token(user_id: str) -> Dict[str, Any]:
     """자동 로그인 토큰 생성"""
     try:
@@ -151,12 +215,14 @@ def create_remember_token(user_id: str) -> Dict[str, Any]:
 
 
 @eel.expose
+@require('public')
 def auto_login(token: str) -> Dict[str, Any]:
     """세션 토큰으로 자동 로그인"""
     try:
         user = auth_manager.validate_remember_token(token)
         if user:
             days_remaining = auth_manager.get_token_days_remaining(token)
+            begin_session(user)
             return {'success': True, 'user': user, 'days_remaining': days_remaining}
         return {'success': False, 'message': '토큰이 만료되었거나 유효하지 않습니다.'}
     except Exception as e:
@@ -165,6 +231,7 @@ def auto_login(token: str) -> Dict[str, Any]:
 
 
 @eel.expose
+@require('public')
 def clear_remember_token(token: str) -> Dict[str, Any]:
     """자동 로그인 토큰 삭제 (로그아웃 시)"""
     try:
@@ -175,6 +242,7 @@ def clear_remember_token(token: str) -> Dict[str, Any]:
 
 
 @eel.expose
+@require('public')
 def register_user(user_id: str, password: str, full_name: str) -> Dict[str, Any]:
     """사용자 등록 요청"""
     try:
@@ -205,6 +273,7 @@ def register_user(user_id: str, password: str, full_name: str) -> Dict[str, Any]
 # ============================================================================
 
 @eel.expose
+@require('admin')
 def admin_get_all_users(admin_id: str = '') -> List[Dict[str, Any]]:
     """모든 사용자 조회 (관리자)"""
     try:
@@ -219,6 +288,7 @@ def admin_get_all_users(admin_id: str = '') -> List[Dict[str, Any]]:
 
 
 @eel.expose
+@require('admin')
 def admin_get_pending_requests(admin_id: str = '') -> List[Dict[str, Any]]:
     """승인 대기 요청 조회 (관리자)"""
     try:
@@ -233,6 +303,7 @@ def admin_get_pending_requests(admin_id: str = '') -> List[Dict[str, Any]]:
 
 
 @eel.expose
+@require('admin')
 def admin_approve_user(user_id: str, admin_id: str) -> Dict[str, Any]:
     """사용자 승인 (관리자)"""
     try:
@@ -247,6 +318,7 @@ def admin_approve_user(user_id: str, admin_id: str) -> Dict[str, Any]:
 
 
 @eel.expose
+@require('admin')
 def admin_reject_user(user_id: str, admin_id: str, note: str = '') -> Dict[str, Any]:
     """사용자 거부 (관리자)"""
     try:
@@ -261,6 +333,7 @@ def admin_reject_user(user_id: str, admin_id: str, note: str = '') -> Dict[str, 
 
 
 @eel.expose
+@require('admin')
 def admin_delete_user(user_id: str, admin_id: str) -> Dict[str, Any]:
     """사용자 퇴사 처리 (관리자) — soft delete"""
     try:
@@ -275,6 +348,7 @@ def admin_delete_user(user_id: str, admin_id: str) -> Dict[str, Any]:
 
 
 @eel.expose
+@require('admin')
 def admin_update_user_status(user_id: str, status: str, admin_id: str) -> Dict[str, Any]:
     """사용자 상태 변경 (관리자)"""
     try:
@@ -289,6 +363,7 @@ def admin_update_user_status(user_id: str, status: str, admin_id: str) -> Dict[s
 
 
 @eel.expose
+@require('admin')
 def select_folder_path() -> Dict[str, Any]:
     """폴더 선택 다이얼로그 (Windows Shell API - Embedded Python 호환)"""
     try:
@@ -340,6 +415,7 @@ def select_folder_path() -> Dict[str, Any]:
 
 
 @eel.expose
+@require('admin')
 def admin_get_paths(admin_id: str = '') -> Dict[str, Any]:
     """경로 조회 (관리자)"""
     try:
@@ -361,6 +437,7 @@ def admin_get_paths(admin_id: str = '') -> Dict[str, Any]:
 
 
 @eel.expose
+@require('admin')
 def admin_get_settings(admin_id: str = '') -> Dict[str, Any]:
     """설정 조회 (관리자)"""
     try:
@@ -381,6 +458,7 @@ def _get_admin_user(admin_id: str = '') -> Optional[Dict[str, Any]]:
 
 
 @eel.expose
+@require('admin')
 def admin_get_owner_company_catalog(admin_id: str = '') -> Dict[str, Any]:
     """선사(owner_company) 목록과 선박/장비 요약 조회"""
     try:
@@ -529,6 +607,7 @@ def admin_get_owner_company_catalog(admin_id: str = '') -> Dict[str, Any]:
 
 
 @eel.expose
+@require('admin')
 def admin_dismiss_owner_company_suggestion(source_names: List[str], admin_id: str = '') -> Dict[str, Any]:
     try:
         if not _get_admin_user(admin_id):
@@ -552,6 +631,7 @@ def admin_dismiss_owner_company_suggestion(source_names: List[str], admin_id: st
 
 
 @eel.expose
+@require('admin')
 def admin_reset_owner_company_suggestion_dismissals(admin_id: str = '') -> Dict[str, Any]:
     try:
         if not _get_admin_user(admin_id):
@@ -565,6 +645,7 @@ def admin_reset_owner_company_suggestion_dismissals(admin_id: str = '') -> Dict[
 
 
 @eel.expose
+@require('admin')
 def admin_dismiss_owner_ship_suggestion(owner_name: str, source_names: List[str], admin_id: str = '') -> Dict[str, Any]:
     try:
         if not _get_admin_user(admin_id):
@@ -589,6 +670,7 @@ def admin_dismiss_owner_ship_suggestion(owner_name: str, source_names: List[str]
 
 
 @eel.expose
+@require('admin')
 def admin_reset_owner_ship_suggestion_dismissals(owner_name: str, admin_id: str = '') -> Dict[str, Any]:
     try:
         if not _get_admin_user(admin_id):
@@ -611,6 +693,7 @@ def admin_reset_owner_ship_suggestion_dismissals(owner_name: str, admin_id: str 
 
 
 @eel.expose
+@require('admin')
 def admin_get_vendor_company_catalog(admin_id: str = '') -> Dict[str, Any]:
     """외주 업체 목록과 소속 인원 집계 조회"""
     try:
@@ -957,6 +1040,7 @@ def _plan_merge_owner_ships(owner_name: str, source_names: List[str], target_nam
 
 
 @eel.expose
+@require('admin')
 def admin_preview_merge_vendor_workers(vendor_company: str, source_names: List[str],
                                        target_name: str = '', admin_id: str = '') -> Dict[str, Any]:
     if not _get_admin_user(admin_id):
@@ -965,6 +1049,7 @@ def admin_preview_merge_vendor_workers(vendor_company: str, source_names: List[s
 
 
 @eel.expose
+@require('admin')
 def admin_preview_merge_owner_companies(source_names: List[str], target_name: str = '',
                                         admin_id: str = '') -> Dict[str, Any]:
     if not _get_admin_user(admin_id):
@@ -973,6 +1058,7 @@ def admin_preview_merge_owner_companies(source_names: List[str], target_name: st
 
 
 @eel.expose
+@require('admin')
 def admin_preview_merge_owner_ships(owner_name: str, source_names: List[str], target_name: str = '',
                                     admin_id: str = '') -> Dict[str, Any]:
     if not _get_admin_user(admin_id):
@@ -981,6 +1067,7 @@ def admin_preview_merge_owner_ships(owner_name: str, source_names: List[str], ta
 
 
 @eel.expose
+@require('admin')
 def admin_get_last_merge_undo(admin_id: str = '') -> Dict[str, Any]:
     if not _get_admin_user(admin_id):
         return {'success': False, 'message': '관리자 권한이 필요합니다.', 'available': False}
@@ -997,6 +1084,7 @@ def admin_get_last_merge_undo(admin_id: str = '') -> Dict[str, Any]:
 
 
 @eel.expose
+@require('admin')
 def admin_undo_last_merge(admin_id: str = '') -> Dict[str, Any]:
     if not _get_admin_user(admin_id):
         return {'success': False, 'message': '관리자 권한이 필요합니다.'}
@@ -1026,6 +1114,7 @@ def admin_undo_last_merge(admin_id: str = '') -> Dict[str, Any]:
 
 
 @eel.expose
+@require('admin')
 def admin_merge_vendor_workers(vendor_company: str, source_names: List[str],
                                target_name: str, admin_id: str = '') -> Dict[str, Any]:
     """특정 외주 업체 소속 직원명을 하나의 대표 이름으로 병합"""
@@ -1060,6 +1149,7 @@ def admin_merge_vendor_workers(vendor_company: str, source_names: List[str],
 
 
 @eel.expose
+@require('admin')
 def admin_merge_owner_companies(source_names: List[str], target_name: str,
                                 admin_id: str = '') -> Dict[str, Any]:
     """중복 선사명을 하나의 대표 이름으로 병합"""
@@ -1095,6 +1185,7 @@ def admin_merge_owner_companies(source_names: List[str], target_name: str,
 
 
 @eel.expose
+@require('admin')
 def admin_merge_owner_ships(owner_name: str, source_names: List[str], target_name: str,
                             admin_id: str = '') -> Dict[str, Any]:
     """선사 내부의 중복 선박명을 하나의 대표 이름으로 병합"""
@@ -1130,6 +1221,7 @@ def admin_merge_owner_ships(owner_name: str, source_names: List[str], target_nam
 
 
 @eel.expose
+@require('admin')
 def admin_update_local_db_path(new_path: str, admin_id: str) -> Dict[str, Any]:
     """로컬 DB 경로 변경 (관리자 전용)"""
     try:
@@ -1144,6 +1236,7 @@ def admin_update_local_db_path(new_path: str, admin_id: str) -> Dict[str, Any]:
 
 
 @eel.expose
+@require('admin')
 def admin_update_cloud_path(new_path: str, admin_id: str) -> Dict[str, Any]:
     """클라우드 경로 변경 (관리자)"""
     try:
@@ -1174,6 +1267,7 @@ def admin_update_cloud_path(new_path: str, admin_id: str) -> Dict[str, Any]:
 
 
 @eel.expose
+@require('admin')
 def admin_update_backup_path(new_path: str, admin_id: str) -> Dict[str, Any]:
     """백업 경로 변경 (관리자)"""
     try:
@@ -1188,6 +1282,7 @@ def admin_update_backup_path(new_path: str, admin_id: str) -> Dict[str, Any]:
 
 
 @eel.expose
+@require('admin')
 def admin_create_backup(admin_id: str) -> Dict[str, Any]:
     """수동 백업 생성 (관리자)"""
     try:
@@ -1206,6 +1301,7 @@ def admin_create_backup(admin_id: str) -> Dict[str, Any]:
 # ============================================================================
 
 @eel.expose
+@require('public')
 def login_user(username: str) -> bool:
     """사용자 로그인 (레거시)"""
     try:
@@ -1220,6 +1316,7 @@ def login_user(username: str) -> bool:
 
 
 @eel.expose
+@require('public')
 def get_recent_users() -> List[Dict[str, Any]]:
     """최근 사용자 목록"""
     try:
@@ -1235,6 +1332,7 @@ def get_recent_users() -> List[Dict[str, Any]]:
 # ============================================================================
 
 @eel.expose
+@require('guest')
 def load_work_records(date: str, work_type: str = 'day') -> List[Dict[str, Any]]:
     """작업 레코드 로드 (work_type: 'day'|'night')"""
     try:
@@ -1256,6 +1354,7 @@ def load_work_records(date: str, work_type: str = 'day') -> List[Dict[str, Any]]
 
 
 @eel.expose
+@require('write')
 def save_work_records(date: str, records: List[Dict[str, Any]],
                       username: str, work_type: str = 'day') -> Dict[str, Any]:
     """작업 레코드 저장 (work_type: 'day'|'night')"""
@@ -1293,6 +1392,7 @@ def save_work_records(date: str, records: List[Dict[str, Any]],
 
 
 @eel.expose
+@require('guest')
 def get_date_save_info(date: str, work_type: str = 'day') -> Dict[str, Any]:
     """날짜별 마지막 저장 정보 조회 (JS 충돌 감지용)"""
     try:
@@ -1318,6 +1418,7 @@ def get_date_save_info(date: str, work_type: str = 'day') -> Dict[str, Any]:
 
 
 @eel.expose
+@require('guest')
 def load_holiday_work_entries(period_key: str) -> List[Dict[str, Any]]:
     """휴일 작업 인원 명단 로드 (period_key = 해당 주 금요일 날짜 YYYY-MM-DD)"""
     try:
@@ -1350,6 +1451,7 @@ def load_holiday_work_entries(period_key: str) -> List[Dict[str, Any]]:
 
 
 @eel.expose
+@require('write')
 def save_holiday_work_entries(period_key: str, entries: List[Dict[str, Any]],
                               username: str) -> Dict[str, Any]:
     """휴일 작업 인원 명단 저장"""
@@ -1368,6 +1470,7 @@ def save_holiday_work_entries(period_key: str, entries: List[Dict[str, Any]],
 
 
 @eel.expose
+@require('guest')
 def get_latest_friday(date_str: str = '') -> str:
     """주어진 날짜(또는 오늘)로부터 가장 가까운 이전 금요일 반환 (YYYY-MM-DD)"""
     try:
@@ -1385,6 +1488,7 @@ def get_latest_friday(date_str: str = '') -> str:
 
 
 @eel.expose
+@require('guest')
 def get_holiday_period_dates(period_key: str) -> Dict[str, str]:
     """period_key(금요일) 기준 금/토/일 날짜+라벨 dict 반환"""
     try:
@@ -1407,6 +1511,7 @@ def get_holiday_period_dates(period_key: str) -> Dict[str, str]:
 
 
 @eel.expose
+@require('admin')
 def clear_all_records(admin_id: str = '') -> Dict[str, Any]:
     """전체 작업 레코드 삭제 (관리자 전용)"""
     try:
@@ -1433,6 +1538,7 @@ def clear_all_records(admin_id: str = '') -> Dict[str, Any]:
 
 
 @eel.expose
+@require('guest')
 def load_yesterday_records(current_date: str) -> Dict[str, Any]:
     """마지막 평일 작업 불러오기 (주말·공휴일 자동 건너뜀)"""
     try:
@@ -1445,6 +1551,7 @@ def load_yesterday_records(current_date: str) -> Dict[str, Any]:
 
 
 @eel.expose
+@require('guest')
 def get_date_list(start_date: str = None, end_date: str = None) -> List[str]:
     """레코드가 있는 날짜 목록"""
     try:
@@ -1460,6 +1567,7 @@ def get_date_list(start_date: str = None, end_date: str = None) -> List[str]:
 # ============================================================================
 
 @eel.expose
+@require('login')
 def generate_report(date: str, username: str) -> Dict[str, Any]:
     """보고서 생성"""
     try:
@@ -1471,6 +1579,7 @@ def generate_report(date: str, username: str) -> Dict[str, Any]:
 
 
 @eel.expose
+@require('guest')
 def get_project_start_date_by_contract(contract_number: str) -> str:
     """계약번호 기준 공사 시작일 조회"""
     try:
@@ -1515,6 +1624,7 @@ def get_project_start_date_by_contract(contract_number: str) -> str:
 
 
 @eel.expose
+@require('guest')
 def get_project_start_date(ship_name: str) -> str:
     """선박별 공사 시작일 조회 (최초 작업일)"""
     try:
@@ -1546,6 +1656,7 @@ def get_project_start_date(ship_name: str) -> str:
 
 
 @eel.expose
+@require('guest')
 def get_project_start_dates_batch(contract_numbers: list, ship_names: list) -> dict:
     """여러 계약번호/선박명의 공사 시작일을 한 번에 조회 (일일보고 N+1 방지)"""
     result = {}
@@ -2309,6 +2420,7 @@ def _query_holiday_ot_records(search_type: str, query_text: str) -> List[Dict[st
 
 
 @eel.expose
+@require('guest')
 def search_records_with_ot(search_type: str, query: str) -> Dict[str, Any]:
     """조회 탭용 통합 검색 + OT 집계"""
     try:
@@ -2347,6 +2459,7 @@ def search_records_with_ot(search_type: str, query: str) -> Dict[str, Any]:
 
 
 @eel.expose
+@require('guest')
 def search_records_by_contract(contract_number: str) -> List[Dict[str, Any]]:
     """계약번호로 작업 내역 조회"""
     try:
@@ -2358,6 +2471,7 @@ def search_records_by_contract(contract_number: str) -> List[Dict[str, Any]]:
 
 
 @eel.expose
+@require('guest')
 def get_latest_record_by_contract(contract_number: str) -> Dict[str, Any]:
     """계약번호의 가장 최근 작업 내역 반환 (일일 작업 입력 자동완성용).
     반환 필드: found, company, shipName, engineModel, workContent, location"""
@@ -2393,6 +2507,7 @@ def get_latest_record_by_contract(contract_number: str) -> Dict[str, Any]:
 
 
 @eel.expose
+@require('guest')
 def get_latest_contract_number() -> str:
     """DB에서 가장 최근 날짜의 계약번호 반환"""
     try:
@@ -2410,6 +2525,7 @@ def get_latest_contract_number() -> str:
 
 
 @eel.expose
+@require('guest')
 def get_contract_number_list() -> Dict[str, Any]:
     """일일 작업 입력 화면의 계약 번호 목록 팝업용 데이터 조회."""
     try:
@@ -2491,6 +2607,7 @@ def get_contract_number_list() -> Dict[str, Any]:
 
 
 @eel.expose
+@require('guest')
 def validate_contract_number(contract_number: str) -> Dict[str, Any]:
     """계약번호 형식 유효성 검사 (SH-YYYY-NNN-X 형식)"""
     import re
@@ -2509,6 +2626,7 @@ def validate_contract_number(contract_number: str) -> Dict[str, Any]:
 
 
 @eel.expose
+@require('login')
 def load_vacation_data(date: str) -> Dict[str, str]:
     """날짜별 휴가자 현황 로드"""
     try:
@@ -2519,6 +2637,7 @@ def load_vacation_data(date: str) -> Dict[str, str]:
 
 
 @eel.expose
+@require('write')
 def save_vacation_data(date: str, data: Dict, username: str) -> Dict[str, Any]:
     """날짜별 휴가자 현황 저장"""
     try:
@@ -2542,6 +2661,7 @@ def _log_leave_change(username: str, action: str, employee_name: str, details: s
 
 
 @eel.expose
+@require('login')
 def get_employee_leave_info(employee_name: str) -> Dict[str, Any]:
     """직원 연차 전체 정보 조회"""
     try:
@@ -2554,6 +2674,7 @@ def get_employee_leave_info(employee_name: str) -> Dict[str, Any]:
 
 
 @eel.expose
+@require('write')
 def save_employee_annual_config(employee_name: str, generation_month: int, note: str,
                                 generation_day: int = 1, username: str = '') -> Dict[str, Any]:
     """직원 연차 설정 저장"""
@@ -2579,6 +2700,7 @@ def save_employee_annual_config(employee_name: str, generation_month: int, note:
 
 
 @eel.expose
+@require('write')
 def add_leave_grant(employee_name: str, grant_year: int, grant_month: int,
                     days: float, note: str, username: str = '') -> Dict[str, Any]:
     """연차 부여 이력 추가"""
@@ -2601,6 +2723,7 @@ def add_leave_grant(employee_name: str, grant_year: int, grant_month: int,
 
 
 @eel.expose
+@require('write')
 def delete_leave_grant(grant_id: int, username: str = '') -> Dict[str, Any]:
     """연차 부여 이력 삭제"""
     try:
@@ -2620,6 +2743,7 @@ def delete_leave_grant(grant_id: int, username: str = '') -> Dict[str, Any]:
 
 
 @eel.expose
+@require('write')
 def add_leave_usage(employee_name: str, use_date: str, leave_type: str, note: str, username: str = '') -> Dict[str, Any]:
     """연차 사용 내역 추가"""
     try:
@@ -2642,6 +2766,7 @@ def add_leave_usage(employee_name: str, use_date: str, leave_type: str, note: st
 
 
 @eel.expose
+@require('write')
 def delete_leave_usage(usage_id: int, username: str = '') -> Dict[str, Any]:
     """연차 사용 내역 삭제"""
     try:
@@ -2661,6 +2786,7 @@ def delete_leave_usage(usage_id: int, username: str = '') -> Dict[str, Any]:
 
 
 @eel.expose
+@require('login')
 def get_leave_change_logs(employee_name: str = '', limit: int = 30) -> Dict[str, Any]:
     """최근 연차 변경 이력 조회"""
     try:
@@ -2689,6 +2815,7 @@ def get_leave_change_logs(employee_name: str = '', limit: int = 30) -> Dict[str,
 
 
 @eel.expose
+@require('login')
 def get_employee_names_for_leave() -> List[str]:
     """연차 관리용 직원 이름 목록"""
     try:
@@ -2699,6 +2826,7 @@ def get_employee_names_for_leave() -> List[str]:
 
 
 @eel.expose
+@require('login')
 def get_employee_directory() -> Dict[str, Any]:
     """직원 명부 조회"""
     try:
@@ -2713,6 +2841,7 @@ def get_employee_directory() -> Dict[str, Any]:
 
 
 @eel.expose
+@require('write')
 def save_employee_directory(rows_json: str) -> Dict[str, Any]:
     """직원 명부 저장"""
     try:
@@ -2733,6 +2862,7 @@ def save_employee_directory(rows_json: str) -> Dict[str, Any]:
 
 
 @eel.expose
+@require('write')
 def save_work_hours_ot_override(name: str, date: str, start_time: str, end_time: str,
                                 note: str = '') -> Dict[str, Any]:
     """근로시간관리 달력에서 수정한 연장근로 시작/종료 시간을 저장"""
@@ -2755,6 +2885,7 @@ def save_work_hours_ot_override(name: str, date: str, start_time: str, end_time:
 
 
 @eel.expose
+@require('guest')
 def get_work_hours_by_month(name: str, year: int, month: int,
                              meal_deduct: bool = True) -> Dict[str, Any]:
     """직원 월별 근로 시간 조회 (달력용)
@@ -2961,6 +3092,7 @@ def get_work_hours_by_month(name: str, year: int, month: int,
 
 
 @eel.expose
+@require('guest')
 def search_records_by_ship(ship_name: str) -> List[Dict[str, Any]]:
     """선명으로 작업 내역 조회"""
     try:
@@ -2972,6 +3104,7 @@ def search_records_by_ship(ship_name: str) -> List[Dict[str, Any]]:
 
 
 @eel.expose
+@require('guest')
 def search_records_by_company(company_name: str) -> List[Dict[str, Any]]:
     """외주 업체명으로 작업 내역 조회"""
     try:
@@ -2983,6 +3116,7 @@ def search_records_by_company(company_name: str) -> List[Dict[str, Any]]:
 
 
 @eel.expose
+@require('guest')
 def get_outsource_company_names() -> List[str]:
     """외주 업체명 목록 조회 (드롭다운 자동완성용)"""
     try:
@@ -3012,6 +3146,7 @@ def get_outsource_company_names() -> List[str]:
 
 
 @eel.expose
+@require('guest')
 def get_project_end_date(ship_name: str) -> str:
     """선박별 공사 마지막 작업일 조회"""
     try:
@@ -3040,6 +3175,7 @@ def get_project_end_date(ship_name: str) -> str:
 
 
 @eel.expose
+@require('admin')
 def debug_check_data(year: int, month: int) -> Dict[str, Any]:
     """디버깅용 데이터 확인"""
     try:
@@ -3087,6 +3223,7 @@ def debug_check_data(year: int, month: int) -> Dict[str, Any]:
 
 
 @eel.expose
+@require('guest')
 def load_monthly_report_grouped(year: int, month: int) -> List[Dict[str, Any]]:
     """월간 보고서 - 선박별 그룹핑"""
     try:
@@ -3203,6 +3340,7 @@ def load_monthly_report_grouped(year: int, month: int) -> List[Dict[str, Any]]:
 
 
 @eel.expose
+@require('guest')
 def get_analytics_data(year: int) -> Dict[str, Any]:
     """E: 연간 통계 — 월별 공수 합계, 회사별 상위 10, 계약별 상위 10"""
     try:
@@ -3318,6 +3456,7 @@ def get_analytics_data(year: int) -> Dict[str, Any]:
 # =============================================================================
 
 @eel.expose
+@require('login')
 def update_client_version(user_id: str, version: str) -> dict:
     """로그인 후 클라이언트가 자신의 버전을 서버에 등록"""
     try:
@@ -3329,6 +3468,7 @@ def update_client_version(user_id: str, version: str) -> dict:
 
 
 @eel.expose
+@require('public')
 def report_error(user_id: str, error_type: str, error_message: str, stack_trace: str = '') -> dict:
     """JS/Python 오류를 DB에 저장"""
     try:
@@ -3348,6 +3488,7 @@ def report_error(user_id: str, error_type: str, error_message: str, stack_trace:
 
 
 @eel.expose
+@require('admin')
 def admin_get_user_status(admin_id: str = '') -> list:
     """전체 사용자 + 버전 + 마지막 접속 (관리자 전용)"""
     try:
@@ -3378,6 +3519,7 @@ def admin_get_user_status(admin_id: str = '') -> list:
 
 
 @eel.expose
+@require('admin')
 def admin_get_error_reports(limit: int = 50, admin_id: str = '') -> list:
     """미해결 오류 리포트 목록 (관리자 전용)"""
     try:
@@ -3391,6 +3533,7 @@ def admin_get_error_reports(limit: int = 50, admin_id: str = '') -> list:
 
 
 @eel.expose
+@require('admin')
 def admin_mark_error_read(error_id: int, admin_id: str = '') -> dict:
     """오류 리포트를 읽음 처리 (관리자 전용)"""
     try:
@@ -3405,6 +3548,7 @@ def admin_mark_error_read(error_id: int, admin_id: str = '') -> dict:
 
 
 @eel.expose
+@require('admin')
 def admin_get_realtime_summary(admin_id: str = '') -> Dict[str, Any]:
     """관리자 실시간 현황 요약: 현재 접속, 오늘 작업률, 미결 오류 (관리자 전용)"""
     try:
@@ -3451,6 +3595,7 @@ def admin_get_realtime_summary(admin_id: str = '') -> Dict[str, Any]:
 
 
 @eel.expose
+@require('guest')
 def load_monthly_report(year: int, month: int) -> Dict[str, Any]:
     """월간 보고서 데이터 로드"""
     try:
@@ -3515,6 +3660,7 @@ def load_monthly_report(year: int, month: int) -> Dict[str, Any]:
 
 
 @eel.expose
+@require('login')
 def export_to_excel(date: str) -> Dict[str, Any]:
     """Excel로 내보내기"""
     try:
@@ -3538,6 +3684,7 @@ def export_to_excel(date: str) -> Dict[str, Any]:
 
 
 @eel.expose
+@require('login')
 def export_daily_report(date: str) -> Dict[str, Any]:
     """일일 보고서 Excel 내보내기"""
     try:
@@ -3660,6 +3807,7 @@ def export_daily_report(date: str) -> Dict[str, Any]:
 
 
 @eel.expose
+@require('login')
 def export_monthly_report(year: int, month: int) -> Dict[str, Any]:
     """월간 보고서 Excel 내보내기"""
     try:
@@ -3748,6 +3896,7 @@ def export_monthly_report(year: int, month: int) -> Dict[str, Any]:
 # ============================================================================
 
 @eel.expose
+@require('admin')
 def sync_to_cloud() -> Dict[str, Any]:
     """클라우드로 동기화"""
     try:
@@ -3765,6 +3914,7 @@ def sync_to_cloud() -> Dict[str, Any]:
 
 
 @eel.expose
+@require('admin')
 def sync_from_cloud() -> Dict[str, Any]:
     """클라우드에서 동기화"""
     try:
@@ -3782,6 +3932,7 @@ def sync_from_cloud() -> Dict[str, Any]:
 
 
 @eel.expose
+@require('guest')
 def get_sync_status() -> Dict[str, Any]:
     """동기화 상태 조회"""
     try:
@@ -3792,6 +3943,7 @@ def get_sync_status() -> Dict[str, Any]:
 
 
 @eel.expose
+@require('guest')
 def get_cloud_sync_mode() -> str:
     """현재 sync_mode 반환: 'company' | 'external' | 'standalone'"""
     try:
@@ -3802,6 +3954,7 @@ def get_cloud_sync_mode() -> str:
 
 
 @eel.expose
+@require('admin')
 def connect_to_cloud_external(cloud_path: str) -> Dict[str, Any]:
     """
     외부 PC에서 클라우드에 연결 (관리자 전용)
@@ -3821,6 +3974,7 @@ def connect_to_cloud_external(cloud_path: str) -> Dict[str, Any]:
 
 
 @eel.expose
+@require('admin')
 def disconnect_from_cloud() -> Dict[str, Any]:
     """
     외부 PC 클라우드 연결 해제 (관리자 전용)
@@ -3839,6 +3993,7 @@ def disconnect_from_cloud() -> Dict[str, Any]:
 # ============================================================================
 
 @eel.expose
+@require('public')
 def get_app_info() -> Dict[str, Any]:
     """앱 정보 조회"""
     try:
@@ -3856,6 +4011,7 @@ def get_app_info() -> Dict[str, Any]:
 
 
 @eel.expose
+@require('admin')
 def get_activity_logs(limit: int = 100, user_filter: str = '') -> List[Dict[str, Any]]:
     """활동 로그 조회 (관리자)"""
     try:
@@ -3871,6 +4027,7 @@ def get_activity_logs(limit: int = 100, user_filter: str = '') -> List[Dict[str,
 # ============================================================================
 
 @eel.expose
+@require('guest')
 def get_gantt_data(year: int, month: int) -> List[Dict[str, Any]]:
     """간트 차트용 프로젝트 데이터 조회 (해당 월과 겹치는 모든 프로젝트)"""
     try:
@@ -3951,6 +4108,7 @@ def get_gantt_data(year: int, month: int) -> List[Dict[str, Any]]:
 # ============================================================================
 
 @eel.expose
+@require('write')
 def set_project_status(contract_number: str, status: str) -> Dict[str, Any]:
     """프로젝트 상태 수동 변경 (접수/착수/준공/auto)"""
     try:
@@ -3972,6 +4130,7 @@ def set_project_status(contract_number: str, status: str) -> Dict[str, Any]:
 
 
 @eel.expose
+@require('write')
 def create_board_project(data: Dict) -> Dict[str, Any]:
     """보드 프로젝트 생성 (접수 단계)"""
     try:
@@ -3986,6 +4145,7 @@ def create_board_project(data: Dict) -> Dict[str, Any]:
 
 
 @eel.expose
+@require('write')
 def update_board_project(project_id: int, data: Dict) -> Dict[str, Any]:
     """보드 프로젝트 업데이트"""
     try:
@@ -4000,6 +4160,7 @@ def update_board_project(project_id: int, data: Dict) -> Dict[str, Any]:
 
 
 @eel.expose
+@require('write')
 def update_project_milestones(project_id: int, target_start: str, target_end: str, actual_end: str) -> Dict[str, Any]:
     """프로젝트 마일스톤 날짜 업데이트"""
     try:
@@ -4018,6 +4179,7 @@ def update_project_milestones(project_id: int, target_start: str, target_end: st
 
 
 @eel.expose
+@require('write')
 def delete_board_project(project_id: int) -> Dict[str, Any]:
     """보드 프로젝트 삭제"""
     try:
@@ -4032,6 +4194,7 @@ def delete_board_project(project_id: int) -> Dict[str, Any]:
 
 
 @eel.expose
+@require('login')
 def get_employee_profile(name: str, year: int = 0) -> Dict[str, Any]:
     """직원별 연간 공수·프로젝트·연차 현황 조회"""
     try:
@@ -4098,6 +4261,7 @@ def get_employee_profile(name: str, year: int = 0) -> Dict[str, Any]:
 
 
 @eel.expose
+@require('guest')
 def estimate_completion(engine_model: str, work_content: str, target_start: str = '') -> Dict[str, Any]:
     """과거 유사 작업 기간 기반 완료일 예측"""
     try:
@@ -4143,6 +4307,7 @@ def estimate_completion(engine_model: str, work_content: str, target_start: str 
 
 
 @eel.expose
+@require('guest')
 def get_kanban_data() -> Dict[str, Any]:
     """칸반 보드용 프로젝트 데이터 (접수/착수/준공/아카이브 4단계)"""
     try:
@@ -4284,6 +4449,7 @@ def get_kanban_data() -> Dict[str, Any]:
 
 
 @eel.expose
+@require('write')
 def get_or_create_board_project(contract_number: str) -> Dict[str, Any]:
     """착수 직접 등록 프로젝트 — board_projects 항목이 없으면 자동 생성 후 ID 반환.
     마일스톤 편집 버튼 클릭 시 boardProjectId 없는 카드에서 호출."""
@@ -4332,12 +4498,14 @@ def get_or_create_board_project(contract_number: str) -> Dict[str, Any]:
 # ============================================================================
 
 @eel.expose
+@require('write')
 def add_project_comment(contract_number: str, content: str, parent_id: int = None, board_project_id: int = None) -> Dict[str, Any]:
     """프로젝트 댓글 추가 (add_project_comment_with_user로 위임)"""
     return add_project_comment_with_user(contract_number, content, '', '', parent_id, board_project_id)
 
 
 @eel.expose
+@require('write')
 def add_project_comment_with_user(contract_number, content, user_id, user_name, parent_id=None, board_project_id=None) -> Dict[str, Any]:
     """프로젝트 댓글 추가 (사용자 정보 포함)"""
     try:
@@ -4380,6 +4548,7 @@ def add_project_comment_with_user(contract_number, content, user_id, user_name, 
 
 
 @eel.expose
+@require('guest')
 def get_project_comments(contract_number=None, board_project_id=None) -> Dict[str, Any]:
     """프로젝트 댓글 조회"""
     try:
@@ -4411,6 +4580,7 @@ def get_project_comments(contract_number=None, board_project_id=None) -> Dict[st
 
 
 @eel.expose
+@require('write')
 def delete_project_comment(comment_id: int, user_id: str) -> Dict[str, Any]:
     """프로젝트 댓글 삭제"""
     try:
@@ -4428,6 +4598,7 @@ def delete_project_comment(comment_id: int, user_id: str) -> Dict[str, Any]:
 # ============================================================================
 
 @eel.expose
+@require('admin')
 def import_excel_data(base64_data: str, username: str = 'admin') -> Dict[str, Any]:
     """엑셀 파일 데이터를 DB로 일괄 업로드"""
     try:
@@ -4617,6 +4788,7 @@ def import_excel_data(base64_data: str, username: str = 'admin') -> Dict[str, An
 # ============================================================================
 
 @eel.expose
+@require('public')
 def get_startup_patch_result() -> Dict[str, Any]:
     """앱 시작 시 자동 적용된 패치 결과 반환 (로그인 후 JS에서 호출)"""
     try:
@@ -4649,6 +4821,7 @@ def get_startup_patch_result() -> Dict[str, Any]:
 
 
 @eel.expose
+@require('public')
 def check_for_updates(force: bool = False) -> Dict[str, Any]:
     """업데이트 확인"""
     try:
@@ -4663,6 +4836,7 @@ def check_for_updates(force: bool = False) -> Dict[str, Any]:
 
 
 @eel.expose
+@require('public')
 def download_and_apply_patches() -> Dict[str, Any]:
     """패치 ZIP 다운로드 및 적용"""
     try:
@@ -4677,6 +4851,7 @@ def download_and_apply_patches() -> Dict[str, Any]:
 
 
 @eel.expose
+@require('public')
 def restart_app_after_update() -> Dict[str, Any]:
     """수동 패치 적용 후 앱을 재시작."""
     try:
@@ -4699,6 +4874,7 @@ def restart_app_after_update() -> Dict[str, Any]:
 
 
 @eel.expose
+@require('public')
 def get_release_notes_for_version(version_tag: str) -> Dict[str, Any]:
     """특정 버전의 릴리즈 노트 조회"""
     try:
@@ -4763,6 +4939,7 @@ def _extract_compact_patch_note_lines(body: str) -> List[str]:
 
 
 @eel.expose
+@require('public')
 def get_compact_patch_notes(from_version: str, to_version: str = '') -> Dict[str, Any]:
     """버전 범위의 릴리즈 노트를 간략 요약으로 반환"""
     try:
@@ -4850,6 +5027,7 @@ def get_compact_patch_notes(from_version: str, to_version: str = '') -> Dict[str
 # ============================================================================
 
 @eel.expose
+@require('guest')
 def get_holidays() -> Dict[str, str]:
     """공휴일 데이터 로드 (config/holidays.json)"""
     try:
@@ -4864,6 +5042,7 @@ def get_holidays() -> Dict[str, str]:
 
 
 @eel.expose
+@require('admin')
 def refresh_holidays(service_key: str, admin_id: str = '') -> Dict[str, Any]:
     """공공데이터포털 API로 공휴일 갱신 (관리자)"""
     try:
@@ -4900,6 +5079,7 @@ def refresh_holidays(service_key: str, admin_id: str = '') -> Dict[str, Any]:
 # ============================================================================
 
 @eel.expose
+@require('login')
 def generate_telegram_link_code(user_id: str) -> Dict[str, Any]:
     """텔레그램 연결 코드 생성"""
     try:
@@ -4924,6 +5104,7 @@ def generate_telegram_link_code(user_id: str) -> Dict[str, Any]:
 
 
 @eel.expose
+@require('login')
 def unlink_telegram(user_id: str) -> Dict[str, Any]:
     """텔레그램 연결 해제"""
     try:
@@ -4935,6 +5116,7 @@ def unlink_telegram(user_id: str) -> Dict[str, Any]:
 
 
 @eel.expose
+@require('login')
 def get_telegram_status(user_id: str) -> Dict[str, Any]:
     """텔레그램 연결 상태 조회"""
     try:
@@ -4945,6 +5127,7 @@ def get_telegram_status(user_id: str) -> Dict[str, Any]:
 
 
 @eel.expose
+@require('login')
 def get_user_tray_mode(user_id: str) -> Dict[str, Any]:
     """사용자 트레이 모드 설정 조회"""
     try:
@@ -4955,6 +5138,7 @@ def get_user_tray_mode(user_id: str) -> Dict[str, Any]:
 
 
 @eel.expose
+@require('login')
 def save_user_tray_mode(user_id: str, enabled: bool) -> Dict[str, Any]:
     """사용자 트레이 모드 설정 저장 + Python 전역 동기화"""
     try:
@@ -4972,6 +5156,7 @@ def save_user_tray_mode(user_id: str, enabled: bool) -> Dict[str, Any]:
 
 
 @eel.expose
+@require('login')
 def get_all_leave_monthly_report(year: int) -> Dict[str, Any]:
     """모든 직원의 연차 월별 현황 조회 (연차 월별 보고 탭)"""
     try:
@@ -4983,6 +5168,7 @@ def get_all_leave_monthly_report(year: int) -> Dict[str, Any]:
 
 
 @eel.expose
+@require('write')
 def save_employee_leave_order(names_json: str) -> Dict[str, Any]:
     """직원 연차 보고 표시 순서 저장 (app_settings)"""
     try:
@@ -4998,6 +5184,7 @@ def save_employee_leave_order(names_json: str) -> Dict[str, Any]:
 
 
 @eel.expose
+@require('login')
 def get_employee_leave_order() -> Dict[str, Any]:
     """저장된 직원 연차 보고 순서 반환"""
     try:
@@ -5012,6 +5199,7 @@ def get_employee_leave_order() -> Dict[str, Any]:
 
 
 @eel.expose
+@require('write')
 def set_employee_leave_excluded(names_json: str) -> Dict[str, Any]:
     """직원 연차 보고 제외 목록 저장 (app_settings)"""
     try:
@@ -5027,6 +5215,7 @@ def set_employee_leave_excluded(names_json: str) -> Dict[str, Any]:
 
 
 @eel.expose
+@require('login')
 def get_employee_leave_excluded() -> Dict[str, Any]:
     """제외된 직원 이름 목록 반환 (JSON 배열 문자열)"""
     try:
@@ -5041,6 +5230,7 @@ def get_employee_leave_excluded() -> Dict[str, Any]:
 
 
 @eel.expose
+@require('admin')
 def set_leave_report_edit(user_id: str, enabled: bool, admin_id: str) -> Dict[str, Any]:
     """연차 월별 보고 편집 권한 설정 (관리자 전용)"""
     try:
@@ -5060,6 +5250,7 @@ def set_leave_report_edit(user_id: str, enabled: bool, admin_id: str) -> Dict[st
 
 
 @eel.expose
+@require('admin')
 def admin_set_write_permission(user_id: str, enabled: bool, admin_id: str) -> Dict[str, Any]:
     """일일 작업 쓰기 권한 부여/해제 (관리자 전용)"""
     try:
@@ -5081,6 +5272,7 @@ def admin_set_write_permission(user_id: str, enabled: bool, admin_id: str) -> Di
 
 
 @eel.expose
+@require('admin')
 def admin_set_erp_input(user_id: str, enabled: bool, admin_id: str) -> Dict[str, Any]:
     """ERP 입력 자동화 권한 부여/해제 (관리자 전용)"""
     try:
@@ -5125,6 +5317,7 @@ def _check_erp_permission(user_id: str) -> Optional[str]:
 
 
 @eel.expose
+@require('erp')
 def get_records_for_erp(start_date: str, end_date: str, user_id: str) -> Dict[str, Any]:
     """날짜 범위 내 작업 레코드를 날짜별로 그룹화하여 반환 (ERP 입력용)"""
     try:
@@ -5166,6 +5359,7 @@ def get_records_for_erp(start_date: str, end_date: str, user_id: str) -> Dict[st
 
 
 @eel.expose
+@require('erp')
 def start_erp_macro(records_json: str, user_id: str) -> Dict[str, Any]:
     """백그라운드 스레드에서 ERP 매크로 시작"""
     try:
@@ -5186,6 +5380,7 @@ def start_erp_macro(records_json: str, user_id: str) -> Dict[str, Any]:
 
 
 @eel.expose
+@require('erp')
 def stop_erp_macro(user_id: str) -> Dict[str, Any]:
     """실행 중인 ERP 매크로 중단"""
     try:
@@ -5201,6 +5396,7 @@ def stop_erp_macro(user_id: str) -> Dict[str, Any]:
 
 
 @eel.expose
+@require('erp')
 def install_erp_deps(user_id: str) -> Dict[str, Any]:
     """pyautogui, pywin32, pyperclip 자동 설치 (ERP 권한 필요)"""
     try:
@@ -5241,6 +5437,7 @@ def _find_browser() -> str:
 
 
 @eel.expose
+@require('erp')
 def open_erp_input_window(dates_json: str, user_id: str = '') -> Dict[str, Any]:
     """ERP 입력 팝업 창 열기 (Chrome --app 모드)"""
     global _erp_popup_context
@@ -5278,12 +5475,14 @@ def open_erp_input_window(dates_json: str, user_id: str = '') -> Dict[str, Any]:
 
 
 @eel.expose
+@require('erp')
 def get_erp_popup_context() -> Dict[str, Any]:
     """팝업 창 로드 시 날짜/레코드 정보 반환"""
     return {'success': True, **_erp_popup_context}
 
 
 @eel.expose
+@require('erp')
 def start_erp_macro_inline(user_id: str = '') -> Dict[str, Any]:
     """팝업 [입력 시작] 클릭 → 캐시된 dates_records로 매크로 실행"""
     try:
@@ -5309,6 +5508,7 @@ def start_erp_macro_inline(user_id: str = '') -> Dict[str, Any]:
 
 
 @eel.expose
+@require('erp')
 def get_window_list() -> Dict[str, Any]:
     """현재 열린 가시 창 목록 반환 [{hwnd, title}]"""
     try:
@@ -5327,6 +5527,7 @@ def get_window_list() -> Dict[str, Any]:
 
 
 @eel.expose
+@require('erp')
 def set_erp_target_hwnd(hwnd: int, user_id: str = '') -> Dict[str, Any]:
     """사용자가 선택한 창 HWND를 ERPMacro에 지정"""
     try:
@@ -5341,6 +5542,7 @@ def set_erp_target_hwnd(hwnd: int, user_id: str = '') -> Dict[str, Any]:
 
 
 @eel.expose
+@require('erp')
 def get_erp_macro_status(user_id: str) -> Dict[str, Any]:
     """매크로 진행 상태 조회"""
     try:
@@ -5356,6 +5558,7 @@ def get_erp_macro_status(user_id: str) -> Dict[str, Any]:
 
 
 @eel.expose
+@require('erp')
 def diagnose_erp_controls(user_id: str = '') -> Dict[str, Any]:
     """ERP 창의 자식 컨트롤 목록 반환 (달력 컨트롤 탐색 진단용)"""
     try:
@@ -5415,6 +5618,7 @@ def diagnose_erp_controls(user_id: str = '') -> Dict[str, Any]:
 
 
 @eel.expose
+@require('login')
 def get_telegram_bot_enabled() -> Dict[str, Any]:
     """텔레그램 봇 활성화 상태 조회"""
     try:
@@ -5439,6 +5643,7 @@ def get_telegram_bot_enabled() -> Dict[str, Any]:
 
 
 @eel.expose
+@require('admin')
 def admin_save_telegram_settings(bot_token: str, enabled: bool, admin_id: str) -> Dict[str, Any]:
     """텔레그램 봇 설정 저장 (관리자)"""
     try:
@@ -5480,6 +5685,7 @@ def admin_save_telegram_settings(bot_token: str, enabled: bool, admin_id: str) -
 
 
 @eel.expose
+@require('erp')
 def save_auto_capture_image(base64_data: str, date_str: str) -> Dict[str, Any]:
     """자동 캡처 이미지를 DB 폴더에 저장 (스케줄러 17:00 호출)"""
     try:

@@ -1,0 +1,18 @@
+# 실제 소스의 '옛날 사본'이 들어 있는 경로 — 인덱싱하면 그래프가 오염되고
+# 에이전트가 원본 대신 백업/패치 사본을 수정할 위험이 있음
+backups/
+patch_build/
+patches/
+dist/
+build_embedded/
+artifacts/
+venv/
+.venv/
+.serena/
+graphify-out/
+db/
+data/
+logs/
+__pycache__/
+node_modules/
+*.min.js

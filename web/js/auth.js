@@ -41,6 +41,16 @@ function showLoginForm() {
     } catch(e) {
         console.warn('버전 표시 실패 (eel 연결 전):', e);
     }
+
+    // 조회 전용 접속 버튼 — settings.json 의 app.allow_guest_readonly 가 true 일 때만 노출
+    try {
+        eel.get_guest_mode_enabled()(function(res) {
+            const btn = document.getElementById('guestLoginBtn');
+            if (btn && res && res.enabled) btn.classList.remove('hidden');
+        });
+    } catch(e) {
+        console.warn('게스트 모드 확인 실패 (eel 연결 전):', e);
+    }
 }
 
 function showRegisterForm() {
@@ -200,6 +210,52 @@ async function handleLogin() {
 // 계정 등록 요청
 // ============================================================================
 
+// ============================================================================
+// 게스트(조회 전용) 접속
+// ============================================================================
+
+async function handleGuestLogin() {
+    const btn = document.getElementById('guestLoginBtn');
+    if (btn) { btn.disabled = true; btn.textContent = '접속 중...'; }
+    try {
+        const res = await eelWithTimeout(eel.login_as_guest()());
+        if (!res || !res.success) {
+            if (typeof showCustomAlert === 'function') {
+                showCustomAlert(res && res.message ? res.message : '조회 전용 접속에 실패했습니다.');
+            }
+            return;
+        }
+        currentUser = res.user;              // can_write=false → 기존 읽기전용 UI 경로가 그대로 적용됨
+        localStorage.removeItem('currentUser');   // 게스트 세션은 저장하지 않는다
+        _clearLocalAutoLogin();
+        showMainApp();
+        _applyGuestUI();
+    } catch (e) {
+        console.error('게스트 접속 오류:', e);
+        if (typeof showCustomAlert === 'function') {
+            showCustomAlert('조회 전용 접속 중 오류가 발생했습니다.');
+        }
+    } finally {
+        if (btn) { btn.disabled = false; btn.textContent = '로그인 없이 조회만 하기'; }
+    }
+}
+
+// 게스트에게 노출하지 않을 화면 — 직원 명부(전화번호·주소 포함)와 설정
+function _applyGuestUI() {
+    if (!currentUser || !currentUser.is_guest) return;
+    ['btnEmployee', 'btnSettings'].forEach(function(id) {
+        const el = document.getElementById(id);
+        if (el) el.classList.add('hidden');
+    });
+    const nameEl = document.getElementById('currentUser');
+    if (nameEl) nameEl.textContent = '게스트 (조회 전용)';
+
+    // 읽기전용 UI를 진입 즉시 적용한다.
+    // _applyWritePermissionUI() 는 원래 레코드 로드 시점에만 호출돼서, 그때까지
+    // 저장 버튼이 잠깐 보이는 구간이 생긴다.
+    if (typeof _applyWritePermissionUI === 'function') _applyWritePermissionUI();
+}
+
 async function handleRegister() {
     const userId = document.getElementById('regUserId').value.trim();
     const password = document.getElementById('regPassword').value.trim();
@@ -256,6 +312,9 @@ function handleLogout() {
             try { eel.clear_remember_token(token)(); } catch(e) { console.warn('토큰 삭제 실패:', e); }
         }
         _clearLocalAutoLogin();
+
+        // 서버측 세션 파기 — 이걸 빼면 로그아웃 후에도 파이썬 쪽 권한이 남는다
+        try { eel.logout()(); } catch(e) { console.warn('서버 세션 종료 실패:', e); }
 
         currentUser = null;
         localStorage.removeItem('currentUser');

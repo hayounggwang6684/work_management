@@ -2,6 +2,35 @@
 
 ## Bug Fixes Applied
 
+### 2026-08-28: 서버측 권한 게이트 + 게스트(조회 전용) 접속
+
+**신규 파일 `src/web/permissions.py`** — 패치 배포 시 절대 누락 금지 (v2.1.11 재발 방지)
+
+- **문제**: `@eel.expose` 145개 중 권한 검사가 있는 함수는 30개뿐이었고, 그 30개마저
+  `admin_id` 를 JS 인자로 받아 검사해서 브라우저 콘솔에서
+  `eel.admin_delete_user('피해자', 'admin')` 으로 우회 가능했다. 로그인 게이트도
+  `loginScreen`/`mainApp` 의 `hidden` 클래스 토글이 전부라 실질적 경계가 아니었다.
+- **해결**: 로그인 시 파이썬 쪽에 세션을 기록하고, 권한 판정을 서버 세션만 근거로 하도록 변경.
+  `@require('public'|'guest'|'login'|'write'|'admin'|'erp')` 데코레이터를 145개 전부에 적용.
+  `@eel.expose` 가 반드시 바깥(위)에 있어야 감싼 함수가 Eel 에 등록된다.
+- **거부 응답 타입 주의**: 145개 중 32개가 dict 가 아니라 list/str/bool 을 반환한다.
+  거부에 무조건 dict 를 주면 JS 의 `.map()`/`.trim()` 이 터지므로 반환 타입 주석을 보고
+  타입에 맞는 빈 값(`[]`/`''`/`False`)을 돌려준다.
+- **같이 고친 불일치**: `authenticate()` 는 admin 예외가 없는데
+  `validate_remember_token()` 은 `can_write or role=='admin'` 을 적용하고 있었다.
+  서버 게이트가 생기면 `can_write=0` 인 관리자가 일반 로그인 시 저장이 막히므로
+  게이트에서 admin 예외를 맞춰 줬다.
+- **게스트 접속**: `login_as_guest()` / `logout()` / `get_guest_mode_enabled()` 추가.
+  게스트는 `can_write=false` 라 기존 `_applyWritePermissionUI()` 경로가 그대로 적용된다.
+  `config/settings.json` 의 `app.allow_guest_readonly` 로 켜고 끈다.
+- **UI 순서 버그**: `_applyWritePermissionUI()` 가 레코드 로드 시점에만 호출돼서
+  게스트 진입 직후 저장 버튼이 잠깐 노출됐다. `_applyGuestUI()` 에서 즉시 호출하도록 수정.
+- **공개 범위**: guest=작업현황·보드·차트·월보 조회 / login=직원명부·휴가·내보내기 /
+  write=저장 계열 / admin=44개 / erp=12개. 직원명부는 전화번호·주소를 반환하므로 게스트 차단.
+- **검증**: 앱 실기동 후 게스트 진입 → 조회 10행 정상, `save_work_records`·
+  `admin_delete_user`·`get_employee_directory` 모두 `GUEST_FORBIDDEN`, 로그아웃 시 0행.
+
+
 - 2026-07-08: Added dismissible duplicate-suspicion controls to 관리자 > DB 관리 > 선사 목록 so false-positive 선사/선박 merge suggestions can be marked as "중복 의심 해제", persisted in `app_settings`, filtered out of future suggestion lists, and restored later with per-section reset buttons.
 - 2026-06-09: Fixed a read-only daily work refresh freeze by making users without write permission opt out of dirty-state tracking, unsaved-change refresh prompts, and autosave state; applying read-only UI now also clears any stale day/night dirty flags.
 - 2026-05-24: Added save-before-commit previews for day/night work changes, detailed employee leave change history backed by activity logs, ERP dry-run input previews, a strict DB `select_rows()` helper for new failure-visible queries, and a release verifier to catch version/patch ZIP packaging drift before upload.
