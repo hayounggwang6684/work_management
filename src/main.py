@@ -376,7 +376,10 @@ def main():
         'size': (config.get('ui.window_width', 1400),
                 config.get('ui.window_height', 900)),
         'position': 'center',
-        'disable_cache': config.get('ui.enable_dev_tools', False)
+        # 캐시는 항상 끈다. 개발자도구 설정에 묶여 있어서 dev tools 가 꺼진 배포본에서
+        # 브라우저가 옛 index.html/js 를 계속 캐시에서 꺼내 썼고, 그 결과 프론트엔드
+        # 패치가 통째로 무시됐다 (eel 자체 기본값도 disable_cache=True 다).
+        'disable_cache': True
     }
 
     if _restart_count > 0:
