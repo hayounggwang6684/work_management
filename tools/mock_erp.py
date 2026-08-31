@@ -82,6 +82,10 @@ class MockERPApp:
         self._edit_col   = 0      # EDIT_COLS 인덱스
         self._edit_entry = None
         self._hint_id    = None
+        # 그리드 커서 (Entry 없어도 유지 — 실제 ERP의 셀 포커스와 동일)
+        self._grid_row   = None
+        self._grid_col   = -1     # 0-based 열 인덱스
+        self._EDIT_COLS_SET = set(self.EDIT_COLS)  # {2, 5, 6, 8}
         self._selected_date = datetime.date.today()
         self._cal_year   = datetime.date.today().year
         self._cal_month  = datetime.date.today().month
@@ -128,6 +132,9 @@ class MockERPApp:
         self.root.bind('<Control-N>', self._on_ctrl_n)
         self.root.bind('<Control-s>', self._on_ctrl_s)
         self.root.bind('<Control-S>', self._on_ctrl_s)
+        # Right 키 — Entry 없는 상태에서 열 이동 (실제 ERP 그리드 열 탐색 시뮬레이션)
+        self.root.bind('<Right>', self._on_root_right)
+        self.tree.bind('<Right>', self._on_root_right)
 
         # 매크로 날짜 동기화 — 200ms 폴링
         self._last_macro_date = ''
@@ -330,12 +337,25 @@ class MockERPApp:
     def _on_ctrl_n(self, event=None):
         """Ctrl+N — 새 행 추가"""
         self._remove_hint()
+        # 폴링 타이밍과 무관하게 임시 파일을 직접 읽어 날짜 확정
+        # (폴링 200ms 내에 Ctrl+N이 발동하면 날짜가 오늘로 찍히는 문제 방지)
+        try:
+            if os.path.exists(MOCK_DATE_FILE):
+                with open(MOCK_DATE_FILE, 'r', encoding='utf-8') as _f:
+                    _d = _f.read().strip()
+                if _d:
+                    self._selected_date = datetime.date.fromisoformat(_d)
+        except Exception:
+            pass
         date_str = self._selected_date.strftime('%Y-%m-%d')
         row_count = len(self.tree.get_children())
         row_id = self.tree.insert('', 'end',
                     values=(date_str, row_count + 1, '', '', '', '', '', '', ''))
         self.tree.see(row_id)
         self.append_log(f'➕ Ctrl+N → 신규 행 #{row_count + 1} ({date_str})')
+        # 그리드 커서를 공사 열로 초기화
+        self._grid_row = row_id
+        self._grid_col = self.EDIT_COLS[0]   # 2 (공사)
         self.root.after(50, lambda: self._start_edit(row_id, edit_idx=0))
 
     def _on_ctrl_s(self, event=None):
@@ -366,7 +386,9 @@ class MockERPApp:
 
         self._edit_row = row_id
         self._edit_col = edit_idx
-        tree_col = self.EDIT_COLS[edit_idx]   # 실제 열 인덱스
+        self._grid_row = row_id
+        self._grid_col = self.EDIT_COLS[edit_idx]   # 실제 열 인덱스로 커서 업데이트
+        tree_col = self.EDIT_COLS[edit_idx]
 
         self.tree.selection_set(row_id)
         self.tree.update_idletasks()
@@ -386,77 +408,146 @@ class MockERPApp:
         self._edit_entry.select_range(0, tk.END)
         self._edit_entry.place(x=x, y=y, width=w + 1, height=h)
         self._edit_entry.focus_set()
+        # Win32 레벨에서도 Entry HWND에 포커스 설정
+        # → pyautogui.typewrite 키 입력이 이 Entry로 정확히 전달됨
+        try:
+            ctypes.windll.user32.SetFocus(self._edit_entry.winfo_id())
+        except Exception:
+            pass
 
         col_name = self.COLUMNS[tree_col][0]
-        hint = '계약번호 입력 후 Enter → 팝업' if tree_col == self.EDIT_COLS[0] else f'Enter: 다음 열  |  Esc: 취소'
+        hint = '계약번호 입력 후 Enter' if tree_col == self.EDIT_COLS[0] else 'Right: 다음 열  |  Esc: 취소'
         self._set_status(f'편집 중: [{col_name}]  —  {hint}')
         self.append_log(f'  ✏ [{col_name}] 편집 활성화')
 
         self._edit_entry.bind('<Return>', lambda e: self._on_enter())
-        self._edit_entry.bind('<Right>',  lambda e: self._on_enter())
-        self._edit_entry.bind('<Tab>',    lambda e: (self._on_enter(), 'break'))
+        self._edit_entry.bind('<Right>',  lambda e: (self._on_right_in_entry(), 'break'))
+        self._edit_entry.bind('<Tab>',    lambda e: (self._on_right_in_entry(), 'break'))
         self._edit_entry.bind('<Escape>', lambda e: self._cancel_edit())
 
     def _read_entry_text(self) -> str:
         """Entry 텍스트 읽기.
 
-        erp_macro는 WM_SETTEXT로 Win32 HWND에 직접 텍스트를 주입하므로
-        tkinter StringVar에는 반영되지 않음. GetWindowTextW로 HWND를 직접
-        읽어야 실제 입력된 값을 얻을 수 있음.
+        pyautogui.typewrite는 WM_CHAR로 전달되어 tkinter Entry 내부 상태를
+        직접 업데이트하므로 entry.get()이 우선. GetWindowTextW는 tkinter Entry에서
+        Win32 타이틀(빈 문자열)만 반환하므로 폴백으로만 사용.
         """
         if not self._edit_entry:
             return ''
+        # 1순위: tkinter 내부 값 (pyautogui.typewrite / pyperclip+Ctrl+V 모두 반영됨)
+        val = self._edit_entry.get()
+        if val:
+            return val
+        # 2순위: HWND에서 직접 읽기 (WM_SETTEXT 직접 주입 케이스)
         try:
             hwnd = self._edit_entry.winfo_id()
             if hwnd:
                 buf = ctypes.create_unicode_buffer(512)
                 ctypes.windll.user32.GetWindowTextW(hwnd, buf, 512)
-                hwnd_text = buf.value
-                if hwnd_text:
-                    return hwnd_text
+                if buf.value:
+                    return buf.value
         except Exception:
             pass
-        # fallback: tkinter 내부 값
-        return self._edit_entry.get()
+        return ''
 
-    def _on_enter(self):
-        """현재 셀 값 저장 + 다음 셀로 이동 (또는 팝업)"""
-        if not self._edit_row or not self.tree.exists(self._edit_row):
-            return
-        if not self._edit_entry:
-            return
-
+    def _save_cell_value(self) -> str:
+        """현재 Entry 값을 Treeview에 저장 (Entry는 닫지 않음). 저장한 값 반환."""
+        if not self._edit_entry or not self._edit_row:
+            return ''
+        if not self.tree.exists(self._edit_row):
+            return ''
         tree_col = self.EDIT_COLS[self._edit_col]
-        val      = self._read_entry_text()   # WM_SETTEXT 주입 텍스트 포함해서 읽기
+        val      = self._read_entry_text()
         col_name = self.COLUMNS[tree_col][0]
-
-        # 값 저장
         vals = list(self.tree.item(self._edit_row)['values'])
         while len(vals) < len(self.COLUMNS):
             vals.append('')
         vals[tree_col] = val
         self.tree.item(self._edit_row, values=vals)
         self.append_log(f'  ✎ {col_name}: "{val}"')
+        return val
 
-        row_id     = self._edit_row
-        next_idx   = self._edit_col + 1
+    def _on_enter(self):
+        """Enter 키 처리.
 
-        # 공사 열 → 계약 팝업 (자동 입력 모드에서는 팝업 없이 통과)
-        if tree_col == self.EDIT_COLS[0] and val.strip():
-            self._commit_edit()
-            # 매크로가 이미 Enter를 보내 팝업을 자동 선택한 것으로 간주 → 바로 다음 열
-            self.append_log(f'  📋 계약 팝업 자동 선택: "{val}"')
-            self.root.after(50, lambda: self._start_edit(row_id, edit_idx=next_idx))
+        공사 열: 계약번호 확정 후 공사 열에 머뭄 (실제 ERP 팝업 선택 후 동작).
+                  이후 매크로의 Right×3이 작업내용으로 이동.
+        나머지 열: 값 저장 후 다음 열로 이동 (Right와 동일).
+        """
+        if not self._edit_row or not self.tree.exists(self._edit_row):
+            return
+        if not self._edit_entry:
             return
 
+        tree_col = self.EDIT_COLS[self._edit_col]
+        val      = self._save_cell_value()
+        row_id   = self._edit_row
+
+        if tree_col == self.EDIT_COLS[0]:   # 공사 열
+            # 팝업 선택 완료 → 공사 열에 머뭄, Entry만 닫음
+            self._commit_edit()
+            self.append_log(f'  📋 계약 팝업 자동 선택: "{val}"')
+            self._grid_col = self.EDIT_COLS[0]  # 공사(열 2)에 머뭄
+            self.root.focus_set()  # Root 포커스 → 다음 Right가 _on_root_right로 전달
+            return
+
+        # 나머지 열: 다음 열로 이동 (Right와 동일)
+        self._advance_from_entry(row_id)
+
+    def _on_right_in_entry(self):
+        """Entry 안에서 Right 키 → 값 저장 후 다음 열로 이동."""
+        if not self._edit_row or not self.tree.exists(self._edit_row):
+            return
+        row_id = self._edit_row
+        self._save_cell_value()
+        self._advance_from_entry(row_id)
+
+    def _advance_from_entry(self, row_id: str):
+        """현재 열 Entry를 닫고 다음 열로 이동. EDIT_COL이면 Entry 열기."""
         self._commit_edit()
-        if next_idx < len(self.EDIT_COLS):
-            self.root.after(50, lambda: self._start_edit(row_id, edit_idx=next_idx))
+        self._grid_col += 1
+
+        if self._grid_col >= len(self.COLUMNS):
+            self._on_row_complete()
+            return
+
+        if self._grid_col in self._EDIT_COLS_SET:
+            edit_idx = self.EDIT_COLS.index(self._grid_col)
+            self.root.after(50, lambda: self._start_edit(row_id, edit_idx))
         else:
-            self.append_log('✅ 행 입력 완료')
-            self._set_status('입력 완료 — Ctrl+N: 신규 행  |  Ctrl+S: 저장')
+            # 편집 불가 열 — 커서만 이동, Root에 포커스 줘서 다음 Right 수신
+            self._grid_row = row_id
+            self.root.focus_set()
+
+    def _on_root_right(self, event=None):
+        """Entry 없는 상태에서 Root/Treeview Right 키 → 열 이동.
+
+        실제 ERP에서 커서가 그리드 셀에 있을 때 Right 키로 열을 이동하는 것과 동일.
+        """
+        if self._edit_entry:
+            return  # Entry가 열려 있으면 Entry 바인딩이 처리
+        if not self._grid_row or not self.tree.exists(self._grid_row):
+            return
+        row_id = self._grid_row
+        self._grid_col += 1
+
+        if self._grid_col >= len(self.COLUMNS):
+            self._on_row_complete()
+            return
+
+        if self._grid_col in self._EDIT_COLS_SET:
+            edit_idx = self.EDIT_COLS.index(self._grid_col)
+            self.root.after(50, lambda: self._start_edit(row_id, edit_idx))
+        # else: 편집 불가 열 — 그냥 통과 (다음 Right 대기)
+
+    def _on_row_complete(self):
+        """행 입력 완료 처리."""
+        self.append_log('✅ 행 입력 완료')
+        self._set_status('입력 완료 — Ctrl+N: 신규 행  |  Ctrl+S: 저장')
+        self._grid_col = -1   # 리셋
 
     def _commit_edit(self):
+        """Entry 위젯만 닫음. _grid_row/_grid_col은 유지."""
         if self._edit_entry:
             try:
                 self._edit_entry.destroy()

@@ -3,12 +3,16 @@
   "description": "v1.6.1 패치",
   "files": [
     {
-      "source": "web/js/splash.js",
-      "target": "web/js/splash.js"
+      "source": "src/database/auth_manager.py",
+      "target": "src/database/auth_manager.py"
     },
     {
       "source": "web/js/auth.js",
       "target": "web/js/auth.js"
+    },
+    {
+      "source": "web/js/splash.js",
+      "target": "web/js/splash.js"
     }
   ]
 }

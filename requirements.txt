@@ -28,6 +28,7 @@ Pillow>=10.0.0
 pyautogui>=0.9.54
 pywin32>=306
 pyperclip>=1.8.2
+pywinauto>=0.6.8
 
 # Utilities
 python-dotenv>=1.0.0

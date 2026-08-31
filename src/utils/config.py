@@ -58,8 +58,8 @@ class Config:
     
     def _get_default_config(self) -> Dict[str, Any]:
         """기본 설정 반환 (settings.json 없을 때 사용)"""
-        # DB 기본 경로: 현재 사용자 바탕화면/db (어떤 PC에서도 동작)
-        default_db_path = str(Path.home() / "Desktop" / "db")
+        # DB 기본 경로: 앱 설치 루트/db (config.py 위치 기준 3단계 상위)
+        default_db_path = str(Path(__file__).parent.parent.parent / "db")
         return {
             "app": {
                 "name": "금일작업현황 관리",
@@ -131,7 +131,7 @@ class Config:
         local_path = self.get('database.local_path', '')
         filename = self.get('database.filename', 'work_management.db')
         if not local_path or local_path.strip() == '':
-            local_path = str(Path.home() / "Desktop" / "db")
+            local_path = str(Path(__file__).parent.parent.parent / "db")
         return Path(local_path) / filename
     
     @property
