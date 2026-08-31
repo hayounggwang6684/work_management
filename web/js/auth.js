@@ -236,7 +236,7 @@ async function handleGuestLogin() {
             showCustomAlert('조회 전용 접속 중 오류가 발생했습니다.');
         }
     } finally {
-        if (btn) { btn.disabled = false; btn.textContent = '로그인 없이 조회만 하기'; }
+        if (btn) { btn.disabled = false; btn.textContent = '조회 전용 접속'; }
     }
 }
 
