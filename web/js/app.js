@@ -1634,6 +1634,41 @@ function _collectContractNumbers(records) {
         .filter(Boolean))];
 }
 
+// 계약번호에 이미 등록된 선사/선명과 다른 값이 들어왔는지 대조한다.
+// 예: SH-2026-136-T 가 영광해운/영광호로 등록돼 있는데 같은 번호로 다른 선박
+// 작업을 입력하면 계약 이력이 섞인다. 저장 전에 잡는 것이 목적.
+async function _findContractIdentityConflicts(records) {
+    const conflicts = new Set();
+
+    for (const cn of _collectContractNumbers(records)) {
+        let known;
+        try {
+            known = await eel.get_latest_record_by_contract(cn)();
+        } catch (e) {
+            console.warn('계약번호 대조 실패 (건너뜀):', cn, e);
+            continue;   // 조회 실패로 저장을 막지는 않는다
+        }
+        if (!known || !known.found) continue;   // 신규 계약번호
+
+        for (const r of records || []) {
+            if ((r.contractNumber || '').trim().toUpperCase() !== cn) continue;
+
+            const diff = [];
+            const company = (r.company || '').trim();
+            const ship = (r.shipName || '').trim();
+            if (company && known.company && company !== known.company.trim()) {
+                diff.push('선사: 기존 "' + known.company + '" \u2192 입력 "' + company + '"');
+            }
+            if (ship && known.shipName && ship !== known.shipName.trim()) {
+                diff.push('선명: 기존 "' + known.shipName + '" \u2192 입력 "' + ship + '"');
+            }
+            if (diff.length) conflicts.add('[' + cn + ']\n  ' + diff.join('\n  '));
+        }
+    }
+    return [...conflicts];
+}
+
+// 저장 직전 계약번호 게이트 — 주간/야간/자동저장이 모두 여기를 지난다.
 async function _validateContractNumbersForSave(records, alertMode = 'modal') {
     for (const cn of _collectContractNumbers(records)) {
         const v = await eel.validate_contract_number(cn)();
@@ -1646,6 +1681,21 @@ async function _validateContractNumbersForSave(records, alertMode = 'modal') {
             }
             return false;
         }
+    }
+
+    const conflicts = await _findContractIdentityConflicts(records);
+    if (conflicts.length > 0) {
+        // 자동저장 중에는 confirm() 으로 입력을 끊지 않고 수동 저장으로 넘긴다
+        if (alertMode === 'toast') {
+            showToast('계약번호의 선사/선명이 기존 기록과 다릅니다. [저장] 버튼으로 확인해 주세요.',
+                      'warning', 5000);
+            return false;
+        }
+        const proceed = confirm(
+            '\u26a0 기존에 등록된 선사/선명과 다릅니다:\n\n' + conflicts.join('\n\n') +
+            '\n\n계약번호를 잘못 입력했을 수 있습니다.\n계속 저장하시겠습니까?'
+        );
+        if (!proceed) return false;
     }
     return true;
 }
@@ -2388,6 +2438,30 @@ async function autoExpandContractNumber(index, input) {
                 updateRecord(index, field, result[field]);
                 filled = true;
             }
+        }
+
+        // 이미 다른 값이 들어 있으면 자동완성이 건너뛰므로 조용히 지나간다.
+        // 계약번호를 잘못 적은 경우일 수 있어 입력 시점에 바로 알린다.
+        // (위에서 이미 받아 온 result 를 재사용 — 추가 조회 없음)
+        const mismatch = [];
+        const curCompany = (records[index]?.company || '').trim();
+        const curShip = (records[index]?.shipName || '').trim();
+        if (curCompany && result.company && curCompany !== result.company.trim()) {
+            mismatch.push('선사 "' + result.company + '"');
+        }
+        if (curShip && result.shipName && curShip !== result.shipName.trim()) {
+            mismatch.push('선명 "' + result.shipName + '"');
+        }
+        if (mismatch.length > 0) {
+            showToast(cn + ' 은(는) 기존에 ' + mismatch.join(' / ') +
+                      ' 으로 등록되어 있습니다. 계약번호를 확인해 주세요.', 'warning', 6000);
+            const rowEl = input.closest('tr');
+            if (rowEl) {
+                rowEl.style.transition = 'background-color 0.15s';
+                rowEl.style.backgroundColor = '#fee2e2';   // 빨간 flash
+                setTimeout(() => { rowEl.style.backgroundColor = ''; }, 1500);
+            }
+            return;   // 아래 노란 flash 와 겹치지 않게
         }
 
         // 자동완성 완료 시 행 flash 효과
