@@ -230,6 +230,9 @@ async function handleGuestLogin() {
         _clearLocalAutoLogin();
         showMainApp();
         _applyGuestUI();
+        // 일반 로그인(checkAutoLogin)은 showMainApp 뒤에 loadWorkRecords 를 부른다.
+        // 게스트 경로에 이게 빠져서 날짜를 옮기기 전까지 현황이 비어 보였다.
+        if (typeof loadWorkRecords === 'function') await loadWorkRecords();
     } catch (e) {
         console.error('게스트 접속 오류:', e);
         if (typeof showCustomAlert === 'function') {
@@ -249,6 +252,10 @@ function _applyGuestUI() {
     });
     const nameEl = document.getElementById('currentUser');
     if (nameEl) nameEl.textContent = '게스트 (조회 전용)';
+
+    // 게스트 진입 화면은 항상 일일 작업.
+    // showMainApp() 은 localStorage 의 이전 사용자 기본화면이나 dashboard 를 쓰므로 덮어쓴다.
+    if (typeof showView === 'function') showView('daily');
 
     // 읽기전용 UI를 진입 즉시 적용한다.
     // _applyWritePermissionUI() 는 원래 레코드 로드 시점에만 호출돼서, 그때까지
