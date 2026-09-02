@@ -1426,11 +1426,12 @@
                     <div class="bg-amber-50 p-4 rounded-lg">
                         <h3 class="font-semibold mb-2 text-amber-900">엑셀 데이터 불러오기</h3>
                         <p class="text-xs text-amber-700 mb-3">
-                            기존 엑셀 파일(.xlsx, .xlsb)을 프로그램 DB로 일괄 업로드합니다.<br>
-                            ⚠️ 동일 날짜의 기존 데이터는 덮어쓰기 됩니다.
+                            기존 엑셀 파일(.xlsx, .xlsb)을 프로그램 DB로 일괄 업로드합니다.
+                            <strong>여러 개를 한 번에 선택</strong>할 수 있습니다 (Ctrl 또는 Shift 로 다중 선택).<br>
+                            ⚠️ 동일 날짜의 기존 데이터는 덮어쓰기 됩니다. 파일명 순서대로 처리됩니다.
                         </p>
                         <div class="flex gap-2 items-center flex-wrap">
-                            <input type="file" id="excelFileInput" accept=".xlsx,.xls,.xlsb"
+                            <input type="file" id="excelFileInput" accept=".xlsx,.xls,.xlsb" multiple
                                    class="text-sm file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-amber-600 file:text-white file:font-semibold hover:file:bg-amber-700">
                             <button onclick="importExcelData()"
                                     class="px-6 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 font-semibold">

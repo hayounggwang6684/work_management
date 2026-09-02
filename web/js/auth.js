@@ -1949,40 +1949,80 @@ async function importExcelData() {
         return;
     }
 
-    const file = fileInput.files[0];
-    resultDiv.innerHTML = '<p class="text-amber-700 text-sm">파일 읽는 중...</p>';
+    // 파일명 순으로 처리 — 같은 날짜가 여러 파일에 있으면 나중 파일이 덮어쓰므로
+    // 선택 순서가 아니라 이름 순으로 고정해야 결과가 예측 가능하다.
+    const files = [...fileInput.files].sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+
+    const results = [];
+    let totalDates = 0, totalRecords = 0, totalSkipped = 0, failed = 0;
 
     try {
-        const arrayBuffer = await file.arrayBuffer();
-        const uint8Array = new Uint8Array(arrayBuffer);
-        let binary = '';
-        for (let i = 0; i < uint8Array.length; i++) {
-            binary += String.fromCharCode(uint8Array[i]);
-        }
-        const base64Data = btoa(binary);
+        for (let i = 0; i < files.length; i++) {
+            const file = files[i];
+            const step = `(${i + 1}/${files.length}) ${file.name}`;
+            resultDiv.innerHTML = `<p class="text-amber-700 text-sm">${escapeHtml(step)} 읽는 중...</p>`;
+            showLoading(true, `엑셀 업로드 중 ${step}`);
 
-        showLoading(true, '엑셀 데이터 업로드 중...');
-        const result = await eel.import_excel_data(base64Data, currentUser.user_id)();
+            try {
+                const base64Data = _arrayBufferToBase64(await file.arrayBuffer());
+                const result = await eel.import_excel_data(base64Data, currentUser.user_id)();
+
+                if (result && result.success) {
+                    totalDates += result.total_dates || 0;
+                    totalRecords += result.total_records || 0;
+                    totalSkipped += result.skipped || 0;
+                    results.push({ name: file.name, ok: true,
+                                   text: `${result.total_dates || 0}일 / ${result.total_records || 0}건` });
+                } else {
+                    failed++;
+                    results.push({ name: file.name, ok: false,
+                                   text: (result && result.message) || '알 수 없는 오류' });
+                }
+            } catch (e) {
+                // 한 파일이 실패해도 나머지는 계속 처리한다
+                console.error('엑셀 불러오기 오류:', file.name, e);
+                failed++;
+                results.push({ name: file.name, ok: false, text: '파일 처리 중 오류' });
+            }
+        }
         showLoading(false);
 
-        if (result.success) {
-            resultDiv.innerHTML = `
-                <div class="bg-green-100 text-green-800 p-3 rounded-lg text-sm">
-                    <p class="font-semibold">불러오기 성공</p>
-                    <p>총 ${result.total_dates || 0}일, ${result.total_records || 0}건 저장됨</p>
-                    ${result.skipped ? '<p class="text-xs text-green-600">빈 행 ' + result.skipped + '건 건너뜀</p>' : ''}
-                </div>`;
-            showCustomAlert('성공', `엑셀 데이터 ${result.total_records}건이 저장되었습니다.`, 'success');
+        const rows = results.map(r =>
+            `<li class="${r.ok ? 'text-green-800' : 'text-red-600'}">${r.ok ? '✓' : '✗'} ` +
+            `${escapeHtml(r.name)} — ${escapeHtml(r.text)}</li>`).join('');
+        const box = failed === 0 ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-900';
+        resultDiv.innerHTML = `
+            <div class="${box} p-3 rounded-lg text-sm">
+                <p class="font-semibold">파일 ${files.length}개 중 ${files.length - failed}개 성공${failed ? `, ${failed}개 실패` : ''}</p>
+                <p>총 ${totalDates}일, ${totalRecords}건 저장됨</p>
+                ${totalSkipped ? `<p class="text-xs">빈 행 ${totalSkipped}건 건너뜀</p>` : ''}
+                <ul class="mt-2 text-xs space-y-0.5">${rows}</ul>
+            </div>`;
+
+        if (failed === 0) {
+            showCustomAlert('성공', `엑셀 ${files.length}개 파일에서 ${totalRecords}건이 저장되었습니다.`, 'success');
         } else {
-            if (resultDiv) resultDiv.innerHTML = `<p class="text-red-600 text-sm">오류: ${escapeHtml(result.message || '알 수 없는 오류')}</p>`;
-            showCustomAlert('실패', result.message || '불러오기 실패', 'error');
+            showCustomAlert('일부 실패',
+                `${files.length - failed}개 성공 / ${failed}개 실패. 아래 목록을 확인하세요.`, 'error');
         }
     } catch (error) {
         showLoading(false);
         console.error('엑셀 불러오기 오류:', error);
-        if (resultDiv) resultDiv.innerHTML = `<p class="text-red-600 text-sm">오류가 발생했습니다.</p>`;
+        resultDiv.innerHTML = `<p class="text-red-600 text-sm">오류가 발생했습니다.</p>`;
         showCustomAlert('오류', '엑셀 불러오기 중 오류가 발생했습니다.', 'error');
     }
+}
+
+// 바이트 단위 문자열 연결은 파일이 커지면 급격히 느려진다.
+// 파일 여러 개를 연속 처리하므로 청크 단위로 변환한다.
+function _arrayBufferToBase64(arrayBuffer) {
+    const bytes = new Uint8Array(arrayBuffer);
+    const CHUNK = 0x8000;
+    let binary = '';
+    for (let i = 0; i < bytes.length; i += CHUNK) {
+        binary += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+    }
+    return btoa(binary);
 }
 
 // ============================================================================
