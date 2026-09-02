@@ -1505,25 +1505,40 @@ def _restructure_legacy_teammates(teammates: str, trusted):
         if not tokens:
             continue
 
-        company, company_len = None, 0
-        for size in (3, 2, 1):       # 'JS 테크', '세정 엔지니어링' 같은 여러 단어 상호 우선
-            if size > len(tokens):
+        # 덩어리 안을 훑어 업체가 나오면 그 뒤 이름들을 그 업체 소속으로 묶는다.
+        # 업체보다 앞에 있는 이름은 직영으로 둔다
+        # ('고재랑 개인 김영언 김병철 TM 명우진' 처럼 중간에 업체가 오는 경우)
+        direct, groups, i = [], [], 0
+        while i < len(tokens):
+            company, size = None, 0
+            for n in (3, 2, 1):   # 'JS 테크', '세정 엔지니어링' 같은 여러 단어 상호 우선
+                if i + n > len(tokens):
+                    continue
+                candidate = ' '.join(tokens[i:i + n])
+                if candidate in trusted:
+                    company, size = candidate, n
+                    break
+            if company:
+                groups.append([company, []])
+                i += size
                 continue
-            candidate = ' '.join(tokens[:size])
-            if candidate in trusted:
-                company, company_len = candidate, size
-                break
+            (groups[-1][1] if groups else direct).append(tokens[i])
+            i += 1
 
-        names = tokens[company_len:] if company else []
-        if not company or not names:
-            out_parts.append(chunk)          # 업체명이 없거나 뒤에 이름이 없으면 원문 유지
+        if not groups or not any(names for _, names in groups):
+            out_parts.append(chunk)          # 업체가 없거나 뒤에 이름이 없으면 원문 유지
             continue
 
-        joined = ', '.join(names)
-        if company in LEGACY_DAILY_VENDORS:
-            out_parts.append(f'{company}[{joined}]')
-        else:
-            out_parts.append(f'{company}({joined})')
+        out_parts.extend(direct)
+        for company, names in groups:
+            if not names:
+                out_parts.append(company)
+                continue
+            joined = ', '.join(names)
+            if company in LEGACY_DAILY_VENDORS:
+                out_parts.append(f'{company}[{joined}]')
+            else:
+                out_parts.append(f'{company}({joined})')
         changed_any = True
 
     if not changed_any:
@@ -1531,6 +1546,85 @@ def _restructure_legacy_teammates(teammates: str, trusted):
 
     new_text = ', '.join(out_parts)
     return (new_text, True) if new_text != text else (text, False)
+
+
+def _fix_polluted_vendor_labels(teammates: str, trusted):
+    """업체명 칸에 사람 이름이 섞여 들어간 세그먼트를 갈라 준다.
+
+    '개인 김영언 김병철 TM(김주연, 손승용)'
+        -> '개인[김영언, 김병철], TM(김주연, 손승용)'
+    '이원종 개인(김영언, 이정훈)'
+        -> '이원종, 개인(김영언, 이정훈)'
+
+    맨 뒤 업체가 원래 괄호 안 내용을 그대로 가져가며 괄호 종류도 유지한다.
+    앞쪽 업체는 정책에 따라 '개인' 은 일당[], 나머지는 도급() 으로 만든다.
+    """
+    text = str(teammates or '')
+    if not text.strip():
+        return text, False
+
+    changed = False
+
+    def _make_repl(open_ch, close_ch):
+        def _repl(match):
+            nonlocal changed
+            raw_label = match.group(1) or ''
+            lead = raw_label[:len(raw_label) - len(raw_label.lstrip())]  # 앞 공백 보존
+            label = raw_label.strip()
+            blob = match.group(2)
+            tokens = [t for t in re.split(r'[\s.]+', label) if t]
+            if len(tokens) < 2:
+                return match.group(0)
+
+            direct = []
+            groups = []          # [[업체명, [이름...]], ...]
+            i = 0
+            while i < len(tokens):
+                company, size = None, 0
+                for n in (2, 1):
+                    if i + n > len(tokens):
+                        continue
+                    candidate = ' '.join(tokens[i:i + n])
+                    if candidate in trusted:
+                        company, size = candidate, n
+                        break
+                if company:
+                    groups.append([company, []])
+                    i += size
+                    continue
+                if groups:
+                    groups[-1][1].append(tokens[i])
+                else:
+                    direct.append(tokens[i])
+                i += 1
+
+            if not groups:
+                return match.group(0)          # 업체를 못 찾으면 손대지 않는다
+            if len(groups) == 1 and not direct and not groups[0][1]:
+                return match.group(0)          # 이미 정상 (업체명 한 개뿐)
+
+            parts = list(direct)
+            for idx, (company, names) in enumerate(groups):
+                is_last = (idx == len(groups) - 1)
+                if is_last:
+                    # 원래 괄호 안 내용을 이어받고 괄호 종류도 그대로 둔다
+                    tail = ', '.join([n for n in names] + [str(blob or '').strip()])
+                    parts.append(f'{company}{open_ch}{tail}{close_ch}')
+                elif names:
+                    joined = ', '.join(names)
+                    if company in LEGACY_DAILY_VENDORS:
+                        parts.append(f'{company}[{joined}]')
+                    else:
+                        parts.append(f'{company}({joined})')
+                else:
+                    parts.append(company)
+            changed = True
+            return lead + ', '.join(parts)
+        return _repl
+
+    text = re.compile(r'([^,\[\]()\n]+?)\(([^)]+)\)').sub(_make_repl('(', ')'), text)
+    text = re.compile(r'([^,\[\]()\n]+?)\[([^\]]+)\]').sub(_make_repl('[', ']'), text)
+    return text, changed
 
 
 def _plan_restructure_legacy_teammates(cutoff_date: str = LEGACY_TEAMMATES_CUTOFF):
@@ -1548,7 +1642,11 @@ def _plan_restructure_legacy_teammates(cutoff_date: str = LEGACY_TEAMMATES_CUTOF
         ).fetchall()
 
     for row in rows:
-        new_text, changed = _restructure_legacy_teammates(row['teammates'] or '', trusted)
+        original = row['teammates'] or ''
+        # ① 괄호 없는 자유 텍스트 구조화  ② 업체명에 이름이 섞인 세그먼트 분리
+        new_text, changed_a = _restructure_legacy_teammates(original, trusted)
+        new_text, changed_b = _fix_polluted_vendor_labels(new_text, trusted)
+        changed = changed_a or changed_b
         if not changed:
             continue
         old_mp = float(row['manpower'] or 0)
