@@ -2040,18 +2040,89 @@ async function createManualBackup() {
 // 엑셀 불러오기 (관리자)
 // ============================================================================
 
-async function importExcelData() {
+// 선택한 파일을 쌓아 두는 대기열.
+// 폴더 선택(webkitdirectory)은 한 번에 한 폴더만 고를 수 있어서, 여러 폴더를
+// 담으려면 누적이 필요하다. 폴더가 다르면 파일명이 겹칠 수 있으므로 경로로 구분한다.
+let _excelImportQueue = [];
+
+function _excelFilePath(file) {
+    return file.webkitRelativePath || file.name;
+}
+
+function addExcelFilesToQueue(input) {
+    if (!input || !input.files) return;
+    const picked = [...input.files].filter(f => /\.(xlsx|xls|xlsb)$/i.test(f.name));
+    const skipped = input.files.length - picked.length;
+
+    let added = 0;
+    for (const file of picked) {
+        const path = _excelFilePath(file);
+        if (_excelImportQueue.some(f => _excelFilePath(f) === path)) continue;  // 같은 경로 중복 방지
+        _excelImportQueue.push(file);
+        added++;
+    }
+    input.value = '';   // 같은 폴더를 다시 고를 수 있도록 초기화
+    renderExcelImportQueue();
+
+    if (added === 0 && picked.length > 0) {
+        showToast('이미 목록에 있는 파일입니다.', 'warning');
+    } else if (skipped > 0) {
+        showToast(`${added}개 추가 (엑셀이 아닌 파일 ${skipped}개 제외)`, 'info');
+    }
+}
+window.addExcelFilesToQueue = addExcelFilesToQueue;
+
+function clearExcelImportQueue() {
+    _excelImportQueue = [];
     const fileInput = document.getElementById('excelFileInput');
+    if (fileInput) fileInput.value = '';
+    renderExcelImportQueue();
+}
+window.clearExcelImportQueue = clearExcelImportQueue;
+
+function removeExcelQueueItem(path) {
+    _excelImportQueue = _excelImportQueue.filter(f => _excelFilePath(f) !== path);
+    renderExcelImportQueue();
+}
+window.removeExcelQueueItem = removeExcelQueueItem;
+
+function renderExcelImportQueue() {
+    const el = document.getElementById('excelImportQueue');
+    if (!el) return;
+    if (_excelImportQueue.length === 0) {
+        el.innerHTML = '';
+        return;
+    }
+    const rows = _excelImportQueue
+        .map(f => _excelFilePath(f))
+        .sort((a, b) => a.localeCompare(b, 'ko'))
+        .map(path => `
+            <li class="flex items-center justify-between gap-2 py-0.5">
+                <span class="truncate">${escapeHtml(path)}</span>
+                <button onclick="removeExcelQueueItem('${escapeJs(path)}')"
+                        class="text-slate-400 hover:text-red-600 shrink-0">✕</button>
+            </li>`).join('');
+    el.innerHTML = `
+        <div class="bg-white border border-amber-200 rounded-lg p-3 text-xs">
+            <p class="font-semibold text-amber-800 mb-1">불러올 파일 ${_excelImportQueue.length}개</p>
+            <ul class="max-h-40 overflow-y-auto text-slate-600">${rows}</ul>
+        </div>`;
+}
+window.renderExcelImportQueue = renderExcelImportQueue;
+
+async function importExcelData() {
     const resultDiv = document.getElementById('importResult');
 
-    if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
-        showCustomAlert('알림', '엑셀 파일을 선택해주세요.', 'info');
+    if (_excelImportQueue.length === 0) {
+        showCustomAlert('알림', '엑셀 파일 또는 폴더를 선택해주세요.', 'info');
         return;
     }
 
-    // 파일명 순으로 처리 — 같은 날짜가 여러 파일에 있으면 나중 파일이 덮어쓰므로
-    // 선택 순서가 아니라 이름 순으로 고정해야 결과가 예측 가능하다.
-    const files = [...fileInput.files].sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+    // 경로 순으로 처리 — 같은 날짜가 여러 파일에 있으면 나중 파일이 덮어쓰므로
+    // 선택 순서가 아니라 경로 순으로 고정해야 결과가 예측 가능하다.
+    // 폴더가 다르면 파일명이 겹치므로 이름이 아니라 전체 경로로 정렬한다.
+    const files = [..._excelImportQueue].sort(
+        (a, b) => _excelFilePath(a).localeCompare(_excelFilePath(b), 'ko'));
 
     const results = [];
     let totalDates = 0, totalRecords = 0, totalSkipped = 0, failed = 0;
@@ -2059,7 +2130,7 @@ async function importExcelData() {
     try {
         for (let i = 0; i < files.length; i++) {
             const file = files[i];
-            const step = `(${i + 1}/${files.length}) ${file.name}`;
+            const step = `(${i + 1}/${files.length}) ${_excelFilePath(file)}`;
             resultDiv.innerHTML = `<p class="text-amber-700 text-sm">${escapeHtml(step)} 읽는 중...</p>`;
             showLoading(true, `엑셀 업로드 중 ${step}`);
 
@@ -2071,18 +2142,18 @@ async function importExcelData() {
                     totalDates += result.total_dates || 0;
                     totalRecords += result.total_records || 0;
                     totalSkipped += result.skipped || 0;
-                    results.push({ name: file.name, ok: true,
+                    results.push({ name: _excelFilePath(file), ok: true,
                                    text: `${result.total_dates || 0}일 / ${result.total_records || 0}건` });
                 } else {
                     failed++;
-                    results.push({ name: file.name, ok: false,
+                    results.push({ name: _excelFilePath(file), ok: false,
                                    text: (result && result.message) || '알 수 없는 오류' });
                 }
             } catch (e) {
                 // 한 파일이 실패해도 나머지는 계속 처리한다
-                console.error('엑셀 불러오기 오류:', file.name, e);
+                console.error('엑셀 불러오기 오류:', _excelFilePath(file), e);
                 failed++;
-                results.push({ name: file.name, ok: false, text: '파일 처리 중 오류' });
+                results.push({ name: _excelFilePath(file), ok: false, text: '파일 처리 중 오류' });
             }
         }
         showLoading(false);
@@ -2100,6 +2171,7 @@ async function importExcelData() {
             </div>`;
 
         if (failed === 0) {
+            clearExcelImportQueue();
             showCustomAlert('성공', `엑셀 ${files.length}개 파일에서 ${totalRecords}건이 저장되었습니다.`, 'success');
         } else {
             showCustomAlert('일부 실패',
