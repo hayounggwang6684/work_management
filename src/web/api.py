@@ -13,7 +13,7 @@ from .permissions import (
     current_user, is_guest, is_authenticated,
 )
 from ..business.work_record_service import work_record_service
-from ..business.calculations import separate_workers, split_manpower_by_type
+from ..business.calculations import separate_workers, split_manpower_by_type, calculate_record_manpower
 from ..database.db_manager import db
 from ..database.auth_manager import auth_manager
 from ..sync.cloud_sync import cloud_sync
@@ -1427,6 +1427,199 @@ def admin_rename_owner_ship(owner_name: str, old_name: str, new_name: str,
         return {'success': False, 'message': '선박명 변경 중 오류가 발생했습니다.'}
 
 
+LEGACY_TEAMMATES_CUTOFF = '2025-12-31'   # 이 날짜 이하의 과거 자료만 정리 대상
+LEGACY_DAILY_VENDORS = {'개인'}            # 일당[]으로 볼 업체. 나머지는 도급()
+
+
+def _collect_trusted_vendor_names():
+    """괄호로 정상 입력된 기록에서 신뢰할 만한 업체명을 추린다.
+
+    같은 라벨이 '업체 자리'에 압도적으로 많이 쓰였으면 업체로 본다.
+    '김용진'(업체 11회 / 직원 52회) 처럼 사람 이름이 업체칸에 잘못 들어간 것은 걸러진다.
+    """
+    as_company = {}
+    as_worker = {}
+    with db.get_connection() as conn:
+        rows = conn.execute(
+            "SELECT teammates FROM work_records "
+            "WHERE teammates IS NOT NULL AND teammates != ''"
+        ).fetchall()
+
+    for row in rows:
+        for seg in _iter_vendor_segments(row['teammates'] or ''):
+            company = (seg['company'] or '').strip()
+            if company:
+                as_company[company] = as_company.get(company, 0) + 1
+            for raw in str(seg['names_blob'] or '').split(','):
+                name = _normalize_holiday_worker_name(raw)
+                if name:
+                    as_worker[name] = as_worker.get(name, 0) + 1
+
+    trusted = set()
+    for label, count in as_company.items():
+        if count < 3:
+            continue
+        if as_worker.get(label, 0) * 2 > count:      # 직원으로 더 많이 쓰였으면 사람
+            continue
+        if re.search(r'\d+\s*명', label):            # 'TM 4명' 같은 오염 라벨 제외
+            continue
+        parts = label.split()
+        # '조기상 개인', '전정운 성진', '개인 김영언 김병철 TM' 처럼 사람 이름이
+        # 업체명에 섞여 들어간 합본은 제외한다. 판단 근거는 '그 토큰이 다른 곳에서
+        # 직원 이름으로 쓰였는가' 이다 ('화성 기계' 의 '기계' 는 직원명이 아니므로 남는다).
+        if len(parts) > 1 and any(as_worker.get(x, 0) > 0 for x in parts):
+            continue
+        trusted.add(label)
+
+    # '전정운 성진', '이원종 성광' 처럼 뒤쪽이 그 자체로 업체명인 합본도 제외한다.
+    # ('화성 기계' 의 '기계', 'JS 테크' 의 '테크' 는 단독 업체가 아니므로 남는다)
+    singles = {t for t in trusted if ' ' not in t}
+    trusted = {t for t in trusted
+               if ' ' not in t or t.split()[-1] not in singles}
+    return trusted
+
+
+def _restructure_legacy_teammates(teammates: str, trusted):
+    """괄호 없이 나열된 옛 teammates 를 '직영, 업체(이름들)' 구조로 바꾼다.
+
+    '티엠 명우진 강민성 윤세일'          -> '티엠(명우진, 강민성, 윤세일)'
+    '조기상 이원종, 개인 김영언 이정훈'    -> '조기상, 이원종, 개인[김영언, 이정훈]'
+    업체명이 하나도 없으면 손대지 않는다 (직영만 적힌 정상 행).
+    """
+    text = str(teammates or '')
+    if not text.strip() or '(' in text or '[' in text:
+        return text, False
+
+    # 쉼표·줄바꿈으로 끊긴 덩어리 단위로만 판단한다.
+    # '공인배, 유광, 하영광, 김순배' 처럼 쉼표로 나열된 것은 이미 사람 단위로
+    # 끊겨 있으므로 '유광' 뒤의 이름을 그 업체 소속으로 단정할 수 없다. 손대지 않는다.
+    # '티엠 명우진 강민성' 처럼 한 덩어리 안에 업체명+이름이 붙어 있을 때만 묶는다.
+    chunks = [c.strip() for c in re.split(r'[,\n]+', text)]
+    out_parts = []
+    changed_any = False
+
+    for chunk in chunks:
+        if not chunk:
+            continue
+        tokens = [t for t in chunk.split() if t]
+        if not tokens:
+            continue
+
+        company, company_len = None, 0
+        for size in (3, 2, 1):       # 'JS 테크', '세정 엔지니어링' 같은 여러 단어 상호 우선
+            if size > len(tokens):
+                continue
+            candidate = ' '.join(tokens[:size])
+            if candidate in trusted:
+                company, company_len = candidate, size
+                break
+
+        names = tokens[company_len:] if company else []
+        if not company or not names:
+            out_parts.append(chunk)          # 업체명이 없거나 뒤에 이름이 없으면 원문 유지
+            continue
+
+        joined = ', '.join(names)
+        if company in LEGACY_DAILY_VENDORS:
+            out_parts.append(f'{company}[{joined}]')
+        else:
+            out_parts.append(f'{company}({joined})')
+        changed_any = True
+
+    if not changed_any:
+        return text, False
+
+    new_text = ', '.join(out_parts)
+    return (new_text, True) if new_text != text else (text, False)
+
+
+def _plan_restructure_legacy_teammates(cutoff_date: str = LEGACY_TEAMMATES_CUTOFF):
+    trusted = _collect_trusted_vendor_names()
+    updates = []
+    samples = []
+    manpower_before = 0.0
+    manpower_after = 0.0
+
+    with db.get_connection() as conn:
+        rows = conn.execute(
+            "SELECT id, date, leader, teammates, manpower FROM work_records "
+            "WHERE teammates IS NOT NULL AND teammates != '' AND date <= ?",
+            (cutoff_date,)
+        ).fetchall()
+
+    for row in rows:
+        new_text, changed = _restructure_legacy_teammates(row['teammates'] or '', trusted)
+        if not changed:
+            continue
+        old_mp = float(row['manpower'] or 0)
+        new_mp = calculate_record_manpower(row['leader'] or '', new_text)
+        manpower_before += old_mp
+        manpower_after += new_mp
+        updates.append({
+            'table': 'work_records',
+            'id': row['id'],
+            'old_fields': {'teammates': row['teammates'] or '', 'manpower': old_mp},
+            'new_fields': {'teammates': new_text, 'manpower': new_mp},
+        })
+        if len(samples) < 12:
+            samples.append({'date': row['date'], 'before': row['teammates'] or '',
+                            'after': new_text, 'manpowerBefore': old_mp, 'manpowerAfter': new_mp})
+
+    return {
+        'success': True,
+        'updates': updates,
+        'rowUpdates': len(updates),
+        'samples': samples,
+        'trustedCount': len(trusted),
+        'cutoffDate': cutoff_date,
+        'manpowerBefore': round(manpower_before, 1),
+        'manpowerAfter': round(manpower_after, 1),
+        'message': f'{cutoff_date} 이전 {len(updates)}건 · 공수 {round(manpower_before, 1)} → {round(manpower_after, 1)}',
+        'details': f'restructure_legacy_teammates rows={len(updates)} cutoff={cutoff_date}',
+    }
+
+
+@eel.expose
+@require('admin')
+def admin_preview_restructure_legacy_teammates(admin_id: str = '') -> Dict[str, Any]:
+    """옛 자유 텍스트 작업자 기록을 업체 구조로 바꾸는 미리보기"""
+    if not _get_admin_user(admin_id):
+        return {'success': False, 'message': '관리자 권한이 필요합니다.'}
+    return _plan_restructure_legacy_teammates()
+
+
+@eel.expose
+@require('admin')
+def admin_restructure_legacy_teammates(admin_id: str = '') -> Dict[str, Any]:
+    """옛 자유 텍스트 작업자 기록을 업체 구조로 일괄 변환한다."""
+    try:
+        if not _get_admin_user(admin_id):
+            return {'success': False, 'message': '관리자 권한이 필요합니다.'}
+        plan = _plan_restructure_legacy_teammates()
+        if not plan.get('success'):
+            return plan
+        if not plan.get('updates'):
+            return {'success': True, 'message': '변환할 행이 없습니다.', 'rowUpdates': 0}
+
+        with db.get_connection() as conn:
+            _apply_merge_updates(conn.cursor(), plan.get('updates', []), use_old_values=False)
+
+        _save_last_merge_undo(_build_undo_snapshot(
+            'restructure_legacy_teammates', plan.get('cutoffDate', ''),
+            plan.get('details', ''), plan.get('updates', [])))
+        db.add_activity_log(admin_id, 'restructure_legacy_teammates',
+                            plan.get('cutoffDate', ''), plan.get('details', ''))
+        return {
+            'success': True,
+            'message': f"{plan.get('rowUpdates', 0)}건 변환 완료 "
+                       f"(공수 {plan.get('manpowerBefore')} → {plan.get('manpowerAfter')})",
+            'rowUpdates': plan.get('rowUpdates', 0),
+        }
+    except Exception as e:
+        logger.error(f"옛 작업자 기록 변환 오류: {e}")
+        return {'success': False, 'message': '변환 처리 중 오류가 발생했습니다.'}
+
+
 @eel.expose
 @require('admin')
 def admin_preview_split_vendor_workers(admin_id: str = '') -> Dict[str, Any]:
@@ -2461,7 +2654,8 @@ def _clear_last_merge_undo() -> None:
 
 def _apply_merge_updates(cursor, updates: List[Dict[str, Any]], use_old_values: bool = False) -> int:
     table_fields = {
-        'work_records': {'company', 'ship_name', 'teammates', 'work_content', 'location'},
+        'work_records': {'company', 'ship_name', 'teammates', 'work_content', 'location',
+                          'manpower'},
         'board_projects': {'company', 'ship_name'},
         'holiday_work_entries': {'owner_company', 'vendor_company', 'company', 'ship_name', 'name'},
     }

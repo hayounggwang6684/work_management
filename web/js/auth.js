@@ -2322,6 +2322,78 @@ function _arrayBufferToBase64(arrayBuffer) {
 // 작업내용에 섞인 장소 분리 (기존 데이터 정리)
 // ============================================================================
 
+// 괄호 없이 '티엠 명우진 강민성' 처럼 적힌 옛 기록을 업체 구조로 바꾼다.
+// 2025년 이전 자료만 대상 (그 이후는 정상 입력되고 있음).
+async function previewRestructureLegacy() {
+    const box = document.getElementById('splitVendorWorkerResult');
+    if (box) box.innerHTML = '<p class="text-indigo-700 text-sm">확인 중...</p>';
+    try {
+        const preview = await eel.admin_preview_restructure_legacy_teammates(currentUser?.user_id || '')();
+        if (!preview || !preview.success) {
+            showCustomAlert('오류', preview?.message || '확인에 실패했습니다.', 'error');
+            if (box) box.innerHTML = '';
+            return;
+        }
+        if (!preview.rowUpdates) {
+            if (box) box.innerHTML = '<p class="text-slate-500 text-sm">변환할 행이 없습니다.</p>';
+            return;
+        }
+        const rows = (preview.samples || []).map(s => `
+            <li class="py-1">
+                <span class="text-slate-400">${escapeHtml(s.date)}  ${escapeHtml(s.before)}</span><br>
+                → <b>${escapeHtml(s.after)}</b>
+                <span class="text-slate-500">(공수 ${s.manpowerBefore} → ${s.manpowerAfter})</span>
+            </li>`).join('');
+        const diff = (preview.manpowerAfter - preview.manpowerBefore).toFixed(1);
+        if (box) box.innerHTML = `
+            <div class="bg-indigo-50 border border-indigo-200 rounded-lg p-3 text-xs">
+                <p class="font-semibold text-indigo-900 mb-1">
+                    ${escapeHtml(preview.cutoffDate)} 이전 ${preview.rowUpdates}건 변환 대상
+                </p>
+                <p class="text-indigo-800 mb-2">
+                    확인된 업체 ${preview.trustedCount}종 · 공수 합계 ${preview.manpowerBefore} → ${preview.manpowerAfter}
+                    <b>(${diff >= 0 ? '+' : ''}${diff})</b>
+                </p>
+                <ul class="max-h-56 overflow-y-auto text-slate-600 space-y-1">${rows}</ul>
+                <p class="text-[11px] text-slate-500 mt-2">
+                    '개인' 은 일당[], 나머지 업체는 도급() 으로 잡습니다.
+                    쉼표로 이미 나뉘어 있는 행과 2026년 이후 자료는 건드리지 않습니다.
+                </p>
+                <button onclick="applyRestructureLegacy()"
+                        class="mt-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-semibold text-sm">
+                    ${preview.rowUpdates}건 변환 실행
+                </button>
+            </div>`;
+    } catch (e) {
+        console.error('과거 자료 구조화 확인 오류:', e);
+        showCustomAlert('오류', '확인 중 오류가 발생했습니다.', 'error');
+    }
+}
+window.previewRestructureLegacy = previewRestructureLegacy;
+
+async function applyRestructureLegacy() {
+    if (!confirm('2025년 이전 작업자 기록을 업체 구조로 변환합니다.\n\n공수 합계가 바뀝니다. 실행 전 백업을 권장합니다.\n문제가 있으면 [최근 병합 되돌리기] 로 복구할 수 있습니다.\n\n계속하시겠습니까?')) return;
+    try {
+        showLoading(true, '과거 자료 변환 중...');
+        const result = await eel.admin_restructure_legacy_teammates(currentUser?.user_id || '')();
+        showLoading(false);
+        if (!result || !result.success) {
+            showCustomAlert('오류', result?.message || '변환에 실패했습니다.', 'error');
+            return;
+        }
+        const box = document.getElementById('splitVendorWorkerResult');
+        if (box) box.innerHTML = `<div class="bg-green-100 text-green-800 p-3 rounded-lg text-sm">${escapeHtml(result.message)}</div>`;
+        showCustomAlert('완료', result.message, 'success');
+        await loadAdminVendorCompanyCatalog(true);
+        await refreshAdminMergeUndoState();
+    } catch (e) {
+        showLoading(false);
+        console.error('과거 자료 구조화 오류:', e);
+        showCustomAlert('오류', '변환 중 오류가 발생했습니다.', 'error');
+    }
+}
+window.applyRestructureLegacy = applyRestructureLegacy;
+
 // 과거 자료에 '김영언 이정훈' 처럼 공백으로 붙어 있는 직원명을 한 번에 나눈다.
 async function previewSplitVendorWorkers() {
     const box = document.getElementById('splitVendorWorkerResult');
