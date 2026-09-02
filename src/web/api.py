@@ -862,6 +862,128 @@ def _plan_merge_vendor_workers(vendor_company: str, source_names: List[str],
     }
 
 
+def _replace_vendor_company_in_teammates(teammates: str, source_keys, target_display: str):
+    """teammates 안의 외주 업체명을 대표명으로 바꾼다.
+
+    teammates 형식: `업체명(직원1, 직원2)` (계약업체) / `업체명[직원1, 직원2]` (일일용역).
+    한 행에 병합 대상 업체가 여러 개 있으면 세그먼트를 하나로 합쳐야 한다.
+    (예: `A(김), B(이)` 를 A 로 병합 → `A(김, 이)`)
+    """
+    text = str(teammates or '')
+    if not source_keys or not target_display:
+        return text, False
+
+    changed = False
+    for pattern, open_ch, close_ch in (
+        (re.compile(r'([^,\[\]()\n]+?)\(([^)]+)\)'), '(', ')'),
+        (re.compile(r'([^,\[\]()\n]+?)\[([^\]]+)\]'), '[', ']'),
+    ):
+        matches = [m for m in pattern.finditer(text)
+                   if _normalize_company_label(m.group(1)) in source_keys]
+        if not matches:
+            continue
+
+        names, seen = [], set()
+        for m in matches:
+            for token in str(m.group(2) or '').split(','):
+                token = token.strip()
+                key = _normalize_holiday_worker_name(token)
+                if not key or key in seen:
+                    continue
+                seen.add(key)
+                names.append(token)
+
+        merged = f"{target_display}{open_ch}{', '.join(names)}{close_ch}"
+        pieces, last = [], 0
+        for i, m in enumerate(matches):
+            pieces.append(text[last:m.start()])
+            pieces.append(merged if i == 0 else '')   # 첫 세그먼트에 합치고 나머지는 제거
+            last = m.end()
+        pieces.append(text[last:])
+        new_text = ''.join(pieces)
+        if new_text != text:
+            text, changed = new_text, True
+
+    if changed:
+        # 세그먼트를 지우면서 생긴 빈 항목·중복 쉼표 정리
+        text = re.sub(r',\s*(?=,)', '', text)
+        text = re.sub(r'\s*,\s*', ', ', text).strip()
+        text = text.strip(',').strip()
+    return text, changed
+
+
+def _plan_merge_vendor_companies(source_names, target_name: str):
+    normalized_sources = sorted({
+        str(name or '').strip()
+        for name in (source_names or [])
+        if str(name or '').strip()
+    })
+    target_display = str(target_name or '').strip() or (normalized_sources[0] if normalized_sources else '')
+    if len(normalized_sources) < 2:
+        return {'success': False, 'message': '병합할 외주 업체를 2개 이상 선택하세요.'}
+    if not target_display:
+        return {'success': False, 'message': '대표 업체명을 입력하세요.'}
+
+    source_keys = {_normalize_company_label(name) for name in normalized_sources}
+    source_keys.discard('')
+
+    updates = []
+    work_updates = 0
+    holiday_updates = 0
+
+    with db.get_connection() as conn:
+        cursor = conn.cursor()
+        work_rows = cursor.execute(
+            "SELECT id, teammates FROM work_records "
+            "WHERE teammates IS NOT NULL AND teammates != ''"
+        ).fetchall()
+        for row in work_rows:
+            new_teammates, changed = _replace_vendor_company_in_teammates(
+                row['teammates'] or '', source_keys, target_display)
+            if not changed:
+                continue
+            updates.append({
+                'table': 'work_records',
+                'id': row['id'],
+                'old_fields': {'teammates': row['teammates'] or ''},
+                'new_fields': {'teammates': new_teammates},
+            })
+            work_updates += 1
+
+        holiday_rows = cursor.execute(
+            "SELECT id, vendor_company, company FROM holiday_work_entries"
+        ).fetchall()
+        for row in holiday_rows:
+            row_vendor = str(row['vendor_company'] or row['company'] or '').strip()
+            if _normalize_company_label(row_vendor) not in source_keys:
+                continue
+            updates.append({
+                'table': 'holiday_work_entries',
+                'id': row['id'],
+                'old_fields': {
+                    'vendor_company': row['vendor_company'] or '',
+                    'company': row['company'] or '',
+                },
+                'new_fields': {
+                    'vendor_company': target_display,
+                    'company': target_display,
+                },
+            })
+            holiday_updates += 1
+
+    details = f"{', '.join(normalized_sources)} -> {target_display} (work={work_updates}, holiday={holiday_updates})"
+    return {
+        'success': True,
+        'targetDisplay': target_display,
+        'normalizedSources': normalized_sources,
+        'updates': updates,
+        'workUpdates': work_updates,
+        'holidayUpdates': holiday_updates,
+        'message': f'미리보기: 작업 {work_updates}건, 휴일 {holiday_updates}건 변경',
+        'details': details,
+    }
+
+
 def _plan_merge_owner_companies(source_names: List[str], target_name: str) -> Dict[str, Any]:
     normalized_sources = sorted({
         _normalize_holiday_worker_name(name)
@@ -1146,6 +1268,51 @@ def admin_merge_vendor_workers(vendor_company: str, source_names: List[str],
     except Exception as e:
         logger.error(f"외주 직원 병합 오류: {e}")
         return {'success': False, 'message': '외주 직원 병합 중 오류가 발생했습니다.'}
+
+
+@eel.expose
+@require('admin')
+def admin_preview_merge_vendor_companies(source_names: List[str], target_name: str = '',
+                                         admin_id: str = '') -> Dict[str, Any]:
+    """외주 업체 병합 미리보기"""
+    if not _get_admin_user(admin_id):
+        return {'success': False, 'message': '관리자 권한이 필요합니다.'}
+    return _plan_merge_vendor_companies(source_names, target_name)
+
+
+@eel.expose
+@require('admin')
+def admin_merge_vendor_companies(source_names: List[str], target_name: str,
+                                 admin_id: str = '') -> Dict[str, Any]:
+    """중복 외주 업체명을 하나의 대표 이름으로 병합"""
+    try:
+        if not _get_admin_user(admin_id):
+            return {'success': False, 'message': '관리자 권한이 필요합니다.'}
+        plan = _plan_merge_vendor_companies(source_names, target_name)
+        if not plan.get('success'):
+            return plan
+
+        with db.get_connection() as conn:
+            cursor = conn.cursor()
+            _apply_merge_updates(cursor, plan.get('updates', []), use_old_values=False)
+
+        target_display = str(plan.get('targetDisplay') or target_name or '').strip()
+        _save_last_merge_undo(_build_undo_snapshot(
+            'merge_vendor_companies',
+            target_display,
+            plan.get('details', ''),
+            plan.get('updates', []),
+        ))
+        db.add_activity_log(admin_id, 'merge_vendor_companies', target_display, plan.get('details', ''))
+        return {
+            'success': True,
+            'message': f"병합 완료: 작업 {plan.get('workUpdates', 0)}건, 휴일 {plan.get('holidayUpdates', 0)}건 수정",
+            'workUpdates': plan.get('workUpdates', 0),
+            'holidayUpdates': plan.get('holidayUpdates', 0),
+        }
+    except Exception as e:
+        logger.error(f"외주 업체 병합 오류: {e}")
+        return {'success': False, 'message': '외주 업체 병합 중 오류가 발생했습니다.'}
 
 
 @eel.expose

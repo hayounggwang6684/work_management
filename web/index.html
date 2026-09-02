@@ -1497,7 +1497,7 @@
 
                 <div id="adminDbVendorsSubtab" class="hidden">
                     <div class="mb-4 flex items-center justify-between">
-                        <p class="text-sm text-slate-500">왼쪽에서 외주 업체를 선택하면 오른쪽에 소속 직원명이 보입니다. `Ctrl` 키를 누른 채 여러 이름을 선택한 뒤 우클릭하면 병합할 수 있습니다.</p>
+                        <p class="text-sm text-slate-500">왼쪽에서 외주 업체를 선택하면 오른쪽에 소속 직원명이 보입니다. <b>업체·직원 모두</b> `Ctrl` 키를 누른 채 여러 개를 선택한 뒤 우클릭하면 병합할 수 있습니다.</p>
                         <div class="flex items-center gap-2">
                             <button id="btnUndoVendorMerge" onclick="undoLastAdminMerge()"
                                     class="hidden px-3 py-1.5 bg-amber-100 hover:bg-amber-200 text-amber-900 rounded text-sm">
@@ -1508,9 +1508,16 @@
                         </div>
                     </div>
                     <div class="grid grid-cols-12 gap-4">
-                        <div class="col-span-4 border rounded-xl bg-slate-50 min-h-[420px]">
+                        <div class="col-span-4 border rounded-xl bg-slate-50 min-h-[420px] relative">
                             <div class="px-4 py-3 border-b bg-white rounded-t-xl font-semibold">외주 업체 목록</div>
                             <div id="adminVendorCompanyList" class="max-h-[520px] overflow-y-auto p-2 space-y-2"></div>
+                            <div id="adminVendorCompanyContextMenu"
+                                 class="hidden absolute z-50 bg-white border border-slate-200 rounded-lg shadow-xl py-1 min-w-[140px]">
+                                <button onclick="promptMergeSelectedVendorCompanies()"
+                                        class="w-full text-left px-4 py-2 text-sm hover:bg-slate-100">
+                                    병합
+                                </button>
+                            </div>
                         </div>
                         <div class="col-span-8 border rounded-xl bg-white min-h-[420px] relative">
                             <div class="px-4 py-3 border-b font-semibold">외주 직원 목록</div>

@@ -422,6 +422,7 @@ const _adminDbState = {
     selectedOwnerShips: new Set(),
     vendors: [],
     selectedVendor: '',
+    selectedVendorCompanies: new Set(),
     selectedVendorWorkers: new Set(),
     canUndoMerge: false,
     lastMergeUndoSummary: '',
@@ -1126,9 +1127,15 @@ function renderAdminVendorCompanyList() {
 
     listEl.innerHTML = _adminDbState.vendors.map(vendor => {
         const active = vendor.name === _adminDbState.selectedVendor;
+        const picked = _adminDbState.selectedVendorCompanies.has(vendor.name);
+        // 병합 선택(picked)이 현재 열람 중인 업체(active) 표시보다 우선한다
+        const style = picked
+            ? 'bg-blue-100 border-blue-400 text-blue-800'
+            : (active ? 'bg-blue-50 border-blue-300 text-blue-700' : 'bg-white hover:bg-slate-100 border-slate-200');
         return `
-            <button onclick="selectAdminVendorCompany('${escapeJs(vendor.name)}')"
-                    class="w-full text-left rounded-lg border px-3 py-3 transition ${active ? 'bg-blue-50 border-blue-300 text-blue-700' : 'bg-white hover:bg-slate-100 border-slate-200'}">
+            <button onclick="handleAdminVendorCompanyClick('${escapeJs(vendor.name)}', event)"
+                    oncontextmenu="handleAdminVendorCompanyContextMenu('${escapeJs(vendor.name)}', event)"
+                    class="w-full text-left rounded-lg border px-3 py-3 transition ${style}">
                 <div class="font-semibold">${escapeHtml(vendor.name)}</div>
                 <div class="text-xs text-slate-500 mt-1">직원 ${vendor.workerCount}명 · 작업 ${vendor.workRecordCount}건 · 휴일 ${vendor.holidayCount}건</div>
             </button>`;
@@ -1169,6 +1176,95 @@ function renderAdminVendorCompanyList() {
             }).join('')}
         </div>`;
 }
+
+// Ctrl(또는 Mac Cmd) + 클릭이면 병합 대상에 추가/제거, 그냥 클릭이면 해당 업체 열람
+function handleAdminVendorCompanyClick(vendorName, event) {
+    closeAdminVendorCompanyContextMenu();
+    const multi = !!(event && (event.ctrlKey || event.metaKey));
+    if (multi) {
+        if (_adminDbState.selectedVendorCompanies.has(vendorName)) {
+            _adminDbState.selectedVendorCompanies.delete(vendorName);
+        } else {
+            _adminDbState.selectedVendorCompanies.add(vendorName);
+        }
+        renderAdminVendorCompanyList();
+        return;
+    }
+    _adminDbState.selectedVendorCompanies = new Set();
+    selectAdminVendorCompany(vendorName);
+}
+window.handleAdminVendorCompanyClick = handleAdminVendorCompanyClick;
+
+function handleAdminVendorCompanyContextMenu(vendorName, event) {
+    event.preventDefault();
+    if (!_adminDbState.selectedVendorCompanies.has(vendorName)) {
+        _adminDbState.selectedVendorCompanies.add(vendorName);
+        renderAdminVendorCompanyList();
+    }
+    if (_adminDbState.selectedVendorCompanies.size < 2) {
+        closeAdminVendorCompanyContextMenu();
+        showToast('Ctrl 키를 누른 채 업체를 2개 이상 선택하세요.', 'warning');
+        return;
+    }
+    const menu = document.getElementById('adminVendorCompanyContextMenu');
+    if (!menu) return;
+    const parentRect = menu.parentElement?.getBoundingClientRect();
+    menu.style.left = `${parentRect ? event.clientX - parentRect.left : event.clientX}px`;
+    menu.style.top = `${parentRect ? event.clientY - parentRect.top : event.clientY}px`;
+    menu.classList.remove('hidden');
+}
+window.handleAdminVendorCompanyContextMenu = handleAdminVendorCompanyContextMenu;
+
+function closeAdminVendorCompanyContextMenu() {
+    document.getElementById('adminVendorCompanyContextMenu')?.classList.add('hidden');
+}
+window.closeAdminVendorCompanyContextMenu = closeAdminVendorCompanyContextMenu;
+
+async function promptMergeSelectedVendorCompanies() {
+    closeAdminVendorCompanyContextMenu();
+    const selected = [..._adminDbState.selectedVendorCompanies];
+    if (selected.length < 2) {
+        showToast('병합할 외주 업체를 2개 이상 선택하세요.', 'warning');
+        return;
+    }
+    const targetName = prompt(
+        `대표 업체명을 입력하세요.\n\n선택: ${selected.join(', ')}`,
+        selected[0]
+    );
+    if (!targetName || !targetName.trim()) return;
+
+    try {
+        const preview = await eel.admin_preview_merge_vendor_companies(
+            selected, targetName.trim(), currentUser?.user_id || '')();
+        if (!preview || !preview.success) {
+            showCustomAlert('오류', preview?.message || '병합 미리보기를 불러오지 못했습니다.', 'error');
+            return;
+        }
+        const totalUpdates = (preview.workUpdates || 0) + (preview.holidayUpdates || 0);
+        if (totalUpdates <= 0) {
+            showCustomAlert('변경 대상 없음', preview.message || '변경될 데이터가 없습니다.', 'warning');
+            return;
+        }
+        if (!confirm(_buildMergePreviewText(
+            `"${selected.join(', ')}" 을(를) "${targetName.trim()}" 으로 병합합니다.`, preview))) return;
+
+        const result = await eel.admin_merge_vendor_companies(
+            selected, targetName.trim(), currentUser?.user_id || '')();
+        if (!result || !result.success) {
+            showCustomAlert('오류', result?.message || '병합에 실패했습니다.', 'error');
+            return;
+        }
+        showToast(result.message || '병합이 완료되었습니다.', 'success');
+        _adminDbState.selectedVendorCompanies = new Set();
+        _adminDbState.selectedVendor = targetName.trim();
+        await loadAdminVendorCompanyCatalog(true);
+        await refreshAdminMergeUndoState();
+    } catch (error) {
+        console.error('외주 업체 병합 오류:', error);
+        showCustomAlert('오류', '외주 업체 병합 중 오류가 발생했습니다.', 'error');
+    }
+}
+window.promptMergeSelectedVendorCompanies = promptMergeSelectedVendorCompanies;
 
 function selectAdminVendorCompany(vendorName) {
     _adminDbState.selectedVendor = vendorName;
@@ -1270,6 +1366,10 @@ async function promptMergeSelectedVendorWorkers() {
 window.promptMergeSelectedVendorWorkers = promptMergeSelectedVendorWorkers;
 
 document.addEventListener('click', (event) => {
+    const vendorCompanyMenu = document.getElementById('adminVendorCompanyContextMenu');
+    if (vendorCompanyMenu && !vendorCompanyMenu.classList.contains('hidden')) {
+        if (!vendorCompanyMenu.contains(event.target)) closeAdminVendorCompanyContextMenu();
+    }
     const ownerMenu = document.getElementById('adminOwnerCompanyContextMenu');
     if (ownerMenu && !ownerMenu.classList.contains('hidden')) {
         if (!ownerMenu.contains(event.target)) closeAdminOwnerCompanyContextMenu();

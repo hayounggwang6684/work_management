@@ -103,6 +103,8 @@ def test_api_wiring():
         'load_work_records': 'guest',
         'save_work_records': 'write',
         'admin_delete_user': 'admin',
+        'admin_merge_vendor_companies': 'admin',
+        'admin_preview_merge_vendor_companies': 'admin',
         'get_employee_directory': 'login',   # 전화번호·주소 → 게스트 차단
         'load_vacation_data': 'guest',       # 일일 작업 탭에 같이 보이는 화면
         'save_vacation_data': 'write',       # 조회는 게스트, 저장은 쓰기 권한
