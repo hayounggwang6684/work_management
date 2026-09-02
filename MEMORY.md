@@ -2,6 +2,18 @@
 
 ## Bug Fixes Applied
 
+### 2026-09-02: 게스트 휴가자 현황 + 읽기전용 누락
+
+- `load_vacation_data` 를 login → guest 등급으로. 휴가자 현황은 일일 작업 탭에서
+  작업 현황과 같이 보이는 화면이라 게스트도 조회해야 한다.
+  `save_vacation_data` 는 write 유지. 연락처·주소는 `get_employee_directory`(login) 로 분리돼 있음.
+- **`_applyWritePermissionUI()` 가 `#workRecordsTable` / `#nightRecordsTable` 만
+  readOnly 처리하고 휴가 입력칸(`#vacation_*`)은 빠져 있었다.** 서버가 저장을 막아도
+  입력은 되니 저장 시점에야 실패를 알게 된다. 게스트뿐 아니라 쓰기 권한 없는
+  일반 사용자에게도 있던 문제.
+  → **화면에 입력 항목을 추가하면 이 셀렉터에도 넣을 것.**
+
+
 ### 2026-08-28: 계약번호–선사/선명 불일치 경고 (미배포)
 
 같은 계약번호로 다른 선박 작업을 실수 입력하면 계약 이력이 섞이는 문제를 막는 가드.

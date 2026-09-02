@@ -1861,7 +1861,10 @@ function _applyWritePermissionUI() {
     // 입력 필드 읽기 전용 처리 (주간 + 야간 테이블 모두)
     document.querySelectorAll(
         '#workRecordsTable input, #workRecordsTable textarea,' +
-        '#nightRecordsTable input, #nightRecordsTable textarea'
+        '#nightRecordsTable input, #nightRecordsTable textarea,' +
+        // 휴가자 현황도 같은 화면의 입력 항목인데 빠져 있었다.
+        // 서버가 save_vacation_data 를 막아도, 입력이 되면 저장 시점에야 실패를 알게 된다.
+        '#vacation_annual, #vacation_half, #vacation_quarter, #vacation_special'
     ).forEach(el => {
         el.readOnly = readOnly;
         el.style.cursor = readOnly ? 'default' : '';

@@ -2626,7 +2626,9 @@ def validate_contract_number(contract_number: str) -> Dict[str, Any]:
 
 
 @eel.expose
-@require('login')
+# 일일 작업 탭의 휴가자 현황 — 작업 현황과 함께 보이는 화면이라 게스트도 조회 가능.
+# 이름만 표시하며 연락처·주소는 get_employee_directory(login) 로 분리돼 있다.
+@require('guest')
 def load_vacation_data(date: str) -> Dict[str, str]:
     """날짜별 휴가자 현황 로드"""
     try:
