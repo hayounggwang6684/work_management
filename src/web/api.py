@@ -2335,6 +2335,37 @@ def _replace_vendor_worker_names_in_teammates(teammates: str, vendor_company: st
     return updated, changed and updated != str(teammates or '')
 
 
+# 엑셀 F열은 "작업내용 / 장소" 가 한 셀에 들어온다.
+# 주의: 작업 내용 자체에 슬래시가 대량으로 쓰인다 (G/E 발전기, M/E 주기관,
+# O/H 오버홀, F/W 청수, T/C 과급기 ...). 실데이터 1,914건 중 1,270건이 슬래시를
+# 포함하는데, 그중 붙여 쓴 슬래시는 전부 기술 약어이고 앞뒤에 공백이 있는
+# 슬래시만 장소 구분자였다. 그래서 "공백이 붙은 슬래시" 만 구분자로 본다.
+_WORK_LOCATION_SEPARATOR = re.compile(r'\s*/\s+|\s+/\s*')
+
+
+def _split_work_content_and_location(raw_value: str):
+    """'엔진 오버홀 / 부산' -> ('엔진 오버홀', '부산')
+
+    'NO.2 G/E 오버홀'                        -> ('NO.2 G/E 오버홀', '')      슬래시가 붙어 있음
+    'NO.1 F/W COOLER 정비 & O/H / 울산'      -> ('NO.1 F/W COOLER 정비 & O/H', '울산')
+    """
+    raw = str(raw_value or '').strip()
+    if not raw:
+        return '', ''
+
+    matches = list(_WORK_LOCATION_SEPARATOR.finditer(raw))
+    if not matches:
+        return raw, ''
+
+    # 장소는 맨 뒤에 오므로 마지막 구분자를 기준으로 자른다
+    last = matches[-1]
+    content = raw[:last.start()].strip()
+    location = raw[last.end():].strip()
+    if not content or not location:
+        return raw, ''   # 한쪽이 비면 자르지 않는다
+    return content, location
+
+
 def _extract_vendor_workers_from_teammates(teammates: str) -> Dict[str, List[str]]:
     vendor_map: Dict[str, List[str]] = {}
     for segment in _iter_vendor_segments(teammates):
@@ -4890,7 +4921,9 @@ def import_excel_data(base64_data: str, username: str = 'admin') -> Dict[str, An
             company         = _cell_str(row_values[2]) if len(row_values) > 2 else ''
             ship_name       = _cell_str(row_values[3]).upper() if len(row_values) > 3 else ''
             engine_model    = _cell_str(row_values[4]).upper() if len(row_values) > 4 else ''
-            work_content    = _cell_str(row_values[5]) if len(row_values) > 5 else ''
+            # F열은 "작업내용 / 장소" 합본이므로 분리한다 (붙여 쓴 G/E 등은 그대로 둠)
+            work_content, location = _split_work_content_and_location(
+                _cell_str(row_values[5]) if len(row_values) > 5 else '')
             leader_raw      = _cell_str(row_values[6]) if len(row_values) > 6 else ''
             leader          = leader_raw  # xls/xlsx 공통: 이탤릭 감지는 xlsx만 가능
             # H열(인덱스 7): 인원 수 — 자동 계산으로 대체, 건너뜀
@@ -4916,7 +4949,7 @@ def import_excel_data(base64_data: str, username: str = 'admin') -> Dict[str, An
                 ship_name=ship_name,
                 engine_model=engine_model,
                 work_content=work_content,
-                location='',
+                location=location,
                 leader=leader,
                 teammates=teammates,
                 manpower=manpower
