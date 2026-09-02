@@ -2322,6 +2322,66 @@ function _arrayBufferToBase64(arrayBuffer) {
 // 작업내용에 섞인 장소 분리 (기존 데이터 정리)
 // ============================================================================
 
+// 과거 자료에 '김영언 이정훈' 처럼 공백으로 붙어 있는 직원명을 한 번에 나눈다.
+async function previewSplitVendorWorkers() {
+    const box = document.getElementById('splitVendorWorkerResult');
+    if (box) box.innerHTML = '<p class="text-sky-700 text-sm">확인 중...</p>';
+    try {
+        const preview = await eel.admin_preview_split_vendor_workers(currentUser?.user_id || '')();
+        if (!preview || !preview.success) {
+            showCustomAlert('오류', preview?.message || '확인에 실패했습니다.', 'error');
+            if (box) box.innerHTML = '';
+            return;
+        }
+        if (!preview.rowUpdates) {
+            if (box) box.innerHTML = '<p class="text-slate-500 text-sm">분리할 항목이 없습니다.</p>';
+            return;
+        }
+        const rows = (preview.samples || []).map(s => `
+            <li class="py-0.5">
+                <span class="text-slate-400">${escapeHtml(s.before)}</span><br>
+                → <b>${escapeHtml(s.after)}</b>
+            </li>`).join('');
+        if (box) box.innerHTML = `
+            <div class="bg-sky-50 border border-sky-200 rounded-lg p-3 text-xs">
+                <p class="font-semibold text-sky-800 mb-2">분리 대상 ${preview.rowUpdates}건 (예시 ${(preview.samples || []).length}건)</p>
+                <ul class="max-h-48 overflow-y-auto text-slate-600 space-y-1">${rows}</ul>
+                <p class="text-[11px] text-slate-500 mt-2">이름이 아닌 항목(공무 1 작업자 10, 정명화 외 1인 등)은 건드리지 않습니다.</p>
+                <button onclick="applySplitVendorWorkers()"
+                        class="mt-2 px-4 py-2 bg-sky-600 text-white rounded-lg hover:bg-sky-700 font-semibold text-sm">
+                    ${preview.rowUpdates}건 분리 실행
+                </button>
+            </div>`;
+    } catch (e) {
+        console.error('직원명 분리 확인 오류:', e);
+        showCustomAlert('오류', '확인 중 오류가 발생했습니다.', 'error');
+    }
+}
+window.previewSplitVendorWorkers = previewSplitVendorWorkers;
+
+async function applySplitVendorWorkers() {
+    if (!confirm('공백으로 붙어 있는 외주 직원명을 나눕니다.\n\n실행 후 문제가 있으면 [최근 병합 되돌리기] 로 복구할 수 있습니다.\n\n계속하시겠습니까?')) return;
+    try {
+        showLoading(true, '직원명 분리 중...');
+        const result = await eel.admin_split_vendor_workers(currentUser?.user_id || '')();
+        showLoading(false);
+        if (!result || !result.success) {
+            showCustomAlert('오류', result?.message || '분리에 실패했습니다.', 'error');
+            return;
+        }
+        const box = document.getElementById('splitVendorWorkerResult');
+        if (box) box.innerHTML = `<div class="bg-green-100 text-green-800 p-3 rounded-lg text-sm">${escapeHtml(result.message)}</div>`;
+        showCustomAlert('완료', result.message, 'success');
+        await loadAdminVendorCompanyCatalog(true);
+        await refreshAdminMergeUndoState();
+    } catch (e) {
+        showLoading(false);
+        console.error('직원명 분리 오류:', e);
+        showCustomAlert('오류', '분리 중 오류가 발생했습니다.', 'error');
+    }
+}
+window.applySplitVendorWorkers = applySplitVendorWorkers;
+
 async function previewSplitWorkLocations() {
     const box = document.getElementById('splitLocationResult');
     if (box) box.innerHTML = '<p class="text-sky-700 text-sm">확인 중...</p>';

@@ -1540,6 +1540,8 @@
                                     class="hidden px-3 py-1.5 bg-amber-100 hover:bg-amber-200 text-amber-900 rounded text-sm">
                                 최근 병합 되돌리기
                             </button>
+                            <button onclick="previewSplitVendorWorkers()"
+                                    class="px-3 py-1.5 bg-sky-100 hover:bg-sky-200 text-sky-900 rounded text-sm">직원명 일괄 분리</button>
                             <button onclick="loadAdminVendorCompanyCatalog(true)"
                                     class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 rounded text-sm">새로고침</button>
                         </div>
@@ -1558,7 +1560,8 @@
                         </div>
                         <div class="col-span-8 border rounded-xl bg-white min-h-[420px] relative">
                             <div class="px-4 py-3 border-b font-semibold">외주 직원 목록</div>
-                            <div id="adminVendorWorkerDetail" class="p-4"></div>
+                            <div id="splitVendorWorkerResult" class="px-4 pt-4"></div>
+                        <div id="adminVendorWorkerDetail" class="p-4"></div>
                             <div id="adminVendorWorkerContextMenu"
                                  class="hidden absolute z-50 bg-white border border-slate-200 rounded-lg shadow-xl py-1 min-w-[140px]">
                                 <button onclick="promptMergeSelectedVendorWorkers()"

@@ -1429,6 +1429,46 @@ def admin_rename_owner_ship(owner_name: str, old_name: str, new_name: str,
 
 @eel.expose
 @require('admin')
+def admin_preview_split_vendor_workers(admin_id: str = '') -> Dict[str, Any]:
+    """공백으로 붙어 있는 외주 직원 이름 분리 미리보기"""
+    if not _get_admin_user(admin_id):
+        return {'success': False, 'message': '관리자 권한이 필요합니다.'}
+    return _plan_split_vendor_worker_names()
+
+
+@eel.expose
+@require('admin')
+def admin_split_vendor_workers(admin_id: str = '') -> Dict[str, Any]:
+    """공백으로 붙어 있는 외주 직원 이름을 일괄 분리한다."""
+    try:
+        if not _get_admin_user(admin_id):
+            return {'success': False, 'message': '관리자 권한이 필요합니다.'}
+        plan = _plan_split_vendor_worker_names()
+        if not plan.get('success'):
+            return plan
+        if not plan.get('updates'):
+            return {'success': True, 'message': '분리할 항목이 없습니다.', 'rowUpdates': 0}
+
+        with db.get_connection() as conn:
+            _apply_merge_updates(conn.cursor(), plan.get('updates', []), use_old_values=False)
+
+        _save_last_merge_undo(_build_undo_snapshot(
+            'split_vendor_worker_names', '외주 직원명 분리',
+            plan.get('details', ''), plan.get('updates', [])))
+        db.add_activity_log(admin_id, 'split_vendor_worker_names', '외주 직원명 분리',
+                            plan.get('details', ''))
+        return {
+            'success': True,
+            'message': f"{plan.get('rowUpdates', 0)}건의 직원명을 분리했습니다.",
+            'rowUpdates': plan.get('rowUpdates', 0),
+        }
+    except Exception as e:
+        logger.error(f"외주 직원명 분리 오류: {e}")
+        return {'success': False, 'message': '분리 처리 중 오류가 발생했습니다.'}
+
+
+@eel.expose
+@require('admin')
 def admin_preview_split_work_locations(admin_id: str = '') -> Dict[str, Any]:
     """이미 저장된 '작업내용 / 장소' 합본 행을 찾아 분리 결과를 미리 보여준다."""
     if not _get_admin_user(admin_id):
@@ -2562,6 +2602,97 @@ def _split_work_content_and_location(raw_value: str):
     if not content or not location:
         return raw, ''   # 한쪽이 비면 자르지 않는다
     return content, location
+
+
+# 과거 자료는 이름을 쉼표가 아니라 공백으로 나열한 것이 많다.
+#   '개인(김영언 이정훈)'  ->  직원 한 명 '김영언 이정훈' 으로 잡힌다
+# 모든 토큰이 한글 2~4자(=사람 이름)일 때만 나눈다. 하나라도 아니면 손대지 않는다.
+#   '공무 1 작업자 10', '정명화 외 1인', '2명 확인중' 등은 그대로 두고 사람이 판단.
+_PERSON_NAME_RE = re.compile(r'^[가-힣]{2,4}$')
+
+
+def _split_combined_worker_names(name):
+    """'김영언 이정훈' -> ['김영언', '이정훈'] / 확신 없으면 None"""
+    tokens = [t for t in re.split(r'[\s.]+', str(name or '').strip()) if t]
+    if len(tokens) < 2:
+        return None
+    if not all(_PERSON_NAME_RE.match(t) for t in tokens):
+        return None
+    return tokens
+
+
+def _rewrite_teammates_worker_names(teammates: str):
+    """teammates 안의 외주 세그먼트에서 공백으로 붙은 이름들을 쉼표로 나눈다."""
+    text = str(teammates or '')
+    if not text:
+        return text, False
+
+    changed = False
+
+    def _make_repl(open_ch, close_ch):
+        def _repl(match):
+            nonlocal changed
+            company, blob = match.group(1), match.group(2)
+            out, seen = [], set()
+            local_changed = False
+            for token in str(blob or '').split(','):
+                token = token.strip()
+                if not token:
+                    continue
+                parts = _split_combined_worker_names(token)
+                if parts:
+                    local_changed = True
+                else:
+                    parts = [token]
+                for part in parts:
+                    key = _normalize_holiday_worker_name(part)
+                    if not key or key in seen:
+                        continue
+                    seen.add(key)
+                    out.append(part)
+            if not local_changed or not out:
+                return match.group(0)
+            changed = True
+            return f"{company}{open_ch}{', '.join(out)}{close_ch}"
+        return _repl
+
+    text = re.compile(r'([^,\[\]()\n]+?)\(([^)]+)\)').sub(_make_repl('(', ')'), text)
+    text = re.compile(r'([^,\[\]()\n]+?)\[([^\]]+)\]').sub(_make_repl('[', ']'), text)
+    return text, changed
+
+
+def _plan_split_vendor_worker_names():
+    """공백으로 붙어 있는 외주 직원 이름을 나누는 계획을 만든다."""
+    updates = []
+    samples = []
+
+    with db.get_connection() as conn:
+        rows = conn.execute(
+            "SELECT id, teammates FROM work_records "
+            "WHERE teammates IS NOT NULL AND teammates != ''"
+        ).fetchall()
+
+    for row in rows:
+        new_text, changed = _rewrite_teammates_worker_names(row['teammates'] or '')
+        if not changed:
+            continue
+        updates.append({
+            'table': 'work_records',
+            'id': row['id'],
+            'old_fields': {'teammates': row['teammates'] or ''},
+            'new_fields': {'teammates': new_text},
+        })
+        if len(samples) < 10:
+            samples.append({'before': row['teammates'] or '', 'after': new_text})
+
+    return {
+        'success': True,
+        'updates': updates,
+        'rowUpdates': len(updates),
+        'samples': samples,
+        'message': f'분리 대상 {len(updates)}건',
+        'details': f'split_vendor_worker_names rows={len(updates)}',
+    }
 
 
 def _plan_split_work_locations():
