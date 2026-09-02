@@ -1272,6 +1272,47 @@ def admin_merge_vendor_workers(vendor_company: str, source_names: List[str],
 
 @eel.expose
 @require('admin')
+def admin_preview_split_work_locations(admin_id: str = '') -> Dict[str, Any]:
+    """이미 저장된 '작업내용 / 장소' 합본 행을 찾아 분리 결과를 미리 보여준다."""
+    if not _get_admin_user(admin_id):
+        return {'success': False, 'message': '관리자 권한이 필요합니다.'}
+    return _plan_split_work_locations()
+
+
+@eel.expose
+@require('admin')
+def admin_split_work_locations(admin_id: str = '') -> Dict[str, Any]:
+    """이미 저장된 '작업내용 / 장소' 합본 행을 일괄 분리한다."""
+    try:
+        if not _get_admin_user(admin_id):
+            return {'success': False, 'message': '관리자 권한이 필요합니다.'}
+        plan = _plan_split_work_locations()
+        if not plan.get('success'):
+            return plan
+        if not plan.get('updates'):
+            return {'success': True, 'message': '분리할 행이 없습니다.', 'rowUpdates': 0}
+
+        with db.get_connection() as conn:
+            cursor = conn.cursor()
+            _apply_merge_updates(cursor, plan.get('updates', []), use_old_values=False)
+
+        _save_last_merge_undo(_build_undo_snapshot(
+            'split_work_locations', '작업내용/장소 분리',
+            plan.get('details', ''), plan.get('updates', [])))
+        db.add_activity_log(admin_id, 'split_work_locations', '작업내용/장소 분리',
+                            plan.get('details', ''))
+        return {
+            'success': True,
+            'message': f"{plan.get('rowUpdates', 0)}건의 장소를 분리했습니다.",
+            'rowUpdates': plan.get('rowUpdates', 0),
+        }
+    except Exception as e:
+        logger.error(f"작업내용/장소 분리 오류: {e}")
+        return {'success': False, 'message': '분리 처리 중 오류가 발생했습니다.'}
+
+
+@eel.expose
+@require('admin')
 def admin_preview_merge_vendor_companies(source_names: List[str], target_name: str = '',
                                          admin_id: str = '') -> Dict[str, Any]:
     """외주 업체 병합 미리보기"""
@@ -2223,7 +2264,7 @@ def _clear_last_merge_undo() -> None:
 
 def _apply_merge_updates(cursor, updates: List[Dict[str, Any]], use_old_values: bool = False) -> int:
     table_fields = {
-        'work_records': {'company', 'ship_name', 'teammates'},
+        'work_records': {'company', 'ship_name', 'teammates', 'work_content', 'location'},
         'board_projects': {'company', 'ship_name'},
         'holiday_work_entries': {'owner_company', 'vendor_company', 'company', 'ship_name', 'name'},
     }
@@ -2364,6 +2405,46 @@ def _split_work_content_and_location(raw_value: str):
     if not content or not location:
         return raw, ''   # 한쪽이 비면 자르지 않는다
     return content, location
+
+
+def _plan_split_work_locations():
+    """location 이 비어 있고 work_content 에 장소가 섞여 들어간 행을 찾는다.
+
+    불러오기 버그로 합쳐진 행만 대상이다. location 에 이미 값이 있으면 손대지 않는다.
+    """
+    updates = []
+    samples = []
+
+    with db.get_connection() as conn:
+        rows = conn.execute(
+            "SELECT id, work_content, COALESCE(location, '') AS location "
+            "FROM work_records "
+            "WHERE work_content IS NOT NULL AND work_content != '' "
+            "  AND (location IS NULL OR location = '')"
+        ).fetchall()
+
+    for row in rows:
+        content, location = _split_work_content_and_location(row['work_content'] or '')
+        if not location:
+            continue
+        updates.append({
+            'table': 'work_records',
+            'id': row['id'],
+            'old_fields': {'work_content': row['work_content'] or '', 'location': ''},
+            'new_fields': {'work_content': content, 'location': location},
+        })
+        if len(samples) < 10:
+            samples.append({'before': row['work_content'] or '',
+                            'workContent': content, 'location': location})
+
+    return {
+        'success': True,
+        'updates': updates,
+        'rowUpdates': len(updates),
+        'samples': samples,
+        'message': f'분리 대상 {len(updates)}건',
+        'details': f'split_work_locations rows={len(updates)}',
+    }
 
 
 def _extract_vendor_workers_from_teammates(teammates: str) -> Dict[str, List[str]]:
