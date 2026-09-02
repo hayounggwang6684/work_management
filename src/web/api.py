@@ -721,9 +721,15 @@ def admin_get_vendor_company_catalog(admin_id: str = '') -> Dict[str, Any]:
                     'workRecordCount': 0,
                     'holidayCount': 0,
                     'workers': {},
+                    'otherRecords': 0,
+                    'otherMax': 0,
                 })
                 vendor['workRecordCount'] += 1
-                for worker_name in worker_names:
+                named, other = _split_named_and_other_workers(worker_names)
+                if other > 0:
+                    vendor['otherRecords'] += 1
+                    vendor['otherMax'] = max(vendor['otherMax'], other)
+                for worker_name in named:
                     worker = vendor['workers'].setdefault(worker_name, {
                         'name': worker_name,
                         'workCount': 0,
@@ -740,6 +746,8 @@ def admin_get_vendor_company_catalog(admin_id: str = '') -> Dict[str, Any]:
                 'name': vendor_name,
                 'workRecordCount': 0,
                 'holidayCount': 0,
+                'otherRecords': 0,
+                'otherMax': 0,
                 'workers': {},
             })
             vendor['holidayCount'] += 1
@@ -761,13 +769,27 @@ def admin_get_vendor_company_catalog(admin_id: str = '') -> Dict[str, Any]:
                     'totalCount': worker['workCount'] + worker['holidayCount'],
                 })
             workers.sort(key=lambda item: _mixed_locale_sort_key(item['name']))
+            # 중복 추천은 실제 이름만 대상으로 한다 ('기타' 가 섞이면 안 됨)
+            suggestions = _build_merge_suggestions([item['name'] for item in workers])
+
+            other_records = vendor.get('otherRecords', 0)
+            if other_records > 0:
+                workers.append({
+                    'name': '기타',
+                    'workCount': other_records,
+                    'holidayCount': 0,
+                    'totalCount': other_records,
+                    'isOther': True,
+                    'headcountMax': vendor.get('otherMax', 0),
+                })
+
             vendors.append({
                 'name': vendor_name,
                 'workRecordCount': vendor['workRecordCount'],
                 'holidayCount': vendor['holidayCount'],
-                'workerCount': len(workers),
+                'workerCount': sum(1 for w in workers if not w.get('isOther')),
                 'workers': workers,
-                'workerSuggestions': _build_merge_suggestions([item['name'] for item in workers]),
+                'workerSuggestions': suggestions,
             })
 
         vendors.sort(key=lambda item: _mixed_locale_sort_key(item['name']))
@@ -2580,6 +2602,40 @@ def _plan_split_work_locations():
         'message': f'분리 대상 {len(updates)}건',
         'details': f'split_work_locations rows={len(updates)}',
     }
+
+
+# 과거 자료에는 이름 대신 인원수만 적힌 것이 많다.
+#   '성광(2명)'          -> 이름 없음, 기타 2명
+#   '제이에스테크(조철호 외 2명)' -> 조철호 + 기타 2명
+# 저장된 값은 그대로 두고 외주 목록 표시에서만 정리한다.
+# (도급은 인원수와 무관하게 1.0공 고정이라 인원 계산에는 영향이 없다)
+_HEADCOUNT_ONLY_RE = re.compile(r'^(?:외\s*)?(\d+)\s*명$')
+_TRAILING_HEADCOUNT_RE = re.compile(r'\s*외\s*(\d+)\s*명\s*$')
+
+
+def _split_named_and_other_workers(names):
+    """이름 목록을 (실제 이름들, 기타 인원수) 로 나눈다."""
+    display = []
+    other = 0
+    for raw in names or []:
+        name = str(raw or '').strip()
+        if not name:
+            continue
+
+        only = _HEADCOUNT_ONLY_RE.match(name)
+        if only:
+            other += int(only.group(1))
+            continue
+
+        trailing = _TRAILING_HEADCOUNT_RE.search(name)
+        if trailing:
+            other += int(trailing.group(1))
+            name = _TRAILING_HEADCOUNT_RE.sub('', name).strip()
+            if not name:
+                continue
+
+        display.append(name)
+    return display, other
 
 
 def _extract_vendor_workers_from_teammates(teammates: str) -> Dict[str, List[str]]:

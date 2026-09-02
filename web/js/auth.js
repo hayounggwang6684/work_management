@@ -1236,6 +1236,16 @@ function renderAdminVendorCompanyList() {
         </div>
         <div class="flex flex-wrap gap-2">
             ${vendor.workers.map(worker => {
+                // '기타' 는 이름 대신 인원수만 적힌 과거 기록을 모아 둔 항목이라
+                // 선택·병합·이동 대상이 아니다 (표시만 한다)
+                if (worker.isOther) {
+                    return `
+                        <div class="px-3 py-2 rounded-lg border border-dashed border-slate-300 bg-white text-slate-400 cursor-default"
+                             title="이름 없이 인원수만 기록된 과거 자료입니다.">
+                            <div class="font-semibold text-sm">기타${worker.headcountMax ? ` (최대 ${worker.headcountMax}명)` : ''}</div>
+                            <div class="text-[11px] mt-1">${worker.workCount}건</div>
+                        </div>`;
+                }
                 const selected = _adminDbState.selectedVendorWorkers.has(worker.name);
                 return `
                     <button
