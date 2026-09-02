@@ -916,7 +916,11 @@ function handleAdminOwnerCompanyContextMenu(ownerName, event) {
         _adminDbState.selectedOwners = new Set([ownerName]);
         renderAdminOwnerCompanyList();
     }
-    if (_adminDbState.selectedOwners.size < 2) {
+    // 1개면 이름 변경, 2개 이상이면 병합
+    const single = _adminDbState.selectedOwners.size === 1;
+    document.getElementById('menuMergeOwnerCompany')?.classList.toggle('hidden', single);
+    document.getElementById('menuRenameOwnerCompany')?.classList.toggle('hidden', !single);
+    if (_adminDbState.selectedOwners.size < 1) {
         closeAdminOwnerCompanyContextMenu();
         return;
     }
@@ -935,6 +939,70 @@ function closeAdminOwnerCompanyContextMenu() {
     document.getElementById('adminOwnerCompanyContextMenu')?.classList.add('hidden');
 }
 window.closeAdminOwnerCompanyContextMenu = closeAdminOwnerCompanyContextMenu;
+
+async function promptRenameOwnerCompany() {
+    closeAdminOwnerCompanyContextMenu();
+    const selected = [..._adminDbState.selectedOwners];
+    if (selected.length !== 1) {
+        showToast('이름을 바꿀 선사를 하나만 선택하세요.', 'warning');
+        return;
+    }
+    const oldName = selected[0];
+    const newName = prompt(`새 선사명을 입력하세요.\n\n현재: ${oldName}\n\n기록된 모든 자료의 선사명이 함께 바뀝니다.`, oldName);
+    if (!newName || !newName.trim() || newName.trim() === oldName) return;
+
+    try {
+        showLoading(true, '선사명 변경 중...');
+        const result = await eel.admin_rename_owner_company(oldName, newName.trim(), currentUser?.user_id || '')();
+        showLoading(false);
+        if (!result || !result.success) {
+            showCustomAlert('오류', result?.message || '이름 변경에 실패했습니다.', 'error');
+            return;
+        }
+        showToast(result.message, 'success');
+        _adminDbState.selectedOwners = new Set();
+        _adminDbState.selectedOwner = newName.trim();
+        await loadAdminOwnerCompanyCatalog(true);
+        await refreshAdminMergeUndoState();
+    } catch (e) {
+        showLoading(false);
+        console.error('선사명 변경 오류:', e);
+        showCustomAlert('오류', '선사명 변경 중 오류가 발생했습니다.', 'error');
+    }
+}
+window.promptRenameOwnerCompany = promptRenameOwnerCompany;
+
+async function promptRenameOwnerShip() {
+    closeAdminOwnerShipContextMenu();
+    const selected = [..._adminDbState.selectedOwnerShips];
+    if (selected.length !== 1) {
+        showToast('이름을 바꿀 선박/장비를 하나만 선택하세요.', 'warning');
+        return;
+    }
+    const oldName = selected[0];
+    const newName = prompt(`새 선박/장비명을 입력하세요.\n\n선사: ${_adminDbState.selectedOwner}\n현재: ${oldName}\n\n기록된 모든 자료가 함께 바뀝니다.`, oldName);
+    if (!newName || !newName.trim() || newName.trim() === oldName) return;
+
+    try {
+        showLoading(true, '선박명 변경 중...');
+        const result = await eel.admin_rename_owner_ship(
+            _adminDbState.selectedOwner, oldName, newName.trim(), currentUser?.user_id || '')();
+        showLoading(false);
+        if (!result || !result.success) {
+            showCustomAlert('오류', result?.message || '이름 변경에 실패했습니다.', 'error');
+            return;
+        }
+        showToast(result.message, 'success');
+        _adminDbState.selectedOwnerShips = new Set();
+        await loadAdminOwnerCompanyCatalog(true);
+        await refreshAdminMergeUndoState();
+    } catch (e) {
+        showLoading(false);
+        console.error('선박명 변경 오류:', e);
+        showCustomAlert('오류', '선박명 변경 중 오류가 발생했습니다.', 'error');
+    }
+}
+window.promptRenameOwnerShip = promptRenameOwnerShip;
 
 async function promptMergeSelectedOwnerCompanies() {
     closeAdminOwnerCompanyContextMenu();
@@ -1009,7 +1077,10 @@ function handleAdminOwnerShipContextMenu(shipName, event) {
         _adminDbState.selectedOwnerShips = new Set([shipName]);
         renderAdminOwnerCompanyList();
     }
-    if (_adminDbState.selectedOwnerShips.size < 2) {
+    const singleShip = _adminDbState.selectedOwnerShips.size === 1;
+    document.getElementById('menuMergeOwnerShip')?.classList.toggle('hidden', singleShip);
+    document.getElementById('menuRenameOwnerShip')?.classList.toggle('hidden', !singleShip);
+    if (_adminDbState.selectedOwnerShips.size < 1) {
         closeAdminOwnerShipContextMenu();
         return;
     }
@@ -1134,6 +1205,7 @@ function renderAdminVendorCompanyList() {
             : (active ? 'bg-blue-50 border-blue-300 text-blue-700' : 'bg-white hover:bg-slate-100 border-slate-200');
         return `
             <button onclick="handleAdminVendorCompanyClick('${escapeJs(vendor.name)}', event)"
+                    ondblclick="jumpToLatestVendorRecord('${escapeJs(vendor.name)}')"
                     oncontextmenu="handleAdminVendorCompanyContextMenu('${escapeJs(vendor.name)}', event)"
                     class="w-full text-left rounded-lg border px-3 py-3 transition ${style}">
                 <div class="font-semibold">${escapeHtml(vendor.name)}</div>
@@ -1168,6 +1240,7 @@ function renderAdminVendorCompanyList() {
                 return `
                     <button
                         onclick="handleAdminVendorWorkerClick('${escapeJs(worker.name)}', event)"
+                        ondblclick="jumpToLatestVendorRecord('${escapeJs(_adminDbState.selectedVendor)}', '${escapeJs(worker.name)}')"
                         oncontextmenu="handleAdminVendorWorkerContextMenu('${escapeJs(worker.name)}', event)"
                         class="px-3 py-2 rounded-lg border text-left transition ${selected ? 'bg-blue-100 border-blue-300 text-blue-800' : 'bg-slate-50 border-slate-200 hover:bg-slate-100'}">
                         <div class="font-semibold text-sm">${escapeHtml(worker.name)}</div>
@@ -1176,6 +1249,44 @@ function renderAdminVendorCompanyList() {
             }).join('')}
         </div>`;
 }
+
+// 외주 업체/직원을 더블클릭하면 그 항목이 마지막으로 등장한 작업 일지로 이동한다.
+// 과거 자료가 이상하게 입력된 경우 원본을 바로 보려는 용도.
+async function jumpToLatestVendorRecord(vendorName, workerName = '') {
+    try {
+        showLoading(true, '최근 기록 찾는 중...');
+        const res = await eel.admin_find_latest_vendor_record(
+            vendorName, workerName, currentUser?.user_id || '')();
+        showLoading(false);
+
+        if (!res || !res.success) {
+            showCustomAlert('오류', res?.message || '조회에 실패했습니다.', 'error');
+            return;
+        }
+        if (!res.found) {
+            showToast(`${workerName || vendorName} 의 작업 기록을 찾지 못했습니다.`, 'warning');
+            return;
+        }
+
+        // 관리자 화면 → 일일 작업 화면 (직원 관리 전환과 같은 방식, 복귀 바 표시)
+        document.getElementById('adminApp')?.classList.add('hidden');
+        document.getElementById('mainApp')?.classList.remove('hidden');
+        document.getElementById('adminReturnBar')?.classList.remove('hidden');
+
+        const [y, m, d] = String(res.date).split('-').map(Number);
+        currentDate = new Date(y, m - 1, d);
+        if (typeof updateDateInput === 'function') updateDateInput();
+        if (typeof showView === 'function') showView('daily');
+        if (typeof loadWorkRecords === 'function') await loadWorkRecords();
+
+        showToast(`${res.date} · ${res.shipName || res.company || ''} ${res.workContent || ''}`.trim(), 'info', 5000);
+    } catch (e) {
+        showLoading(false);
+        console.error('최근 기록 이동 오류:', e);
+        showCustomAlert('오류', '이동 중 오류가 발생했습니다.', 'error');
+    }
+}
+window.jumpToLatestVendorRecord = jumpToLatestVendorRecord;
 
 // Ctrl(또는 Mac Cmd) + 클릭이면 병합 대상에 추가/제거, 그냥 클릭이면 해당 업체 열람
 function handleAdminVendorCompanyClick(vendorName, event) {

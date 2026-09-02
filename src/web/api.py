@@ -984,7 +984,8 @@ def _plan_merge_vendor_companies(source_names, target_name: str):
     }
 
 
-def _plan_merge_owner_companies(source_names: List[str], target_name: str) -> Dict[str, Any]:
+def _plan_merge_owner_companies(source_names: List[str], target_name: str,
+                                allow_single: bool = False) -> Dict[str, Any]:
     normalized_sources = sorted({
         _normalize_holiday_worker_name(name)
         for name in (source_names or [])
@@ -993,7 +994,7 @@ def _plan_merge_owner_companies(source_names: List[str], target_name: str) -> Di
     target_display = str(target_name or '').strip() or (normalized_sources[0] if normalized_sources else '')
     source_keys = {_normalize_company_label(name) for name in normalized_sources}
 
-    if len(normalized_sources) < 2:
+    if len(normalized_sources) < (1 if allow_single else 2):
         return {'success': False, 'message': '병합할 선사를 2개 이상 선택하세요.'}
     if not target_display:
         return {'success': False, 'message': '대표 선사명을 입력하세요.'}
@@ -1067,7 +1068,8 @@ def _plan_merge_owner_companies(source_names: List[str], target_name: str) -> Di
     }
 
 
-def _plan_merge_owner_ships(owner_name: str, source_names: List[str], target_name: str) -> Dict[str, Any]:
+def _plan_merge_owner_ships(owner_name: str, source_names: List[str], target_name: str,
+                            allow_single: bool = False) -> Dict[str, Any]:
     owner_display = str(owner_name or '').strip()
     owner_key = _normalize_company_label(owner_display)
     normalized_sources = sorted({
@@ -1081,7 +1083,7 @@ def _plan_merge_owner_ships(owner_name: str, source_names: List[str], target_nam
 
     if not owner_key:
         return {'success': False, 'message': '선사를 먼저 선택하세요.'}
-    if len(normalized_sources) < 2:
+    if len(normalized_sources) < (1 if allow_single else 2):
         return {'success': False, 'message': '병합할 선박을 2개 이상 선택하세요.'}
     if not target_display:
         return {'success': False, 'message': '대표 선박명을 입력하세요.'}
@@ -1268,6 +1270,139 @@ def admin_merge_vendor_workers(vendor_company: str, source_names: List[str],
     except Exception as e:
         logger.error(f"외주 직원 병합 오류: {e}")
         return {'success': False, 'message': '외주 직원 병합 중 오류가 발생했습니다.'}
+
+
+@eel.expose
+@require('admin')
+def admin_find_latest_vendor_record(vendor_company: str, worker_name: str = '',
+                                    admin_id: str = '') -> Dict[str, Any]:
+    """외주 업체(또는 그 업체의 특정 직원)가 등장하는 가장 최근 작업 일자를 찾는다.
+
+    teammates 는 `업체명(직원…)` 형태의 문자열이라 SQL LIKE 로는 정확히 못 거른다.
+    (예: '우성' 으로 LIKE 하면 '우성디젤' 도 걸린다)
+    그래서 기존 파서로 세그먼트를 해석해 정확히 일치하는 행만 고른다.
+    """
+    try:
+        if not _get_admin_user(admin_id):
+            return {'success': False, 'message': '관리자 권한이 필요합니다.'}
+
+        vendor_key = _normalize_company_label(vendor_company)
+        if not vendor_key:
+            return {'success': False, 'message': '외주 업체명이 필요합니다.'}
+        worker_key = _normalize_holiday_worker_name(worker_name or '')
+
+        with db.get_connection() as conn:
+            rows = conn.execute(
+                "SELECT date, record_number, contract_number, company, ship_name, "
+                "       work_content, teammates "
+                "FROM work_records "
+                "WHERE teammates IS NOT NULL AND teammates != '' "
+                "ORDER BY date DESC, record_number DESC"
+            ).fetchall()
+
+        for row in rows:
+            vendor_workers = _extract_vendor_workers_from_teammates(row['teammates'] or '')
+            matched = None
+            for name, workers in vendor_workers.items():
+                if _normalize_company_label(name) != vendor_key:
+                    continue
+                if worker_key and worker_key not in {
+                        _normalize_holiday_worker_name(w) for w in workers}:
+                    continue
+                matched = name
+                break
+            if not matched:
+                continue
+            return {
+                'success': True,
+                'found': True,
+                'date': row['date'],
+                'recordNumber': row['record_number'],
+                'contractNumber': row['contract_number'] or '',
+                'company': row['company'] or '',
+                'shipName': row['ship_name'] or '',
+                'workContent': row['work_content'] or '',
+                'teammates': row['teammates'] or '',
+            }
+
+        return {'success': True, 'found': False, 'message': '작업 기록을 찾지 못했습니다.'}
+    except Exception as e:
+        logger.error(f"외주 최근 기록 조회 오류: {e}")
+        return {'success': False, 'message': '조회 중 오류가 발생했습니다.'}
+
+
+@eel.expose
+@require('admin')
+def admin_rename_owner_company(old_name: str, new_name: str,
+                               admin_id: str = '') -> Dict[str, Any]:
+    """선사명을 바꾸고 기록된 모든 데이터에 반영한다.
+
+    이름 변경은 대상이 1개인 병합과 같으므로 병합 경로를 그대로 쓴다.
+    (되돌리기도 병합과 동일하게 동작)
+    """
+    try:
+        if not _get_admin_user(admin_id):
+            return {'success': False, 'message': '관리자 권한이 필요합니다.'}
+        source = str(old_name or '').strip()
+        target = str(new_name or '').strip()
+        if not source or not target:
+            return {'success': False, 'message': '변경 전후 이름을 모두 입력하세요.'}
+        if _normalize_company_label(source) == _normalize_company_label(target):
+            return {'success': False, 'message': '기존 이름과 같습니다.'}
+
+        plan = _plan_merge_owner_companies([source], target, allow_single=True)
+        if not plan.get('success'):
+            return plan
+
+        with db.get_connection() as conn:
+            _apply_merge_updates(conn.cursor(), plan.get('updates', []), use_old_values=False)
+
+        _save_last_merge_undo(_build_undo_snapshot(
+            'rename_owner_company', target, plan.get('details', ''), plan.get('updates', [])))
+        db.add_activity_log(admin_id, 'rename_owner_company', target, plan.get('details', ''))
+        return {
+            'success': True,
+            'message': f"'{source}' → '{target}' 변경 완료: 작업 {plan.get('workUpdates', 0)}건, "
+                       f"등록 {plan.get('projectUpdates', 0)}건, 휴일 {plan.get('holidayUpdates', 0)}건 수정",
+        }
+    except Exception as e:
+        logger.error(f"선사명 변경 오류: {e}")
+        return {'success': False, 'message': '선사명 변경 중 오류가 발생했습니다.'}
+
+
+@eel.expose
+@require('admin')
+def admin_rename_owner_ship(owner_name: str, old_name: str, new_name: str,
+                            admin_id: str = '') -> Dict[str, Any]:
+    """선박/장비명을 바꾸고 기록된 모든 데이터에 반영한다."""
+    try:
+        if not _get_admin_user(admin_id):
+            return {'success': False, 'message': '관리자 권한이 필요합니다.'}
+        source = str(old_name or '').strip()
+        target = str(new_name or '').strip()
+        if not source or not target:
+            return {'success': False, 'message': '변경 전후 이름을 모두 입력하세요.'}
+        if _normalize_company_label(source) == _normalize_company_label(target):
+            return {'success': False, 'message': '기존 이름과 같습니다.'}
+
+        plan = _plan_merge_owner_ships(owner_name, [source], target, allow_single=True)
+        if not plan.get('success'):
+            return plan
+
+        with db.get_connection() as conn:
+            _apply_merge_updates(conn.cursor(), plan.get('updates', []), use_old_values=False)
+
+        _save_last_merge_undo(_build_undo_snapshot(
+            'rename_owner_ship', target, plan.get('details', ''), plan.get('updates', [])))
+        db.add_activity_log(admin_id, 'rename_owner_ship', target, plan.get('details', ''))
+        return {
+            'success': True,
+            'message': f"'{source}' → '{target}' 변경 완료: 작업 {plan.get('workUpdates', 0)}건, "
+                       f"등록 {plan.get('projectUpdates', 0)}건, 휴일 {plan.get('holidayUpdates', 0)}건 수정",
+        }
+    except Exception as e:
+        logger.error(f"선박명 변경 오류: {e}")
+        return {'success': False, 'message': '선박명 변경 중 오류가 발생했습니다.'}
 
 
 @eel.expose
