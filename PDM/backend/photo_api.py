@@ -7,7 +7,7 @@ from typing import Any, Dict, List
 import eel
 
 from PDM.backend import adapters
-from PDM.backend.photo_service import PhotoError, decode_b64, process_image
+from PDM.backend.photo_service import PhotoError, decode_b64, process_image, resize_jpeg
 from PDM.backend.photo_store import SlotOccupied
 from PDM.backend.runtime import fail, get_db, get_photos
 
@@ -59,10 +59,10 @@ def pdm_add_photo(doc_id: int, slot_index: int, data: str) -> Dict[str, Any]:
 
 
 @eel.expose
-def pdm_get_photo(photo_id: int) -> Dict[str, Any]:
-    """저장된 전체 크기 이미지 (편집/출력용)."""
+def pdm_get_photo(photo_id: int, max_edge: int = 0) -> Dict[str, Any]:
+    """저장된 이미지 (편집용: 전체 크기 / 인쇄용: max_edge 로 긴 변 제한)."""
     try:
-        return {'success': True, 'image': _data_uri(get_photos().get_image(photo_id))}
+        return {'success': True, 'image': _data_uri(resize_jpeg(get_photos().get_image(photo_id), int(max_edge or 0)))}
     except KeyError:
         return fail('사진을 찾을 수 없습니다.')
     except Exception as e:

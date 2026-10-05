@@ -99,7 +99,13 @@ const PDM = (() => {
         else alert('계측지 편집기는 6단계에서 구현됩니다.');
     }
 
-    async function mount(el) { container = el; await showHome(); }
+    async function mount(el) {
+        container = el;
+        await showHome();
+        // ?print=<문서 id> : 편집 화면 없이 바로 출력 미리보기 (디버깅/헤드리스 PDF 출력 검증용)
+        const printId = Number(new URLSearchParams(location.search).get('print'));
+        if (printId) PrintView.open(printId);
+    }
     return { mount, showOrderMenu };
 })();
 

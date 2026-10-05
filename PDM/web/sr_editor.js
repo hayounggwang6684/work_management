@@ -1,17 +1,5 @@
-// 서비스레포트 첫 장 편집기 — 종이 양식 모양의 폼. 사진 페이지는 3단계에서 추가.
+// 서비스레포트 편집기 — 종이 양식 모양의 폼 + 사진 그리드 + 인쇄 진입. 의존: sr_fields.js(SR_ROWS), photo_grid.js, print_view.js
 const SrEditor = (() => {
-    // [라벨, 헤더 키, 폭(열 수)] — 2열 구조 한 줄씩. 양식(GL2030)의 표 순서와 동일.
-    const ROWS = [
-        [['Name of vessel', 'vesselName'], ['IMO No.', 'imoNo']],
-        [['Engine Type', 'engineType'], ['S/N', 'serialNo']],
-        [['Model', 'model'], ['Date', 'date']],
-        [['Order No.', 'orderNo'], ['Reported by', 'reportedBy']],
-        [['Customer', 'customer']],
-        [['Requested by', 'requestedBy']],
-        [['Location', 'location']],
-        [['Period', 'period']],
-        [['Subject', 'subject']],
-    ];
     const READONLY = new Set(['orderNo']);
 
     function field(doc, key) {
@@ -25,7 +13,7 @@ const SrEditor = (() => {
 
     function headerTable(doc) {
         const tbody = h('tbody');
-        for (const row of ROWS) {
+        for (const row of SR_ROWS) {
             const tr = h('tr');
             for (const [label, key] of row) {
                 tr.append(h('th', { class: 'bg-slate-50 border border-slate-400 px-2 py-1 w-36 font-normal' }, label));
@@ -47,7 +35,7 @@ const SrEditor = (() => {
         const header = { ...doc.header };
         root.querySelectorAll('input[data-key]').forEach(i => { header[i.dataset.key] = i.value.trim(); });
         header.summary = root.querySelector('textarea[data-key=summary]').value
-            .split('\n').map(s => s.trim()).filter(Boolean);
+            .split('\n').map(s => s.replace(/\s+$/, '')).filter(s => s.trim());   // 앞 공백(들여쓰기)은 유지
         header.remark = root.querySelector('textarea[data-key=remark]').value;
         return header;
     }
@@ -64,7 +52,7 @@ const SrEditor = (() => {
             docId: doc.id, pageTitles: doc.header.pageTitles,
             onTouched: ts => { doc = { ...doc, updatedAt: ts }; },
         });
-        const root =h('div', { class: 'bg-white rounded-lg shadow p-6 max-w-3xl mx-auto' },
+        const root = h('div', { class: 'bg-white rounded-lg shadow p-6 max-w-3xl mx-auto' },
             h('h2', { class: 'text-3xl font-serif font-bold text-center mb-4' }, 'Service report'),
             headerTable(doc),
             textBlock('Summary of works (한 줄에 한 항목)', 'summary', doc, 10),
@@ -73,7 +61,7 @@ const SrEditor = (() => {
                     class: 'mr-1 mb-1 px-2 py-0.5 bg-slate-100 hover:bg-blue-100 rounded border',
                     onclick: () => {
                         const ta = root.querySelector('textarea[data-key=summary]');
-                        ta.value = (ta.value.trimEnd() + '\n' + t).trim();
+                        ta.value = ta.value.trim() ? ta.value.trimEnd() + '\n' + t : t;
                     },
                 }, t))) : null,
             textBlock('Remark', 'remark', doc, 4),
@@ -89,10 +77,13 @@ const SrEditor = (() => {
                 doc = { ...doc, title, header, updatedAt: r.updatedAt };
                 titleInput.value = title;
                 status.textContent = '저장됨 ' + new Date().toLocaleTimeString();
-            } else {
-                status.textContent = r.conflict ? '⚠ ' + r.message + ' — 새로고침 후 다시 시도하세요' : '⚠ ' + r.message;
+                return true;
             }
+            status.textContent = r.conflict ? '⚠ ' + r.message + ' — 새로고침 후 다시 시도하세요' : '⚠ ' + r.message;
+            return false;
         };
+        // 인쇄는 DB 에 저장된 내용을 쓰므로 먼저 저장한다 (충돌 등으로 저장 실패하면 인쇄하지 않음).
+        const print = async () => { if (await save()) PrintView.open(doc.id); };
         const titleInput = h('input', {
             class: 'flex-1 min-w-0 px-2 py-1 border border-slate-300 rounded bg-white',
             value: doc.title, title: '파일 이름',
@@ -101,6 +92,7 @@ const SrEditor = (() => {
             h('button', { class: 'px-3 py-1 rounded bg-slate-200', onclick: onBack }, '← 목록'),
             titleInput,
             h('button', { class: 'px-4 py-1 rounded bg-blue-600 text-white', onclick: save }, '저장'),
+            h('button', { class: 'px-4 py-1 rounded bg-emerald-600 text-white', onclick: print }, '인쇄 / PDF'),
             status,
             h('span', { class: 'ml-auto text-xs text-slate-400' },
                 `최종 수정: ${doc.updatedBy || '-'} · ${doc.updatedAt}`));

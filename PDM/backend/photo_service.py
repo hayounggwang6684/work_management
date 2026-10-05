@@ -66,3 +66,18 @@ def process_image(raw: bytes) -> ProcessedImage:
     thumb = img.copy()
     thumb.thumbnail((THUMB_EDGE, THUMB_EDGE), Image.LANCZOS)
     return ProcessedImage(_to_jpeg(full, JPEG_QUALITY), _to_jpeg(thumb, THUMB_QUALITY), *full.size)
+
+
+def resize_jpeg(data: bytes, max_edge: int) -> bytes:
+    """긴 변이 max_edge 보다 크면 줄인 JPEG 반환. 이미 작거나 max_edge<=0 이면 원본 bytes 를 그대로 돌려준다."""
+    if max_edge <= 0:
+        return data
+    try:
+        with Image.open(io.BytesIO(data)) as src:
+            if max(src.size) <= max_edge:
+                return data
+            img = src.convert('RGB')
+    except (UnidentifiedImageError, OSError, Image.DecompressionBombError):
+        raise PhotoError('이미지 파일이 아니거나 읽을 수 없는 형식입니다.')
+    img.thumbnail((max_edge, max_edge), Image.LANCZOS)
+    return _to_jpeg(img, 85)

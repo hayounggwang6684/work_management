@@ -183,3 +183,25 @@ def test_touch_document_bumps_updated_at_and_user(store):
     ts = s.db.touch_document(doc, '홍길동')
     after = s.db.get_document(doc)
     assert ts == after['updatedAt'] and ts > before['updatedAt'] and after['updatedBy'] == '홍길동'
+
+
+# ── 인쇄용 축소 ──────────────────────────────────────────────────────────────
+
+def test_resize_jpeg_limits_long_edge_keeps_aspect():
+    from PDM.backend.photo_service import resize_jpeg
+    big = process_image(make_png(3000, 2000)).image          # 1600x1067
+    out = Image.open(io.BytesIO(resize_jpeg(big, 1000)))
+    assert out.size == (1000, 667)
+
+
+def test_resize_jpeg_returns_same_bytes_when_already_small_or_unlimited():
+    from PDM.backend.photo_service import resize_jpeg
+    small = process_image(make_png(800, 600)).image
+    assert resize_jpeg(small, 1000) is small
+    assert resize_jpeg(small, 0) is small
+
+
+def test_resize_jpeg_rejects_garbage():
+    from PDM.backend.photo_service import resize_jpeg
+    with pytest.raises(PhotoError):
+        resize_jpeg(b'nope', 500)

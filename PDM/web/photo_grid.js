@@ -1,7 +1,8 @@
 // 사진 그리드 — 한 페이지 2열×3행(6칸), 칸마다 캡션. 서비스레포트 사진 페이지의 화면 편집용.
 // 입력: ① 파일 드래그앤드롭 ② 우클릭 메뉴 [입력] ③ 빈칸 더블클릭 → 모두 파일 선택/드롭 후 같은 경로로 저장.
 // 우클릭 메뉴: 입력 / 수정 / 제거 / 새 항목. 사진 더블클릭 = 수정(photo_editor.js).
-// 의존: dom.js(h, showContextMenu, showChoice, blobToDataURL), photo_editor.js, eel
+// 칸에 맞추는 방식(cover/contain)은 출력과 같은 PDM_LAYOUT.photoFit 을 따른다 (화면 = 인쇄 결과).
+// 의존: dom.js(h, showContextMenu, showChoice, blobToDataURL), photo_editor.js, print_layout.js(PDM_LAYOUT), eel
 const PhotoGrid = (() => {
     const PER_PAGE = 6;
     const UPLOAD_EDGE = 1600;   // 전송 전 긴 변 축소 (서버도 동일 상한으로 다시 처리)
@@ -132,7 +133,8 @@ const PhotoGrid = (() => {
                        (photo ? 'border-slate-300' : 'border-dashed border-slate-300 text-slate-400 text-xs'),
                 title: photo ? '더블클릭: 수정 · 우클릭: 수정/제거/새 항목' : '더블클릭 또는 파일을 끌어다 놓기 · 우클릭: 입력',
             }, photo
-                ? h('img', { src: photo.thumb, class: 'max-w-full max-h-full object-contain', draggable: 'false' })
+                ? h('img', { src: photo.thumb, draggable: 'false',
+                    class: 'w-full h-full ' + (PDM_LAYOUT.photoFit === 'cover' ? 'object-cover' : 'object-contain') })
                 : h('span', {}, '더블클릭 / 드래그 / 우클릭'));
             const caption = h('input', {
                 class: 'mt-1 w-full border border-slate-300 rounded px-2 py-1 text-xs text-center disabled:bg-slate-100',

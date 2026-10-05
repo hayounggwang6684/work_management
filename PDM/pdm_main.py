@@ -14,9 +14,11 @@ PORT = 8765  # 본체 앱 포트와 겹치지 않게
 
 def main() -> None:
     eel.init(str(WEB_DIR), allowed_extensions=['.js', '.html', '.css'])
-    # --no-browser: 미리보기 도구/수동 접속용 (http://localhost:8765/pdm.html)
-    mode = None if '--no-browser' in sys.argv else 'chrome'
-    eel.start('pdm.html', port=PORT, size=(1280, 860), mode=mode)
+    # --no-browser: 미리보기 도구/수동 접속용 (http://localhost:8765/pdm.html).
+    # Eel 은 페이지가 모두 닫히면 종료하므로, 이 모드에서는 종료하지 않도록 빈 콜백을 건다.
+    no_browser = '--no-browser' in sys.argv
+    eel.start('pdm.html', port=PORT, size=(1280, 860), mode=None if no_browser else 'chrome',
+              close_callback=(lambda *_: None) if no_browser else None)
 
 
 if __name__ == '__main__':

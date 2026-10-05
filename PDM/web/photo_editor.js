@@ -11,6 +11,7 @@ const PhotoEditor = (() => {
     const MIN_SHAPE = 0.005;            // 이보다 작게 끌면 도형 취소 (클릭 실수)
     const MIN_CROP = 0.03;              // 보이는 영역 대비 이보다 작은 자르기는 취소
     const FULL = { x: 0, y: 0, w: 1, h: 1 };
+    const FRAME_ASPECT = 4 / 3;         // 출력 사진칸 비율 (70.4 × 53.2mm)
 
     const TOOLS = [['pen', '펜'], ['rect', '사각형'], ['ellipse', '원'], ['arrow', '화살표'], ['crop', '자르기']];
 
@@ -20,6 +21,17 @@ const PhotoEditor = (() => {
     // 보이는 영역(crop) 기준 0~1 좌표 ↔ 원본 기준 0~1 좌표
     const viewToAbs = (crop, p) => [crop.x + p[0] * crop.w, crop.y + p[1] * crop.h];
     const absToView = (crop, p) => [(p[0] - crop.x) / crop.w, (p[1] - crop.y) / crop.h];
+
+    // 비율 고정: a 를 기준점으로 가로(dx)를 유지하고 세로를 aspect(가로/세로, 픽셀 기준)에 맞춘다.
+    // viewAspect = 보이는 영역의 픽셀 가로/세로. 세로 여유가 모자라면 가로도 함께 줄여 비율을 지킨다.
+    function lockAspect(a, b, aspect, viewAspect) {
+        const sx = b[0] >= a[0] ? 1 : -1, sy = b[1] >= a[1] ? 1 : -1;
+        let w = Math.abs(b[0] - a[0]);
+        let hgt = w * viewAspect / aspect;
+        const room = sy > 0 ? 1 - a[1] : a[1];
+        if (hgt > room) { hgt = room; w = hgt * aspect / viewAspect; }
+        return [a[0] + sx * w, a[1] + sy * hgt];
+    }
 
     // 보이는 영역 안에서 a→b 로 끈 사각형 → 원본 기준 crop 사각형 (너무 작으면 null)
     function cropFromDrag(crop, a, b) {
@@ -98,7 +110,7 @@ const PhotoEditor = (() => {
         const NW = img.naturalWidth, NH = img.naturalHeight;
 
         const state = { ops: [], preview: null, tool: 'pen', color: DEFAULT_COLOR, width: DEFAULT_WIDTH,
-                        longEdge: Math.max(NW, NH), cropKey: JSON.stringify(FULL) };
+                        longEdge: Math.max(NW, NH), cropKey: JSON.stringify(FULL), cropAspect: FRAME_ASPECT };
         const canvas = h('canvas', { class: 'bg-white shadow-lg max-w-full max-h-full', style: 'touch-action:none;cursor:crosshair' });
         const ctx = canvas.getContext('2d');
         const sizeInfo = h('span', { class: 'text-xs text-slate-300' });
@@ -144,6 +156,13 @@ const PhotoEditor = (() => {
                     Math.min(1, Math.max(0, (e.clientY - rc.top) / rc.height))];
         };
 
+        // 비율 고정이면 끄는 끝점을 보정한다 (보이는 영역의 픽셀 비율 기준)
+        const constrainCrop = (a, v) => {
+            if (!state.cropAspect) return v;
+            const c = crop();
+            return lockAspect(a, v, state.cropAspect, (NW * c.w) / (NH * c.h));
+        };
+
         let active = null;      // 진행 중인 획 (ops 에 이미 들어 있음)
         canvas.addEventListener('pointerdown', e => {
             if (e.button !== 0) return;
@@ -161,7 +180,7 @@ const PhotoEditor = (() => {
         canvas.addEventListener('pointermove', e => {
             if (!state.preview && !active) return;
             const v = viewPoint(e);
-            if (state.preview) state.preview.b = v;
+            if (state.preview) state.preview.b = constrainCrop(state.preview.a, v);
             else if (active.type === 'pen') active.points.push(viewToAbs(crop(), v));
             else active.b = viewToAbs(crop(), v);
             redraw();
@@ -195,6 +214,10 @@ const PhotoEditor = (() => {
         color.addEventListener('input', () => { state.color = color.value; });
         const width = h('input', { type: 'range', min: 2, max: 24, value: state.width, title: '굵기' });
         width.addEventListener('input', () => { state.width = Number(width.value); });
+
+        const aspectSel = h('select', { class: 'text-sm rounded px-2 py-1 text-slate-900', title: '자르기 비율' },
+            h('option', { value: String(FRAME_ASPECT) }, '자르기 4:3 (사진칸)'), h('option', { value: '' }, '자르기 자유'));
+        aspectSel.addEventListener('change', () => { state.cropAspect = aspectSel.value ? Number(aspectSel.value) : null; });
 
         const undo = () => { state.ops.pop(); changed(); };
         const close = () => { overlay.remove(); document.removeEventListener('keydown', onKey); };
@@ -232,7 +255,7 @@ const PhotoEditor = (() => {
 
         const toolbar = h('div', { class: 'flex flex-wrap items-center gap-3 px-4 py-2 bg-slate-800 text-slate-100' },
             h('div', { class: 'flex gap-1' }, toolBtns), color, h('span', { class: 'text-xs' }, '굵기'), width,
-            h('span', { class: 'text-xs ml-2' }, '크기'), sizeSel, sizeInfo,
+            aspectSel, h('span', { class: 'text-xs ml-2' }, '크기'), sizeSel, sizeInfo,
             h('div', { class: 'ml-auto flex flex-wrap gap-2' },
                 btn('되돌리기', undo),
                 btn('자르기 해제', () => { state.ops = state.ops.filter(o => o.type !== 'crop'); changed(); }),
@@ -247,5 +270,7 @@ const PhotoEditor = (() => {
         redraw();
     }
 
-    return { open };
+    return { open, lockAspect, cropFromDrag, currentCrop };
 })();
+
+if (typeof module !== 'undefined') module.exports = PhotoEditor;
