@@ -1,4 +1,4 @@
-// 서비스레포트 편집기 — 종이 양식 모양의 폼 + 사진 그리드 + 인쇄 진입. 의존: sr_fields.js(SR_ROWS), photo_grid.js, print_view.js
+// 서비스레포트 편집기 — 종이 양식 모양의 폼 + 사진 그리드 + 인쇄 진입. 의존: sr_fields.js(SR_ROWS), editor_bar.js, photo_grid.js
 const SrEditor = (() => {
     const READONLY = new Set(['orderNo']);
 
@@ -43,15 +43,11 @@ const SrEditor = (() => {
     async function render(container, docId, onBack) {
         const res = await eel.pdm_get_document(docId)();
         if (!res.success) { container.replaceChildren(h('p', { class: 'text-red-600' }, res.message)); return; }
-        let doc = res.document;
+        const doc = res.document;
         const sugg = (await eel.pdm_summary_suggestions(doc.header.model)()).items || [];
 
-        const status = h('span', { class: 'text-sm text-slate-500' });
-        // 사진 변경은 즉시 서버에 저장되며, 문서의 최종 수정 시각이 바뀌므로 본문 저장 시 충돌이 나지 않게 동기화한다.
-        const grid = PhotoGrid.create({
-            docId: doc.id, pageTitles: doc.header.pageTitles,
-            onTouched: ts => { doc = { ...doc, updatedAt: ts }; },
-        });
+        // 사진 변경은 즉시 서버에 저장되며 문서의 최종 수정 시각이 바뀌므로, 바에 알려 본문 저장 충돌을 막는다.
+        const grid = PhotoGrid.create({ docId: doc.id, pageTitles: doc.header.pageTitles, onTouched: ts => bar.touch(ts) });
         const root = h('div', { class: 'bg-white rounded-lg shadow p-6 max-w-3xl mx-auto' },
             h('h2', { class: 'text-3xl font-serif font-bold text-center mb-4' }, 'Service report'),
             headerTable(doc),
@@ -69,34 +65,11 @@ const SrEditor = (() => {
                 h('h3', { class: 'font-bold text-lg mb-1' }, '■ Photos'),
                 grid.el));
 
-        const save = async () => {
-            const header = { ...collect(root, doc), pageTitles: grid.getPageTitles() };
-            const title = titleInput.value.trim() || doc.title;
-            const r = await eel.pdm_save_document(doc.id, doc.updatedAt, title, header)();
-            if (r.success) {
-                doc = { ...doc, title, header, updatedAt: r.updatedAt };
-                titleInput.value = title;
-                status.textContent = '저장됨 ' + new Date().toLocaleTimeString();
-                return true;
-            }
-            status.textContent = r.conflict ? '⚠ ' + r.message + ' — 새로고침 후 다시 시도하세요' : '⚠ ' + r.message;
-            return false;
-        };
-        // 인쇄는 DB 에 저장된 내용을 쓰므로 먼저 저장한다 (충돌 등으로 저장 실패하면 인쇄하지 않음).
-        const print = async () => { if (await save()) PrintView.open(doc.id); };
-        const titleInput = h('input', {
-            class: 'flex-1 min-w-0 px-2 py-1 border border-slate-300 rounded bg-white',
-            value: doc.title, title: '파일 이름',
+        const bar = EditorBar.create({
+            doc, onBack,
+            getHeader: () => ({ ...collect(root, bar.current()), pageTitles: grid.getPageTitles() }),
         });
-        const bar = h('div', { class: 'max-w-3xl mx-auto mb-3 flex items-center gap-3' },
-            h('button', { class: 'px-3 py-1 rounded bg-slate-200', onclick: onBack }, '← 목록'),
-            titleInput,
-            h('button', { class: 'px-4 py-1 rounded bg-blue-600 text-white', onclick: save }, '저장'),
-            h('button', { class: 'px-4 py-1 rounded bg-emerald-600 text-white', onclick: print }, '인쇄 / PDF'),
-            status,
-            h('span', { class: 'ml-auto text-xs text-slate-400' },
-                `최종 수정: ${doc.updatedBy || '-'} · ${doc.updatedAt}`));
-        container.replaceChildren(bar, root);
+        container.replaceChildren(bar.el, root);
     }
 
     return { render };

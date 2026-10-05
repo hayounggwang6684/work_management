@@ -10,7 +10,7 @@ import eel
 
 from PDM.backend import adapters
 from PDM.backend.naming import default_title
-from PDM.backend import photo_api  # noqa: F401  (@eel.expose 사진 API 등록)
+from PDM.backend import measurement, photo_api  # noqa: F401  (photo_api: @eel.expose 사진 API 등록)
 from PDM.backend.pdm_db import ConflictError
 from PDM.backend.runtime import fail as _fail, get_db
 from PDM.backend.service_report import build_header
@@ -52,7 +52,7 @@ def pdm_create_document(doc_type: str, contract_number: str) -> Dict[str, Any]:
             return _fail('작업현황에서 해당 주문을 찾을 수 없습니다.')
         reporter = user.get('full_name', '')
         header = (build_header(info, reporter, date.today()) if doc_type == 'service_report'
-                  else {**info, 'reportedBy': reporter})
+                  else measurement.build_header(info, reporter, date.today()))
         existing = [d['title'] for d in get_db().list_documents(info['contractNumber'], doc_type)]
         doc_id = get_db().create_document(
             doc_type, info['contractNumber'], info['shipName'],
@@ -79,11 +79,18 @@ def pdm_get_document(doc_id: int) -> Dict[str, Any]:
 def pdm_save_document(doc_id: int, expected_updated_at: str, title: str, header: Dict[str, Any]) -> Dict[str, Any]:
     try:
         user = adapters.get_current_user()
+        current = get_db().get_document(doc_id)
+        if current is None:
+            return _fail('문서를 찾을 수 없습니다.')
+        if current['docType'] == 'measurement':
+            header = measurement.normalize_header(header)     # 양식/구분 검증, 행·열 수 보정
         new_ts = get_db().update_document(doc_id, expected_updated_at, title, header, user.get('full_name', ''))
         get_db().record_summary_history(header.get('model', ''), header.get('summary', []))
         return {'success': True, 'updatedAt': new_ts}
     except ConflictError as e:
         return _fail(str(e), conflict=True)
+    except ValueError as e:
+        return _fail(str(e))
     except KeyError:
         return _fail('문서를 찾을 수 없습니다.')
     except Exception as e:
@@ -99,3 +106,22 @@ def pdm_summary_suggestions(engine_model: str) -> Dict[str, Any]:
     except Exception as e:
         logger.exception('pdm_summary_suggestions')
         return _fail(f'제안 조회 오류: {e}')
+
+
+@eel.expose
+def pdm_measurement_templates() -> Dict[str, Any]:
+    """계측지 항목 정의(양식 목록) — 입력 화면과 출력이 이 정의로 만들어진다."""
+    try:
+        return {'success': True, 'forms': measurement.load_templates()}
+    except Exception as e:
+        logger.exception('pdm_measurement_templates')
+        return _fail(f'계측 항목 정의 오류: {e}')
+
+
+@eel.expose
+def pdm_new_measurement_form(form_id: str, side: str) -> Dict[str, Any]:
+    """선택한 양식(예: 크랭크핀 PORT)의 빈 입력 구조. 기본 규격/기준값이 채워져 있다."""
+    try:
+        return {'success': True, 'form': measurement.default_instance(form_id, side)}
+    except ValueError as e:
+        return _fail(str(e))

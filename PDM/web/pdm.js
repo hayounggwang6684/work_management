@@ -95,8 +95,7 @@ const PDM = (() => {
     }
 
     function openEditor(doc) {
-        if (doc.docType === 'service_report') SrEditor.render(container, doc.id, showHome);
-        else alert('계측지 편집기는 6단계에서 구현됩니다.');
+        (doc.docType === 'service_report' ? SrEditor : MmEditor).render(container, doc.id, showHome);
     }
 
     async function mount(el) {

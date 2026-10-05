@@ -1,0 +1,63 @@
+{
+  "forms": [
+    {
+      "id": "crankpin",
+      "label": "크랭크핀 & 베어링",
+      "title": "RECORD OF CRANK PIN & BEARING",
+      "indexTitle": "RECORD OF CRANK PIN BEARING",
+      "code": "SJ-105(0 / '05.03.25)",
+      "layout": "journalGrid",
+      "diagram": "crankpin",
+      "sides": ["PORT", "STBD"],
+      "spec": [
+        {"id": "primary", "label": "CRANK PIN OUT\nDIA", "standard": "89.91", "limit": "0.05"},
+        {"id": "clearance", "label": "CRANK &\nBEG' CLERANCE", "standard": "", "limit": ""}
+      ],
+      "tables": [
+        {"id": "outDia", "title": "CRANK PIN OUT DIA", "colLabel": "Crankpin\nNo.", "cols": 8,
+         "rows": [["F", "TB"], ["F", "PS"], ["A", "TB"], ["A", "PS"]], "unit": {"base": "89.91", "op": "-"}},
+        {"id": "innerDia", "title": "CRANK PIN BEARING INNER DIA", "colLabel": "Crankpin\nNo.", "cols": 8,
+         "rows": [["F", "TB"], ["F", "PS"], ["A", "TB"], ["A", "PS"]], "unit": {"base": "", "op": "+"}},
+        {"id": "clearance", "title": "CLEARANCE OF CRANK PIN & BEARING", "colLabel": "Journal\nNo.", "cols": 8,
+         "rows": [["F"], ["A"]], "unit": null}
+      ]
+    },
+    {
+      "id": "mainjournal",
+      "label": "메인저널 & 베어링",
+      "title": "RECORD OF MAIN JOURNAL & BEARING",
+      "indexTitle": "RECORD OF MAIN JOURNAL & BEARING",
+      "code": "SJ-104 (0/ '05.03.25)",
+      "layout": "journalGrid",
+      "diagram": "mainjournal",
+      "sides": ["PORT", "STBD"],
+      "spec": [
+        {"id": "primary", "label": "MAIN JOURNAL\nOUT DIA", "standard": "99.9", "limit": "0.05"},
+        {"id": "clearance", "label": "JOURNAL &\nBEG' CLERANCE", "standard": "", "limit": ""}
+      ],
+      "tables": [
+        {"id": "outDia", "title": "MAIN JOURNAL OUT DIA", "colLabel": "Journal\nNo.", "cols": 8,
+         "rows": [["F", "TB"], ["F", "PS"], ["A", "TB"], ["A", "PS"]], "unit": {"base": "100", "op": "-"}},
+        {"id": "innerDia", "title": "MAIN BEARING INNER DIA", "colLabel": "Bearing\nno.", "cols": 8,
+         "rows": [["F", "TB"], ["F", "PS"], ["A", "TB"], ["A", "PS"]], "unit": {"base": "", "op": "+"}},
+        {"id": "clearance", "title": "CLEARANCE OF MAIN JOURNAL & BEARING", "colLabel": "Journal\nno.", "cols": 8,
+         "rows": [["F"], ["A"]], "unit": null}
+      ]
+    },
+    {
+      "id": "conrod",
+      "label": "콘로드 빅엔드 하우징",
+      "title": "RECORD OF CON. ROD BIG END HOUSING",
+      "indexTitle": "RECORD OF CON ROD BIG END HOUSING",
+      "code": "SJ-108(0/'05.03.25)",
+      "layout": "conrodGrid",
+      "diagram": "conrod",
+      "sides": ["PORT", "STBD"],
+      "positions": ["D1", "D2", "D3", "D4"],
+      "subColumns": ["F", "A"],
+      "rowCount": 12,
+      "defaultRowLabels": ["L1", "L2", "L3", "L4", "R1", "R2", "R3", "R4", "", "", "", ""],
+      "defaults": {"torque": "", "original": "95", "std": "", "limit": ""}
+    }
+  ]
+}
