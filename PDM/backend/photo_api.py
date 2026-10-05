@@ -71,6 +71,38 @@ def pdm_get_photo(photo_id: int) -> Dict[str, Any]:
 
 
 @eel.expose
+def pdm_update_photo(doc_id: int, photo_id: int, data: str) -> Dict[str, Any]:
+    """편집(크기 조정/그리기)한 이미지로 교체. 최초 편집 시 원본을 보존한다."""
+    try:
+        img = process_image(decode_b64(data))
+        if not get_photos().replace_image(doc_id, photo_id, img):
+            return fail('사진을 찾을 수 없습니다.')
+        return {'success': True, 'updatedAt': _touch(doc_id)}
+    except PhotoError as e:
+        return fail(str(e))
+    except Exception as e:
+        logger.exception('pdm_update_photo')
+        return fail(f'사진 저장 오류: {e}')
+
+
+@eel.expose
+def pdm_restore_photo_original(doc_id: int, photo_id: int) -> Dict[str, Any]:
+    """편집 전 원본으로 되돌리기."""
+    try:
+        store = get_photos()
+        original = store.get_original(doc_id, photo_id)
+        if original is None:
+            return fail('편집 이력이 없습니다.')
+        img = process_image(original)
+        if not store.restore_original(doc_id, photo_id, img.thumb, img.width, img.height):
+            return fail('편집 이력이 없습니다.')
+        return {'success': True, 'updatedAt': _touch(doc_id)}
+    except Exception as e:
+        logger.exception('pdm_restore_photo_original')
+        return fail(f'원본 복원 오류: {e}')
+
+
+@eel.expose
 def pdm_set_photo_caption(doc_id: int, photo_id: int, caption: str) -> Dict[str, Any]:
     try:
         if not get_photos().set_caption(doc_id, photo_id, (caption or '')[:200]):

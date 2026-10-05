@@ -1,6 +1,7 @@
 // 사진 그리드 — 한 페이지 2열×3행(6칸), 칸마다 캡션. 서비스레포트 사진 페이지의 화면 편집용.
 // 입력: ① 파일 드래그앤드롭 ② 우클릭 메뉴 [입력] ③ 빈칸 더블클릭 → 모두 파일 선택/드롭 후 같은 경로로 저장.
-// 우클릭 메뉴: 입력 / 수정 / 제거 / 새 항목.  의존: dom.js(h, showContextMenu, showChoice, blobToDataURL), eel
+// 우클릭 메뉴: 입력 / 수정 / 제거 / 새 항목. 사진 더블클릭 = 수정(photo_editor.js).
+// 의존: dom.js(h, showContextMenu, showChoice, blobToDataURL), photo_editor.js, eel
 const PhotoGrid = (() => {
     const PER_PAGE = 6;
     const UPLOAD_EDGE = 1600;   // 전송 전 긴 변 축소 (서버도 동일 상한으로 다시 처리)
@@ -30,9 +31,9 @@ const PhotoGrid = (() => {
         }
     }
 
-    // options: {docId, pageTitles, onTouched(updatedAt), onEdit(photo) — 없으면 [수정] 비활성}
+    // options: {docId, pageTitles, onTouched(updatedAt)}
     function create(options) {
-        const { docId, onTouched, onEdit } = options;
+        const { docId, onTouched } = options;
         const pageTitles = { ...(options.pageTitles || {}) };
         const bySlot = new Map();       // slotIndex → {id, caption, thumb, ...}
         const thumbs = new Map();       // photoId → thumb data URI (캐시)
@@ -105,12 +106,20 @@ const PhotoGrid = (() => {
             say('빈 칸을 추가했습니다');
         }
 
+        // 편집기에서 저장/복원하면 썸네일이 바뀌므로 캐시를 비우고 다시 불러온다.
+        function editPhoto(photo) {
+            PhotoEditor.open({
+                docId, photo,
+                onSaved: async r => { touched(r); thumbs.delete(photo.id); await reload(); say('사진을 수정했습니다'); },
+            });
+        }
+
         function menuFor(slot, e) {
             e.preventDefault();
             const photo = bySlot.get(slot);
             showContextMenu(e.clientX, e.clientY, [
                 { label: '입력', disabled: !!photo, onClick: () => pickFiles(slot) },
-                { label: '수정', disabled: !photo || !onEdit, onClick: () => onEdit(photo) },
+                { label: '수정', disabled: !photo, onClick: () => editPhoto(photo) },
                 { label: '제거', disabled: !photo, onClick: () => removeAt(slot) },
                 { label: '새 항목', disabled: !photo && lastSlot() < slot, onClick: () => insertBlank(slot) },
             ]);
@@ -121,7 +130,7 @@ const PhotoGrid = (() => {
             const frame = h('div', {
                 class: 'aspect-[4/3] border-2 rounded flex items-center justify-center overflow-hidden bg-slate-50 select-none ' +
                        (photo ? 'border-slate-300' : 'border-dashed border-slate-300 text-slate-400 text-xs'),
-                title: photo ? '우클릭: 수정/제거/새 항목' : '더블클릭 또는 파일을 끌어다 놓기 · 우클릭: 입력',
+                title: photo ? '더블클릭: 수정 · 우클릭: 수정/제거/새 항목' : '더블클릭 또는 파일을 끌어다 놓기 · 우클릭: 입력',
             }, photo
                 ? h('img', { src: photo.thumb, class: 'max-w-full max-h-full object-contain', draggable: 'false' })
                 : h('span', {}, '더블클릭 / 드래그 / 우클릭'));
@@ -135,7 +144,7 @@ const PhotoGrid = (() => {
             });
             const cell = h('div', {}, frame, caption);
             cell.addEventListener('contextmenu', e => menuFor(slot, e));
-            if (!photo) frame.addEventListener('dblclick', () => pickFiles(slot));
+            frame.addEventListener('dblclick', () => (photo ? editPhoto(photo) : pickFiles(slot)));
             frame.addEventListener('dragover', e => { e.preventDefault(); frame.classList.add('ring-2', 'ring-blue-500'); });
             frame.addEventListener('dragleave', () => frame.classList.remove('ring-2', 'ring-blue-500'));
             frame.addEventListener('drop', e => {

@@ -65,6 +65,29 @@ class PhotoStore:
             raise KeyError(photo_id)
         return row['image_blob']
 
+    def get_original(self, doc_id: int, photo_id: int):
+        """편집 전 원본 (편집한 적 없으면 None)."""
+        with self.db.connect() as conn:
+            row = conn.execute('SELECT original_blob FROM pdm_photos WHERE id=? AND doc_id=?',
+                               (photo_id, doc_id)).fetchone()
+        return row['original_blob'] if row else None
+
+    def replace_image(self, doc_id: int, photo_id: int, img: ProcessedImage) -> bool:
+        """편집본으로 교체. 처음 편집할 때만 기존 이미지를 original_blob 에 보존한다."""
+        with self._tx() as conn:
+            return bool(conn.execute(
+                'UPDATE pdm_photos SET original_blob = COALESCE(original_blob, image_blob), '
+                'image_blob=?, thumb_blob=?, width=?, height=? WHERE id=? AND doc_id=?',
+                (img.image, img.thumb, img.width, img.height, photo_id, doc_id)).rowcount)
+
+    def restore_original(self, doc_id: int, photo_id: int, thumb: bytes, width: int, height: int) -> bool:
+        """편집 전 원본으로 복원 (썸네일/크기는 호출자가 원본에서 계산해 전달). 편집 이력이 없으면 False."""
+        with self._tx() as conn:
+            return bool(conn.execute(
+                'UPDATE pdm_photos SET image_blob=original_blob, original_blob=NULL, '
+                'thumb_blob=?, width=?, height=? WHERE id=? AND doc_id=? AND original_blob IS NOT NULL',
+                (thumb, width, height, photo_id, doc_id)).rowcount)
+
     def set_caption(self, doc_id: int, photo_id: int, caption: str) -> bool:
         """해당 문서의 사진만 수정 (다른 문서 사진 id 를 넘겨도 무시). 바뀌었으면 True."""
         with self.db.connect() as conn:

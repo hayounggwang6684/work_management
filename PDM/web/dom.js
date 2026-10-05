@@ -69,7 +69,8 @@ function showChoice(title, message, buttons) {
         const done = v => { overlay.remove(); document.removeEventListener('keydown', onKey); resolve(v); };
         const onKey = e => { if (e.key === 'Escape') done(null); };
         const overlay = h('div', {
-            class: 'fixed inset-0 z-50 bg-black/40 flex items-center justify-center',
+            id: 'pdmChoice',    // 편집기 같은 전체 화면 모달(z-60) 위에 떠야 하므로 z-[70]
+            class: 'fixed inset-0 z-[70] bg-black/40 flex items-center justify-center',
             onmousedown: e => { if (e.target === overlay) done(null); },
         }, h('div', { class: 'bg-white rounded-lg shadow-xl p-5 w-96' },
             h('h3', { class: 'font-bold text-lg mb-2' }, title),
