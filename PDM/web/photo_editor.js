@@ -1,18 +1,38 @@
-// 사진 편집기 — 크기 조정 + 그리기(기본 빨강). 전체 화면 모달.
-// 그리기 도구: 펜/사각형/원/화살표. 획은 0~1 정규화 좌표로 보관해 크기를 바꿔도 위치가 유지된다.
-// 저장하면 그림이 합쳐진 이미지로 교체되고, 최초 편집 시 서버가 원본을 보존한다 ([원본 복원] 가능).
+// 사진 편집기 — 자르기 + 크기 조정 + 그리기(기본 빨강). 전체 화면 모달.
+// 모든 편집은 "작업 목록(ops)"에 쌓이고 되돌리기(Ctrl+Z)로 하나씩 취소된다.
+//   · 획(stroke): 원본 이미지 기준 0~1 좌표로 보관 → 자르기/크기를 바꿔도 그림 위치가 유지된다.
+//   · 자르기(crop): 원본 기준 사각형. 마지막 crop 이 현재 보이는 영역이며, 이 안에서 다시 자를 수도 있다.
+// 저장하면 현재 보이는 영역이 합쳐진 이미지로 교체되고, 최초 편집 시 서버가 원본을 보존한다 ([원본 복원] 가능).
 // 의존: dom.js(h, showChoice, blobToDataURL), eel
 const PhotoEditor = (() => {
     const DEFAULT_COLOR = '#ff0000';
     const DEFAULT_WIDTH = 5;            // 긴 변 1000px 기준 굵기. 실제 굵기는 출력 크기에 비례
     const SIZE_PRESETS = [1200, 800, 600];
     const MIN_SHAPE = 0.005;            // 이보다 작게 끌면 도형 취소 (클릭 실수)
+    const MIN_CROP = 0.03;              // 보이는 영역 대비 이보다 작은 자르기는 취소
+    const FULL = { x: 0, y: 0, w: 1, h: 1 };
 
-    const TOOLS = [['pen', '펜'], ['rect', '사각형'], ['ellipse', '원'], ['arrow', '화살표']];
+    const TOOLS = [['pen', '펜'], ['rect', '사각형'], ['ellipse', '원'], ['arrow', '화살표'], ['crop', '자르기']];
 
-    // ── 그리기 (순수 렌더링: ctx, 획, 캔버스 크기) ────────────────────────────
-    function drawStroke(ctx, s, W, H) {
-        const px = p => [p[0] * W, p[1] * H];
+    // ── 순수 함수 ────────────────────────────────────────────────────────────
+    const currentCrop = ops => [...ops].reverse().find(o => o.type === 'crop')?.rect || FULL;
+
+    // 보이는 영역(crop) 기준 0~1 좌표 ↔ 원본 기준 0~1 좌표
+    const viewToAbs = (crop, p) => [crop.x + p[0] * crop.w, crop.y + p[1] * crop.h];
+    const absToView = (crop, p) => [(p[0] - crop.x) / crop.w, (p[1] - crop.y) / crop.h];
+
+    // 보이는 영역 안에서 a→b 로 끈 사각형 → 원본 기준 crop 사각형 (너무 작으면 null)
+    function cropFromDrag(crop, a, b) {
+        const x0 = Math.min(a[0], b[0]), x1 = Math.max(a[0], b[0]);
+        const y0 = Math.min(a[1], b[1]), y1 = Math.max(a[1], b[1]);
+        if (x1 - x0 < MIN_CROP || y1 - y0 < MIN_CROP) return null;
+        const [ax, ay] = viewToAbs(crop, [x0, y0]);
+        return { x: ax, y: ay, w: (x1 - x0) * crop.w, h: (y1 - y0) * crop.h };
+    }
+
+    // ── 그리기 ──────────────────────────────────────────────────────────────
+    function drawStroke(ctx, s, crop, W, H) {
+        const px = p => { const v = absToView(crop, p); return [v[0] * W, v[1] * H]; };
         ctx.strokeStyle = s.color;
         ctx.fillStyle = s.color;
         ctx.lineWidth = s.width * Math.max(W, H) / 1000;
@@ -45,6 +65,22 @@ const PhotoEditor = (() => {
         }
     }
 
+    // 자르기 미리보기: 선택 영역 밖을 어둡게, 영역은 점선 테두리
+    function drawCropPreview(ctx, a, b, W, H) {
+        const x0 = Math.min(a[0], b[0]) * W, x1 = Math.max(a[0], b[0]) * W;
+        const y0 = Math.min(a[1], b[1]) * H, y1 = Math.max(a[1], b[1]) * H;
+        ctx.fillStyle = 'rgba(0,0,0,0.5)';
+        ctx.fillRect(0, 0, W, y0);
+        ctx.fillRect(0, y1, W, H - y1);
+        ctx.fillRect(0, y0, x0, y1 - y0);
+        ctx.fillRect(x1, y0, W - x1, y1 - y0);
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = Math.max(2, Math.max(W, H) / 400);
+        ctx.setLineDash([ctx.lineWidth * 4, ctx.lineWidth * 3]);
+        ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
+        ctx.setLineDash([]);
+    }
+
     function loadImage(src) {
         return new Promise((resolve, reject) => {
             const img = new Image();
@@ -59,52 +95,87 @@ const PhotoEditor = (() => {
         const r = await eel.pdm_get_photo(photo.id)();
         if (!r.success) { alert(r.message); return; }
         const img = await loadImage(r.image);
-        const naturalLong = Math.max(img.naturalWidth, img.naturalHeight);
+        const NW = img.naturalWidth, NH = img.naturalHeight;
 
-        const state = { strokes: [], tool: 'pen', color: DEFAULT_COLOR, width: DEFAULT_WIDTH,
-                        longEdge: naturalLong, drawing: null };
+        const state = { ops: [], preview: null, tool: 'pen', color: DEFAULT_COLOR, width: DEFAULT_WIDTH,
+                        longEdge: Math.max(NW, NH), cropKey: JSON.stringify(FULL) };
         const canvas = h('canvas', { class: 'bg-white shadow-lg max-w-full max-h-full', style: 'touch-action:none;cursor:crosshair' });
         const ctx = canvas.getContext('2d');
         const sizeInfo = h('span', { class: 'text-xs text-slate-300' });
+        const sizeSel = h('select', { class: 'text-sm rounded px-2 py-1 text-slate-900', title: '크기 조정 (긴 변 px)' });
 
+        const crop = () => currentCrop(state.ops);
+        const croppedLong = () => Math.round(Math.max(NW * crop().w, NH * crop().h));
         const dims = () => {
-            const k = state.longEdge / naturalLong;
-            return [Math.round(img.naturalWidth * k), Math.round(img.naturalHeight * k)];
+            const c = crop();
+            const k = state.longEdge / Math.max(NW * c.w, NH * c.h);
+            return [Math.max(1, Math.round(NW * c.w * k)), Math.max(1, Math.round(NH * c.h * k))];
         };
+
         const redraw = () => {
+            const c = crop();
             const [W, H] = dims();
             canvas.width = W; canvas.height = H;
-            ctx.drawImage(img, 0, 0, W, H);
-            for (const s of state.strokes) drawStroke(ctx, s, W, H);
+            ctx.drawImage(img, c.x * NW, c.y * NH, c.w * NW, c.h * NH, 0, 0, W, H);
+            for (const o of state.ops) if (o.type !== 'crop') drawStroke(ctx, o, c, W, H);
+            if (state.preview) drawCropPreview(ctx, state.preview.a, state.preview.b, W, H);
             sizeInfo.textContent = `${W} × ${H}px`;
         };
-        const norm = e => {
+
+        // 보이는 영역이 바뀌면 크기 선택지를 새 영역 기준으로 다시 만든다 (원본 = 자른 영역의 원래 크기)
+        const syncSizeOptions = () => {
+            const key = JSON.stringify(crop());
+            if (key === state.cropKey) return;
+            state.cropKey = key;
+            const long = croppedLong();
+            state.longEdge = long;
+            sizeSel.replaceChildren(h('option', { value: long }, `원본 (${long}px)`),
+                ...SIZE_PRESETS.filter(v => v < long).map(v => h('option', { value: v }, `${v}px`)));
+        };
+        const changed = () => { syncSizeOptions(); redraw(); };
+        sizeSel.addEventListener('change', () => { state.longEdge = Number(sizeSel.value); redraw(); });
+        state.cropKey = '';      // 첫 syncSizeOptions 가 선택지를 채우도록
+        syncSizeOptions();
+
+        // 포인터 → 보이는 영역 기준 0~1
+        const viewPoint = e => {
             const rc = canvas.getBoundingClientRect();
             return [Math.min(1, Math.max(0, (e.clientX - rc.left) / rc.width)),
                     Math.min(1, Math.max(0, (e.clientY - rc.top) / rc.height))];
         };
 
+        let active = null;      // 진행 중인 획 (ops 에 이미 들어 있음)
         canvas.addEventListener('pointerdown', e => {
             if (e.button !== 0) return;
             canvas.setPointerCapture(e.pointerId);
-            const p = norm(e);
-            const s = { type: state.tool, color: state.color, width: state.width, a: p, b: p, points: [p] };
-            state.drawing = s;
-            state.strokes.push(s);
+            const v = viewPoint(e);
+            if (state.tool === 'crop') {
+                state.preview = { a: v, b: v };
+            } else {
+                const p = viewToAbs(crop(), v);
+                active = { type: state.tool, color: state.color, width: state.width, a: p, b: p, points: [p] };
+                state.ops.push(active);
+            }
             redraw();
         });
         canvas.addEventListener('pointermove', e => {
-            const s = state.drawing;
-            if (!s) return;
-            const p = norm(e);
-            if (s.type === 'pen') s.points.push(p); else s.b = p;
+            if (!state.preview && !active) return;
+            const v = viewPoint(e);
+            if (state.preview) state.preview.b = v;
+            else if (active.type === 'pen') active.points.push(viewToAbs(crop(), v));
+            else active.b = viewToAbs(crop(), v);
             redraw();
         });
         const finish = () => {
-            const s = state.drawing;
-            state.drawing = null;
-            if (s && s.type !== 'pen' && Math.hypot(s.b[0] - s.a[0], s.b[1] - s.a[1]) < MIN_SHAPE) state.strokes.pop();
-            redraw();
+            if (state.preview) {
+                const rect = cropFromDrag(crop(), state.preview.a, state.preview.b);
+                state.preview = null;
+                if (rect) state.ops.push({ type: 'crop', rect });
+            } else if (active) {
+                if (active.type !== 'pen' && Math.hypot(active.b[0] - active.a[0], active.b[1] - active.a[1]) < MIN_SHAPE) state.ops.pop();
+                active = null;
+            }
+            changed();
         };
         canvas.addEventListener('pointerup', finish);
         canvas.addEventListener('pointercancel', finish);
@@ -114,21 +185,20 @@ const PhotoEditor = (() => {
             class: 'px-3 py-1 rounded text-sm', 'data-tool': id,
             onclick: () => { state.tool = id; paintTools(); },
         }, label));
-        const paintTools = () => toolBtns.forEach(b => {
-            b.className = 'px-3 py-1 rounded text-sm ' + (b.dataset.tool === state.tool ? 'bg-blue-600 text-white' : 'bg-slate-600 text-slate-100');
-        });
+        const paintTools = () => {
+            toolBtns.forEach(b => {
+                b.className = 'px-3 py-1 rounded text-sm ' + (b.dataset.tool === state.tool ? 'bg-blue-600 text-white' : 'bg-slate-600 text-slate-100');
+            });
+            canvas.style.cursor = 'crosshair';
+        };
         const color = h('input', { type: 'color', value: state.color, title: '색', class: 'w-9 h-8 bg-transparent' });
         color.addEventListener('input', () => { state.color = color.value; });
         const width = h('input', { type: 'range', min: 2, max: 24, value: state.width, title: '굵기' });
         width.addEventListener('input', () => { state.width = Number(width.value); });
-        const sizeSel = h('select', { class: 'text-sm rounded px-2 py-1 text-slate-900', title: '크기 조정 (긴 변 px)' },
-            h('option', { value: naturalLong }, `원본 (${naturalLong}px)`),
-            ...SIZE_PRESETS.filter(v => v < naturalLong).map(v => h('option', { value: v }, `${v}px`)));
-        sizeSel.addEventListener('change', () => { state.longEdge = Number(sizeSel.value); redraw(); });
 
-        const undo = () => { state.strokes.pop(); redraw(); };
+        const undo = () => { state.ops.pop(); changed(); };
         const close = () => { overlay.remove(); document.removeEventListener('keydown', onKey); };
-        const dirty = () => state.strokes.length > 0 || state.longEdge !== naturalLong;
+        const dirty = () => state.ops.length > 0 || state.longEdge !== croppedLong();
         const cancel = async () => {
             if (dirty() && await showChoice('편집 취소', '변경한 내용이 저장되지 않습니다. 닫을까요?',
                 [{ label: '닫기', value: true, primary: true }, { label: '계속 편집', value: false }]) !== true) return;
@@ -158,16 +228,17 @@ const PhotoEditor = (() => {
             if (onSaved) await onSaved(res);
         };
         const saveBtn = h('button', { class: 'px-4 py-1 rounded bg-blue-600 text-white', onclick: save }, '저장');
+        const btn = (label, onclick, cls = 'bg-slate-600') => h('button', { class: `px-3 py-1 rounded text-sm ${cls}`, onclick }, label);
 
         const toolbar = h('div', { class: 'flex flex-wrap items-center gap-3 px-4 py-2 bg-slate-800 text-slate-100' },
             h('div', { class: 'flex gap-1' }, toolBtns), color, h('span', { class: 'text-xs' }, '굵기'), width,
             h('span', { class: 'text-xs ml-2' }, '크기'), sizeSel, sizeInfo,
-            h('div', { class: 'ml-auto flex gap-2' },
-                h('button', { class: 'px-3 py-1 rounded bg-slate-600 text-sm', onclick: undo }, '되돌리기'),
-                h('button', { class: 'px-3 py-1 rounded bg-slate-600 text-sm', onclick: () => { state.strokes = []; redraw(); } }, '그림 지우기'),
-                ...(photo.edited ? [h('button', { class: 'px-3 py-1 rounded bg-amber-600 text-sm', onclick: restore }, '원본 복원')] : []),
-                h('button', { class: 'px-3 py-1 rounded bg-slate-600 text-sm', onclick: cancel }, '취소'),
-                saveBtn));
+            h('div', { class: 'ml-auto flex flex-wrap gap-2' },
+                btn('되돌리기', undo),
+                btn('자르기 해제', () => { state.ops = state.ops.filter(o => o.type !== 'crop'); changed(); }),
+                btn('그림 지우기', () => { state.ops = state.ops.filter(o => o.type === 'crop'); changed(); }),
+                ...(photo.edited ? [btn('원본 복원', restore, 'bg-amber-600')] : []),
+                btn('취소', cancel), saveBtn));
         const overlay = h('div', { class: 'fixed inset-0 z-[60] bg-slate-900 flex flex-col' },
             toolbar, h('div', { class: 'flex-1 min-h-0 flex items-center justify-center p-4' }, canvas));
         document.body.append(overlay);
