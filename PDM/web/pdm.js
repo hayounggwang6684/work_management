@@ -1,5 +1,5 @@
 // PDM 진입점. 통합 시: PDM.mount(container) 1회 + 작업목록 행 우클릭에서 PDM.showOrderMenu(x, y, 계약번호) 호출.
-// 의존: dom.js(h, DOC_LABEL, showContextMenu), sr_editor.js(SrEditor), eel
+// 의존: dom.js(h, DOC_LABEL, showContextMenu), sr_editor.js(SrEditor), mm_editor.js(MmEditor), layout_editor.js, form_manager.js, print_layout.js(PdmLayout), eel
 const PDM = (() => {
     let container;
 
@@ -28,6 +28,9 @@ const PDM = (() => {
                 h('div', { class: 'flex items-baseline justify-between' },
                     h('h1', { class: 'text-xl font-bold' }, 'PDM — 문서 관리'),
                     h('span', { class: 'text-sm text-slate-500' }, '작성자: ' + (info.user || '-'))),
+                h('div', { class: 'flex gap-2 mt-2 text-sm' },
+                    h('button', { class: 'px-3 py-1 rounded bg-slate-100 hover:bg-slate-200', onclick: () => LayoutEditor.render(container, showHome, info.canManage) }, '⚙ 출력 양식 설정'),
+                    h('button', { class: 'px-3 py-1 rounded bg-slate-100 hover:bg-slate-200', onclick: () => FormManager.render(container, showHome, info.canManage) }, '📋 양식 관리')),
                 h('div', { class: 'flex gap-2 mt-3' }, input,
                     h('button', { class: 'px-4 py-2 bg-blue-600 text-white rounded', onclick: search }, '검색')),
                 results, docs));
@@ -100,6 +103,7 @@ const PDM = (() => {
 
     async function mount(el) {
         container = el;
+        await PdmLayout.load();       // 공유 출력 양식 설정(사진 채움 방식 등)을 화면에도 반영
         await showHome();
         // ?print=<문서 id> : 편집 화면 없이 바로 출력 미리보기 (디버깅/헤드리스 PDF 출력 검증용)
         const printId = Number(new URLSearchParams(location.search).get('print'));

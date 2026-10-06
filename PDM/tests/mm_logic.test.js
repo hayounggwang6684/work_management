@@ -66,3 +66,17 @@ test('formatUnit: 기준값 표기 ( 기준 ) ± C/100 mm', () => {
     assert.equal(L.formatUnit('89.91', '-'), 'Unit : ( 89.91 ) - C/100 mm');
     assert.equal(L.formatUnit('', '+'), 'Unit : (          ) + C/100 mm');
 });
+
+test('calcClearance: 사용자 정의 표 id(t1/t2)도 ids 로 지정해 계산', () => {
+    const t1 = blank(4, 6), t2 = blank(4, 6);
+    t1[0][0] = '2'; t2[0][0] = '5';
+    const r = L.calcClearance({ t1, t2 }, { t1: '89.91', t2: '90.00' }, { outer: 't1', inner: 't2' });
+    assert.equal(r[0][0], '0.16');
+    assert.equal(r[0].length, 6);
+});
+
+test('roleIds: 양식 정의에서 역할별 표 id', () => {
+    const form = { tables: [{ id: 'outDia', role: 'outer' }, { id: 'innerDia', role: 'inner' }, { id: 'clearance', role: 'clearance' }] };
+    assert.deepEqual(L.roleIds(form), { outer: 'outDia', inner: 'innerDia', clearance: 'clearance' });
+    assert.deepEqual(L.roleIds({ tables: [{ id: 't1', role: 'plain' }] }), { outer: undefined, inner: undefined, clearance: undefined });
+});

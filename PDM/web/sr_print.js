@@ -73,6 +73,11 @@ const SrPrint = (() => {
         withFit(lines, 38, PrintLogic.SR_NEXT_PAGE_LINES * LINE_MM, 'Summary of works'),
         ...footer(layout));
 
+    // 직인: 사진 페이지 위에 겹쳐 찍는다 (출력 양식 설정에서 켜기/끄기, 위치/크기 조정)
+    const seal = layout => (layout.seal.enabled
+        ? [h('img', { src: layout.seal.image, style: `position:absolute;left:${layout.seal.x}mm;top:${layout.seal.y}mm;width:${layout.seal.w}mm;height:auto` })]
+        : []);
+
     function photoPage(doc, layout, imageOf, { page, slots }) {
         const title = (doc.header.pageTitles || {})[page] || '';
         const cells = slots.flatMap((photo, i) => {
@@ -88,7 +93,7 @@ const SrPrint = (() => {
         return h('section', { class: 'pdm-page' }, logo(layout),
             abs("left:24.9mm;top:26.6mm;width:159.9mm;height:9.6mm;background:#DAEEF3;border:3px solid #000;text-align:center;" +
                 "line-height:9.1mm;overflow:hidden;white-space:nowrap;font-family:'Dotum','돋움','Malgun Gothic',sans-serif", title),
-            ...cells, ...footer(layout));
+            ...cells, ...seal(layout), ...footer(layout));
     }
 
     async function build({ doc, photos, imageOf, layout }) {
@@ -101,5 +106,5 @@ const SrPrint = (() => {
     }
 
     PrintView.register('service_report', build);
-    return { build };
+    return { build, PHOTO };
 })();

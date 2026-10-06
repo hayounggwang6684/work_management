@@ -7,7 +7,7 @@ import json
 from datetime import date
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 TEMPLATE_PATH = Path(__file__).resolve().parent / 'templates' / 'measurement_forms.json'
 MAX_CELL_LEN = 12
@@ -18,13 +18,28 @@ COMMON_TEXT_KEYS = ('workNo', 'inspDate', 'owner', 'shipName', 'inspBy', 'apprBy
 
 
 @lru_cache(maxsize=1)
-def _forms_by_id() -> Dict[str, Dict[str, Any]]:
+def _builtin_forms() -> List[Dict[str, Any]]:
     with open(TEMPLATE_PATH, encoding='utf-8') as f:
-        return {form['id']: form for form in json.load(f)['forms']}
+        return [{**form, 'builtin': True} for form in json.load(f)['forms']]
+
+
+_custom_provider: Optional[Callable[[], List[Dict[str, Any]]]] = None
+
+
+def set_custom_provider(provider: Optional[Callable[[], List[Dict[str, Any]]]]) -> None:
+    """사용자 정의 양식을 돌려주는 함수 등록 (런타임이 DB 연결 후 한 번 호출). None 이면 내장 양식만."""
+    global _custom_provider
+    _custom_provider = provider
 
 
 def load_templates() -> List[Dict[str, Any]]:
-    return list(_forms_by_id().values())
+    """내장 양식 → 사용자 정의 양식 순."""
+    custom = _custom_provider() if _custom_provider else []
+    return [*_builtin_forms(), *custom]
+
+
+def _forms_by_id() -> Dict[str, Dict[str, Any]]:
+    return {form['id']: form for form in load_templates()}
 
 
 def _form(form_id: str) -> Dict[str, Any]:
@@ -47,7 +62,16 @@ def default_instance(form_id: str, side: str) -> Dict[str, Any]:
     """양식 하나(예: 크랭크핀 PORT)의 빈 입력 구조. 규격·기준값은 정의의 기본값."""
     form = _form(form_id)
     _check_side(form, side)
-    base = {'formId': form_id, 'side': side, 'phase': '', 'gaugeNo': ''}
+    return _blank_instance(form, side)
+
+
+def preview_instance(form: Dict[str, Any]) -> Dict[str, Any]:
+    """저장 전 양식 초안(id 없을 수 있음)의 첫 구분 기준 빈 입력 구조 — 양식 관리 미리보기용."""
+    return _blank_instance(form, form['sides'][0])
+
+
+def _blank_instance(form: Dict[str, Any], side: str) -> Dict[str, Any]:
+    base = {'formId': form.get('id', ''), 'side': side, 'phase': '', 'gaugeNo': ''}
     if form['layout'] == 'conrodGrid':
         cols = len(form['positions']) * len(form['subColumns'])
         return {**base, **form['defaults'], 'rowLabels': list(form['defaultRowLabels']),

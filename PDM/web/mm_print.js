@@ -99,7 +99,7 @@ const MmPrint = (() => {
     ];
 
     const diagram = (geo, form) => h('img', {
-        src: PDM_MM_ASSETS['diagram_' + form.diagram],
+        src: form.diagramImage || PDM_MM_ASSETS['diagram_' + form.diagram] || '',    // 사용자 정의 양식은 올린 도면, 내장 양식은 추출한 도면
         style: `position:absolute;left:${geo.diagram.x}mm;top:${geo.diagram.y}mm;width:${geo.diagram.w}mm`,
     });
 
@@ -113,7 +113,7 @@ const MmPrint = (() => {
                 { r: i + 1, c: 1, content: inst.spec[sp.id].standard, style: 'font-size:10.8pt' },
                 { r: i + 1, c: 2, content: inst.spec[sp.id].limit, style: 'font-size:10.8pt' }]),
         ];
-        return gridBox(s.x[0], s.top, cols, s.rows, cells);
+        return gridBox(s.x[0], s.top, cols, s.rows.slice(0, 1 + form.spec.length), cells);   // 규격 행이 1개인 양식도 지원
     }
 
     function dataTable(geo, form, table, t, inst) {
@@ -211,6 +211,10 @@ const MmPrint = (() => {
         ];
     }
 
+    // 양식 하나의 페이지 (양식 관리 미리보기용). 헤더는 견본 값.
+    const SAMPLE_HEADER = { workNo: 'SH-2026-000-T', inspDate: '2026-01-01', owner: 'OWNER', shipName: 'SHIP NAME', inspBy: 'INSPECTOR', apprBy: 'APPROVER', makerType: 'M/E ENGINE' };
+    const previewPage = (form, inst) => (form.layout === 'conrodGrid' ? conrodPage : journalPage)(form, inst, SAMPLE_HEADER);
+
     PrintView.register('measurement', build);
-    return { build, GEO };
+    return { build, previewPage, GEO };
 })();

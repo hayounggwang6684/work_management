@@ -84,10 +84,20 @@ const MmEditor = (() => {
                     : [labelCell(rows[r][0])]),
                 colHeads: Array.from({ length: table.cols }, (_, i) => String(i + 1)), cornerLabel: lines(table.colLabel),
             });
-            const clearanceBtn = table.id === 'clearance' ? [h('button', {
-                class: 'ml-3 px-2 py-0.5 text-xs rounded bg-amber-100 hover:bg-amber-200 border border-amber-300',
-                title: '(안지름 기준 + C/100) − (외경 기준 − C/100) 를 TB/PS 방향별로 구해 큰 값을 채웁니다. 외경·안지름 기준값이 모두 있어야 계산됩니다.',
-                onclick: () => { inst.tables.clearance = MmLogic.calcClearance(inst.tables, inst.unitBase); grid.sync(); },
+            // 클리어런스 표: 같은 양식에 외경(outer)·안지름(inner) 표가 있어야 자동 계산할 수 있다
+            const ids = MmLogic.roleIds(form);
+            const calcable = table.role === 'clearance' && ids.outer && ids.inner;
+            const clearanceBtn = table.role === 'clearance' ? [h('button', {
+                class: 'ml-3 px-2 py-0.5 text-xs rounded bg-amber-100 hover:bg-amber-200 border border-amber-300 disabled:opacity-40',
+                disabled: !calcable,
+                title: calcable
+                    ? '(안지름 기준 + C/100) − (외경 기준 − C/100) 를 TB/PS 방향별로 구해 큰 값을 채웁니다. 외경·안지름 기준값이 모두 있어야 계산됩니다.'
+                    : '이 양식에는 외경/안지름 표가 없어 자동 계산할 수 없습니다.',
+                onclick: () => {
+                    const calc = MmLogic.calcClearance(inst.tables, inst.unitBase, ids);
+                    inst.tables[table.id] = calc.map(row => Array.from({ length: table.cols }, (_, c) => row[c] ?? ''));
+                    grid.sync();
+                },
             }, '자동 계산')] : [];
             parts.push(h('div', {},
                 h('div', { class: 'flex items-center gap-3 mb-1' }, h('span', { class: 'font-bold text-sm' }, '■ ' + table.title),

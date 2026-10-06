@@ -2,7 +2,7 @@
 // 인쇄는 브라우저 인쇄 창을 쓰므로 "PDF로 저장"과 시스템 프린터 선택이 모두 된다. 파일 이름은 문서 이름.
 // 렌더러: async ({doc, photos, imageOf(id), layout}) => [페이지 element…]
 //   페이지 안의 [data-page-no] 요소에는 "n / N" 이 채워지고, [data-fit="이름"] 요소가 넘치면 경고가 표시된다.
-// 의존: dom.js(h), print_logic.js(PrintLogic), print_layout.js(PDM_LAYOUT), eel
+// 의존: dom.js(h), print_logic.js(PrintLogic), print_layout.js(PDM_LAYOUT, PdmLayout), eel
 const PrintView = (() => {
     const PHOTO_EDGE = 1100;      // 인쇄용 사진 긴 변 (69mm 폭에 약 400dpi)
     const FETCH_CONCURRENCY = 4;
@@ -73,17 +73,12 @@ const PrintView = (() => {
         window.print();
     }
 
-    async function open(docId) {
+    // 미리보기 셸: build(setStatus) → 페이지 element 배열. 문서 출력과 양식 미리보기가 함께 쓴다.
+    async function present(printTitle, build) {
         injectStyle();
         document.getElementById('pdmPrint')?.remove();
-        const res = await eel.pdm_get_document(docId)();
-        if (!res.success) { alert(res.message); return; }
-        const doc = res.document;
-        const renderer = renderers[doc.docType];
-        if (!renderer) { alert('이 문서 종류의 출력은 아직 지원되지 않습니다.'); return; }
-
         const status = h('span', {}, '준비 중…');
-        const printBtn = h('button', { class: 'primary', disabled: true, onclick: () => printNow(doc.title || 'PDM') }, '인쇄 / PDF 저장');
+        const printBtn = h('button', { class: 'primary', disabled: true, onclick: () => printNow(printTitle || 'PDM') }, '인쇄 / PDF 저장');
         const close = () => { overlay.remove(); document.removeEventListener('keydown', onKey); };
         const onKey = e => { if (e.key === 'Escape' && !document.getElementById('pdmChoice')) close(); };
         const pagesEl = h('div', { class: 'pp-pages' });
@@ -93,10 +88,7 @@ const PrintView = (() => {
         document.body.append(overlay);
         document.addEventListener('keydown', onKey);
 
-        const pr = await eel.pdm_list_photos(docId)();
-        const photos = pr.success ? pr.photos : [];
-        const images = await fetchImages(photos, (n, total) => { status.textContent = `사진 불러오는 중… ${n}/${total}`; });
-        const pages = await renderer({ doc, photos, imageOf: id => images.get(id), layout: PDM_LAYOUT });
+        const pages = await build(msg => { status.textContent = msg; });
         pagesEl.replaceChildren(...pages);
         numberPages(pages);
         await Promise.all([...pagesEl.querySelectorAll('img')].map(img => img.decode().catch(() => {})));
@@ -108,5 +100,23 @@ const PrintView = (() => {
         overlay.dataset.ready = '1';    // 렌더 완료 신호 (자동 검증/헤드리스 출력용)
     }
 
-    return { register, open };
+    async function open(docId) {
+        const res = await eel.pdm_get_document(docId)();
+        if (!res.success) { alert(res.message); return; }
+        const doc = res.document;
+        const renderer = renderers[doc.docType];
+        if (!renderer) { alert('이 문서 종류의 출력은 아직 지원되지 않습니다.'); return; }
+        await present(doc.title, async setStatus => {
+            await PdmLayout.load();           // 다른 사용자가 바꾼 출력 양식 설정 반영
+            const pr = await eel.pdm_list_photos(docId)();
+            const photos = pr.success ? pr.photos : [];
+            const images = await fetchImages(photos, (n, total) => setStatus(`사진 불러오는 중… ${n}/${total}`));
+            return renderer({ doc, photos, imageOf: id => images.get(id), layout: PDM_LAYOUT });
+        });
+    }
+
+    // 문서 없이 페이지 몇 장만 미리보기 (양식 관리 등). buildPages: async () => [page element…]
+    const preview = (title, buildPages) => present(title, () => buildPages());
+
+    return { register, open, preview };
 })();

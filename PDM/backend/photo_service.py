@@ -81,3 +81,26 @@ def resize_jpeg(data: bytes, max_edge: int) -> bytes:
         raise PhotoError('이미지 파일이 아니거나 읽을 수 없는 형식입니다.')
     img.thumbnail((max_edge, max_edge), Image.LANCZOS)
     return _to_jpeg(img, 85)
+
+
+MAX_ASSET_BYTES = 3 * 1024 * 1024    # 로고/직인/도면 업로드 상한
+
+
+def normalize_image_uri(uri: str, max_edge: int, keep_alpha: bool) -> str:
+    """업로드한 data URI 이미지를 검증하고 PNG data URI 로 다시 인코딩한다 (긴 변 max_edge 이하).
+    keep_alpha=False 면 투명 부분을 흰색으로 합성 (도면/로고), True 면 투명도 유지 (직인)."""
+    if not isinstance(uri, str) or not uri.startswith('data:image/'):
+        raise PhotoError('이미지 데이터가 올바르지 않습니다.')
+    raw = decode_b64(uri)
+    if len(raw) > MAX_ASSET_BYTES:
+        raise PhotoError(f'이미지가 너무 큽니다 (최대 {MAX_ASSET_BYTES // 1024 // 1024}MB).')
+    try:
+        with Image.open(io.BytesIO(raw)) as src:
+            img = ImageOps.exif_transpose(src)
+            img = img.convert('RGBA') if keep_alpha else _flatten_rgb(img)
+    except (UnidentifiedImageError, OSError, Image.DecompressionBombError):
+        raise PhotoError('이미지 파일이 아니거나 읽을 수 없는 형식입니다.')
+    img.thumbnail((max_edge, max_edge), Image.LANCZOS)
+    buf = io.BytesIO()
+    img.save(buf, 'PNG', optimize=True)
+    return 'data:image/png;base64,' + base64.b64encode(buf.getvalue()).decode('ascii')

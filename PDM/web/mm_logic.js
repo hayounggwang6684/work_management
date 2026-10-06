@@ -11,15 +11,17 @@ const MmLogic = (() => {
     // 표 행 순서: [F TB, F PS, A TB, A PS]. 반환: [[F 열별 값], [A 열별 값]] (문자열, 계산 불가는 '')
     // 실제 치수 = 기준 ∓ C/100  (외경: 기준 − C/100, 안지름: 기준 + C/100)
     // 클리어런스 = 안지름 − 외경 을 TB/PS 방향별로 구해 그 중 큰 값 (가정 — 규칙이 다르면 이 함수만 고치면 된다)
-    function calcClearance(tables, unitBase) {
-        const outBase = parseNum(unitBase.outDia), innerBase = parseNum(unitBase.innerDia);
-        const cols = tables.outDia[0].length;
+    // ids: 외경/안지름 표의 id (양식 정의의 role 이 outer/inner 인 표). 내장 양식은 outDia/innerDia.
+    function calcClearance(tables, unitBase, ids = { outer: 'outDia', inner: 'innerDia' }) {
+        const out = tables[ids.outer], inner = tables[ids.inner];
+        const outBase = parseNum(unitBase[ids.outer]), innerBase = parseNum(unitBase[ids.inner]);
+        const cols = out[0].length;
         const result = [Array(cols).fill(''), Array(cols).fill('')];
         if (outBase === null || innerBase === null) return result;
         [[0, 1], [2, 3]].forEach((rows, g) => {
             for (let c = 0; c < cols; c++) {
                 const values = rows.flatMap(r => {
-                    const o = parseNum(tables.outDia[r][c]), i = parseNum(tables.innerDia[r][c]);
+                    const o = parseNum(out[r][c]), i = parseNum(inner[r][c]);
                     return o === null || i === null ? [] : [(innerBase + i / 100) - (outBase - o / 100)];
                 });
                 if (values.length) result[g][c] = Math.max(...values).toFixed(2);
@@ -27,6 +29,9 @@ const MmLogic = (() => {
         });
         return result;
     }
+
+    // 양식 정의에서 역할별 표 id 찾기 → {outer, inner, clearance} (없으면 undefined)
+    const roleIds = form => Object.fromEntries(['outer', 'inner', 'clearance'].map(role => [role, (form.tables || []).find(t => t.role === role)?.id]));
 
     // 엑셀에서 복사한 탭/줄바꿈 텍스트를 (r0,c0) 부터 채운 새 격자. 범위를 넘는 값은 버리고 원본은 바꾸지 않는다.
     function applyPaste(grid, r0, c0, text) {
@@ -49,7 +54,7 @@ const MmLogic = (() => {
     // "Unit : ( 89.91 ) - C/100 mm" (기준값이 비면 직접 쓸 빈칸)
     const formatUnit = (base, op) => `Unit : ( ${base || '        '} ) ${op} C/100 mm`;
 
-    return { parseNum, calcClearance, applyPaste, indexLines, makerTypeFor, formatUnit };
+    return { parseNum, calcClearance, roleIds, applyPaste, indexLines, makerTypeFor, formatUnit };
 })();
 
 if (typeof module !== 'undefined') module.exports = MmLogic;

@@ -14,11 +14,11 @@
         {"id": "clearance", "label": "CRANK &\nBEG' CLERANCE", "standard": "", "limit": ""}
       ],
       "tables": [
-        {"id": "outDia", "title": "CRANK PIN OUT DIA", "colLabel": "Crankpin\nNo.", "cols": 8,
+        {"id": "outDia", "role": "outer", "title": "CRANK PIN OUT DIA", "colLabel": "Crankpin\nNo.", "cols": 8,
          "rows": [["F", "TB"], ["F", "PS"], ["A", "TB"], ["A", "PS"]], "unit": {"base": "89.91", "op": "-"}},
-        {"id": "innerDia", "title": "CRANK PIN BEARING INNER DIA", "colLabel": "Crankpin\nNo.", "cols": 8,
+        {"id": "innerDia", "role": "inner", "title": "CRANK PIN BEARING INNER DIA", "colLabel": "Crankpin\nNo.", "cols": 8,
          "rows": [["F", "TB"], ["F", "PS"], ["A", "TB"], ["A", "PS"]], "unit": {"base": "", "op": "+"}},
-        {"id": "clearance", "title": "CLEARANCE OF CRANK PIN & BEARING", "colLabel": "Journal\nNo.", "cols": 8,
+        {"id": "clearance", "role": "clearance", "title": "CLEARANCE OF CRANK PIN & BEARING", "colLabel": "Journal\nNo.", "cols": 8,
          "rows": [["F"], ["A"]], "unit": null}
       ]
     },
@@ -36,11 +36,11 @@
         {"id": "clearance", "label": "JOURNAL &\nBEG' CLERANCE", "standard": "", "limit": ""}
       ],
       "tables": [
-        {"id": "outDia", "title": "MAIN JOURNAL OUT DIA", "colLabel": "Journal\nNo.", "cols": 8,
+        {"id": "outDia", "role": "outer", "title": "MAIN JOURNAL OUT DIA", "colLabel": "Journal\nNo.", "cols": 8,
          "rows": [["F", "TB"], ["F", "PS"], ["A", "TB"], ["A", "PS"]], "unit": {"base": "100", "op": "-"}},
-        {"id": "innerDia", "title": "MAIN BEARING INNER DIA", "colLabel": "Bearing\nno.", "cols": 8,
+        {"id": "innerDia", "role": "inner", "title": "MAIN BEARING INNER DIA", "colLabel": "Bearing\nno.", "cols": 8,
          "rows": [["F", "TB"], ["F", "PS"], ["A", "TB"], ["A", "PS"]], "unit": {"base": "", "op": "+"}},
-        {"id": "clearance", "title": "CLEARANCE OF MAIN JOURNAL & BEARING", "colLabel": "Journal\nno.", "cols": 8,
+        {"id": "clearance", "role": "clearance", "title": "CLEARANCE OF MAIN JOURNAL & BEARING", "colLabel": "Journal\nno.", "cols": 8,
          "rows": [["F"], ["A"]], "unit": null}
       ]
     },

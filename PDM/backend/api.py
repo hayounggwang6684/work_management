@@ -10,7 +10,7 @@ import eel
 
 from PDM.backend import adapters
 from PDM.backend.naming import default_title
-from PDM.backend import measurement, photo_api  # noqa: F401  (photo_api: @eel.expose 사진 API 등록)
+from PDM.backend import measurement, photo_api, settings_api  # noqa: F401  (photo/settings_api: @eel.expose 등록)
 from PDM.backend.pdm_db import ConflictError
 from PDM.backend.runtime import fail as _fail, get_db
 from PDM.backend.service_report import build_header
@@ -21,7 +21,8 @@ logger = logging.getLogger(__name__)
 @eel.expose
 def pdm_ping() -> Dict[str, Any]:
     user = adapters.get_current_user()
-    return {'success': True, 'user': user.get('full_name', ''), 'dbPath': str(adapters.get_pdm_db_path())}
+    return {'success': True, 'user': user.get('full_name', ''), 'dbPath': str(adapters.get_pdm_db_path()),
+            'canManage': adapters.can_manage_templates(user)}
 
 
 @eel.expose

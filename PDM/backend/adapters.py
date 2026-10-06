@@ -23,6 +23,11 @@ def get_current_user() -> Dict[str, Any]:
     return dict(_DEV_USER)
 
 
+def can_manage_templates(user: Optional[Dict[str, Any]] = None) -> bool:
+    """출력 양식/계측 양식처럼 전체 사용자에게 영향을 주는 설정을 바꿀 수 있는가. 통합 시: 서버 세션의 role == 'admin'."""
+    return True
+
+
 def get_pdm_db_path() -> Path:
     override = os.environ.get('PDM_DB_PATH')
     return Path(override) if override else _DEFAULT_DB_DIR / 'pdm.db'

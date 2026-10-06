@@ -55,6 +55,12 @@ CREATE TABLE IF NOT EXISTS pdm_print_templates (
     updated_by TEXT NOT NULL DEFAULT '',
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS pdm_form_templates (
+    id TEXT PRIMARY KEY,
+    definition_json TEXT NOT NULL,
+    updated_by TEXT NOT NULL DEFAULT '',
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 CREATE TABLE IF NOT EXISTS pdm_summary_history (
     engine_model TEXT NOT NULL,
     text TEXT NOT NULL,
@@ -146,6 +152,44 @@ class PdmDb:
             new_ts = _next_ts(conn, row['updated_at'])
             conn.execute('UPDATE pdm_documents SET updated_by=?, updated_at=? WHERE id=?', (user, new_ts, doc_id))
         return new_ts
+
+    # ── 사용자 정의 계측 양식 ───────────────────────────────────────────────────
+    def list_custom_forms(self) -> List[Dict[str, Any]]:
+        with self.connect() as conn:
+            rows = conn.execute('SELECT definition_json FROM pdm_form_templates ORDER BY rowid').fetchall()
+        return [json.loads(r['definition_json']) for r in rows]
+
+    def save_custom_form(self, form_id: str, definition: Dict[str, Any], user: str) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                'INSERT INTO pdm_form_templates (id, definition_json, updated_by, updated_at) VALUES (?,?,?,CURRENT_TIMESTAMP) '
+                'ON CONFLICT(id) DO UPDATE SET definition_json=excluded.definition_json, updated_by=excluded.updated_by, updated_at=CURRENT_TIMESTAMP',
+                (form_id, json.dumps(definition, ensure_ascii=False), user))
+
+    def delete_custom_form(self, form_id: str) -> bool:
+        with self.connect() as conn:
+            return bool(conn.execute('DELETE FROM pdm_form_templates WHERE id = ?', (form_id,)).rowcount)
+
+    def form_usage_count(self, form_id: str) -> int:
+        """이 양식을 쓰는 계측지 문서 수 (사용 중이면 삭제를 막는 데 쓴다)."""
+        with self.connect() as conn:
+            rows = conn.execute("SELECT header_json FROM pdm_documents WHERE doc_type = 'measurement'").fetchall()
+        return sum(1 for r in rows if any(f.get('formId') == form_id for f in json.loads(r['header_json']).get('forms', [])))
+
+    # ── 출력 양식 설정 (전체 공유, 1행) ───────────────────────────────────────
+    LAYOUT_KEY = 'default'
+
+    def get_layout(self) -> Optional[Dict[str, Any]]:
+        with self.connect() as conn:
+            row = conn.execute('SELECT layout_json FROM pdm_print_templates WHERE doc_type = ?', (self.LAYOUT_KEY,)).fetchone()
+        return json.loads(row['layout_json']) if row else None
+
+    def save_layout(self, layout: Dict[str, Any], user: str) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                'INSERT INTO pdm_print_templates (doc_type, layout_json, updated_by, updated_at) VALUES (?,?,?,CURRENT_TIMESTAMP) '
+                'ON CONFLICT(doc_type) DO UPDATE SET layout_json=excluded.layout_json, updated_by=excluded.updated_by, updated_at=CURRENT_TIMESTAMP',
+                (self.LAYOUT_KEY, json.dumps(layout, ensure_ascii=False), user))
 
     def record_summary_history(self, engine_model: str, lines: List[str]) -> None:
         """엔진별 Summary 항목 사용 횟수 누적 (자동 제안용 데이터)."""
