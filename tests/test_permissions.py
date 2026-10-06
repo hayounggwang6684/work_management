@@ -91,6 +91,36 @@ def test_denial_matches_return_type():
     assert as_bool() is False
 
 
+def test_access_denial_matches_require_for_every_tier():
+    """PDM 등 외부 모듈이 같은 판정을 쓰도록 분리한 access_denial 이 require 와 항상 같은 결과여야 한다."""
+    gates = {'guest': d_guest, 'login': d_login, 'write': d_write, 'admin': d_admin, 'erp': d_erp, 'public': d_public}
+    for sess in (None, 'guest', READER, WRITER, ADMIN, ERPER):
+        session(sess)
+        for tier, gate in gates.items():
+            denied = P.access_denial(tier) is not None
+            assert denied == (not ok(gate())), f"{sess}: {tier}"
+
+
+def test_access_denial_fails_closed_for_unknown_tier():
+    session(ADMIN)
+    assert P.access_denial('root') is not None and P.access_denial('root')[0] == 'UNKNOWN_TIER'
+
+
+def test_access_denial_reports_code_and_message():
+    session(None)
+    assert P.access_denial('guest')[0] == 'NO_SESSION'
+    session('guest')
+    assert P.access_denial('write')[0] == 'GUEST_FORBIDDEN'
+    session(READER)
+    code, message = P.access_denial('write')
+    assert code == 'NO_WRITE' and '쓰기' in message
+    session(WRITER)
+    assert P.access_denial('admin')[0] == 'NOT_ADMIN'
+    assert P.access_denial('write') is None
+    session(ADMIN)
+    assert P.access_denial('admin') is None
+
+
 def test_api_wiring():
     """@eel.expose 145개가 전부 게이트를 통과하도록 배선돼 있는지."""
     from src.web import api
@@ -124,7 +154,8 @@ def test_logout_clears():
 
 
 if __name__ == '__main__':
-    for fn in [test_matrix, test_denial_matches_return_type, test_api_wiring, test_logout_clears]:
+    for fn in [test_matrix, test_denial_matches_return_type, test_access_denial_matches_require_for_every_tier,
+               test_access_denial_fails_closed_for_unknown_tier, test_access_denial_reports_code_and_message, test_api_wiring, test_logout_clears]:
         fn()
         print(f"  OK  {fn.__name__}")
     P.end_session()

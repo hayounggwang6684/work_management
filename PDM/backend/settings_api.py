@@ -1,18 +1,18 @@
 """PDM 설정 Eel API — 출력 양식(로고/회사 정보/직인…)과 계측 양식 관리. 모두 dict 반환.
 
-읽기는 누구나, 쓰기(저장/삭제)는 adapters.can_manage_templates() 가 True 인 사용자만 (전체 사용자에게 영향).
+읽기는 guest 등급, 쓰기(저장/삭제/미리보기)는 admin 등급 (전체 사용자에게 영향) — 판정은 adapters.check_access.
 """
 import logging
 from typing import Any, Dict, Optional
 
 import eel
 
+from PDM.backend.guard import guarded
 from PDM.backend import adapters, form_defs, layout, measurement
 from PDM.backend.photo_service import PhotoError
 from PDM.backend.runtime import fail, get_db
 
 logger = logging.getLogger(__name__)
-DENIED = '이 설정은 관리자만 변경할 수 있습니다.'
 
 
 def _user_name() -> str:
@@ -20,18 +20,18 @@ def _user_name() -> str:
 
 
 @eel.expose
+@guarded('guest')
 def pdm_get_layout() -> Dict[str, Any]:
     try:
         return {'success': True, 'layout': layout.effective(get_db().get_layout())}
     except Exception as e:
         logger.exception('pdm_get_layout')
-        return fail(f'출력 양식 조회 오류: {e}')
+        return fail('출력 양식 조회 중 오류가 발생했습니다.')
 
 
 @eel.expose
+@guarded('admin')
 def pdm_save_layout(new_layout: Dict[str, Any]) -> Dict[str, Any]:
-    if not adapters.can_manage_templates():
-        return fail(DENIED)
     try:
         saved = layout.validate(new_layout)
         get_db().save_layout(saved, _user_name())
@@ -40,14 +40,13 @@ def pdm_save_layout(new_layout: Dict[str, Any]) -> Dict[str, Any]:
         return fail(str(e))
     except Exception as e:
         logger.exception('pdm_save_layout')
-        return fail(f'출력 양식 저장 오류: {e}')
+        return fail('출력 양식 저장 중 오류가 발생했습니다.')
 
 
 @eel.expose
+@guarded('admin')
 def pdm_save_form_def(definition: Dict[str, Any], form_id: Optional[str] = None) -> Dict[str, Any]:
     """사용자 정의 계측 양식 생성(form_id 없음) 또는 수정. 내장 양식은 수정할 수 없다."""
-    if not adapters.can_manage_templates():
-        return fail(DENIED)
     try:
         db = get_db()
         if form_id is not None and form_id not in {f['id'] for f in db.list_custom_forms()}:
@@ -59,10 +58,11 @@ def pdm_save_form_def(definition: Dict[str, Any], form_id: Optional[str] = None)
         return fail(str(e))
     except Exception as e:
         logger.exception('pdm_save_form_def')
-        return fail(f'양식 저장 오류: {e}')
+        return fail('양식 저장 중 오류가 발생했습니다.')
 
 
 @eel.expose
+@guarded('admin')
 def pdm_preview_form_def(definition: Dict[str, Any]) -> Dict[str, Any]:
     """저장하지 않고 초안을 검증해 {form, instance} 로 돌려준다 (출력 미리보기용)."""
     try:
@@ -72,14 +72,13 @@ def pdm_preview_form_def(definition: Dict[str, Any]) -> Dict[str, Any]:
         return fail(str(e))
     except Exception as e:
         logger.exception('pdm_preview_form_def')
-        return fail(f'미리보기 오류: {e}')
+        return fail('미리보기 중 오류가 발생했습니다.')
 
 
 @eel.expose
+@guarded('admin')
 def pdm_delete_form_def(form_id: str) -> Dict[str, Any]:
     """사용자 정의 양식 삭제. 작성된 계측지가 쓰고 있으면 거부한다."""
-    if not adapters.can_manage_templates():
-        return fail(DENIED)
     try:
         db = get_db()
         if form_id not in {f['id'] for f in db.list_custom_forms()}:
@@ -91,4 +90,4 @@ def pdm_delete_form_def(form_id: str) -> Dict[str, Any]:
         return {'success': True}
     except Exception as e:
         logger.exception('pdm_delete_form_def')
-        return fail(f'양식 삭제 오류: {e}')
+        return fail('양식 삭제 중 오류가 발생했습니다.')

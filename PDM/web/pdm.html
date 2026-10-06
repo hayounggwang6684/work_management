@@ -2,30 +2,14 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>PDM — 문서 관리</title>
+    <title>PDM — 공사현황</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script type="text/javascript" src="/eel.js"></script>
 </head>
 <body class="bg-slate-100">
-    <!-- 통합 시 이 컨테이너만 본체 index.html 의 #pdmView 로 옮긴다 -->
+    <!-- 통합 시 이 컨테이너만 본체 index.html 의 #projectsView 로 옮긴다 -->
     <div id="pdmRoot" class="p-4"></div>
-    <script src="dom.js"></script>
-    <script src="sr_fields.js"></script>
-    <script src="print_assets.js"></script>
-    <script src="print_layout.js"></script>
-    <script src="print_logic.js"></script>
-    <script src="print_view.js"></script>
-    <script src="sr_print.js"></script>
-    <script src="mm_assets.js"></script>
-    <script src="mm_logic.js"></script>
-    <script src="mm_print.js"></script>
-    <script src="layout_editor.js"></script>
-    <script src="form_manager.js"></script>
-    <script src="photo_editor.js"></script>
-    <script src="photo_grid.js"></script>
-    <script src="editor_bar.js"></script>
-    <script src="sr_editor.js"></script>
-    <script src="mm_editor.js"></script>
-    <script src="pdm.js"></script>
+    <script src="pdm_loader.js"></script>
+    <script>PdmLoader.load().then(() => PDM.mount(document.getElementById('pdmRoot')));</script>
 </body>
 </html>

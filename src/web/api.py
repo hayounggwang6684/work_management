@@ -6602,3 +6602,18 @@ def save_auto_capture_image(base64_data: str, date_str: str) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"자동 캡처 저장 오류: {e}")
         return {'success': False, 'message': '요청 처리 중 오류가 발생했습니다.'}
+
+
+# ============================================================================
+# PDM — 공사현황 / 서비스레포트 / 계측지 (PDM/ 폴더, 단독 개발된 모듈)
+# ============================================================================
+# 권한 판정은 서버 세션(permissions.py)이 하도록 pdm_bridge 가 주입한다. PDM 쪽 문제(예: 패키지 누락)가
+# 본체 기동을 막지 않도록 격리하고, 실패하면 공사현황 탭에서만 오류가 보인다.
+PDM_STATUS = 'ok'
+try:
+    from . import pdm_bridge
+    pdm_bridge.install()
+    import PDM.backend.api  # noqa: F401  — @eel.expose pdm_* 함수 등록
+except Exception as _pdm_error:  # noqa: BLE001
+    PDM_STATUS = 'error'
+    logger.error(f"PDM 모듈 로드 실패 — 공사현황 기능을 사용할 수 없습니다: {_pdm_error}", exc_info=True)

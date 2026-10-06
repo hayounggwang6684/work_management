@@ -138,9 +138,12 @@ class PdmDb:
             if row['updated_at'] != expected_updated_at:
                 raise ConflictError(f'다른 사용자가 먼저 저장했습니다 ({row["updated_at"]})')
             new_ts = _next_ts(conn, row['updated_at'])
-            conn.execute(
-                'UPDATE pdm_documents SET title=?, header_json=?, updated_by=?, updated_at=? WHERE id=?',
-                (title, json.dumps(header, ensure_ascii=False), user, new_ts, doc_id))
+            # 확인과 갱신 사이에 다른 저장이 끼어들어도 덮어쓰지 않도록 조건부 UPDATE 로 한 번 더 막는다 (원자적)
+            changed = conn.execute(
+                'UPDATE pdm_documents SET title=?, header_json=?, updated_by=?, updated_at=? WHERE id=? AND updated_at=?',
+                (title, json.dumps(header, ensure_ascii=False), user, new_ts, doc_id, expected_updated_at)).rowcount
+            if not changed:
+                raise ConflictError('다른 사용자가 먼저 저장했습니다.')
         return new_ts
 
     def touch_document(self, doc_id: int, user: str) -> str:
@@ -210,6 +213,20 @@ class PdmDb:
                 'SELECT text FROM pdm_summary_history WHERE engine_model = ? '
                 'ORDER BY use_count DESC, text LIMIT ?', ((engine_model or '').strip(), limit)).fetchall()
         return [r['text'] for r in rows]
+
+    def document_counts(self, contract_numbers: List[str]) -> Dict[str, Dict[str, int]]:
+        """계약번호별 문서 건수 {계약번호: {'service_report': n, 'measurement': m}} — 문서가 하나도 없는 계약번호는 빠진다."""
+        if not contract_numbers:
+            return {}
+        marks = ','.join('?' * len(contract_numbers))
+        with self.connect() as conn:
+            rows = conn.execute(
+                f'SELECT contract_number, doc_type, COUNT(*) AS n FROM pdm_documents '
+                f'WHERE contract_number IN ({marks}) GROUP BY contract_number, doc_type', list(contract_numbers)).fetchall()
+        counts: Dict[str, Dict[str, int]] = {}
+        for r in rows:
+            counts.setdefault(r['contract_number'], {t: 0 for t in DOC_TYPES})[r['doc_type']] = r['n']
+        return counts
 
     def delete_document(self, doc_id: int) -> None:
         with self.connect() as conn:

@@ -205,3 +205,40 @@ def test_resize_jpeg_rejects_garbage():
     from PDM.backend.photo_service import resize_jpeg
     with pytest.raises(PhotoError):
         resize_jpeg(b'nope', 500)
+
+
+# ── 메모리 DoS 방어 ──────────────────────────────────────────────────────────
+
+def test_rejects_image_with_too_many_pixels_before_decoding(monkeypatch):
+    monkeypatch.setattr('PDM.backend.photo_service.MAX_PIXELS', 5000)
+    big = make_png(100, 100, 'RGB')                       # 10,000 px > 5,000
+    with pytest.raises(PhotoError):
+        process_image(big)
+    with pytest.raises(PhotoError):
+        from PDM.backend.photo_service import resize_jpeg
+        resize_jpeg(make_png(100, 100, 'RGB', 'JPEG'), 50)
+    assert process_image(make_png(70, 70, 'RGB')).width == 70          # 4,900 px 는 통과
+
+
+def test_asset_upload_also_enforces_pixel_limit(monkeypatch):
+    from PDM.backend.photo_service import normalize_image_uri
+    monkeypatch.setattr('PDM.backend.photo_service.MAX_PIXELS', 5000)
+    uri = 'data:image/png;base64,' + base64.b64encode(make_png(100, 100, 'RGB')).decode()
+    with pytest.raises(PhotoError):
+        normalize_image_uri(uri, 800, keep_alpha=False)
+
+
+def test_oversized_base64_is_rejected_before_it_is_decoded(monkeypatch):
+    """디코딩(메모리 할당) 전에 문자열 길이로 먼저 거른다."""
+    import PDM.backend.photo_service as ps
+    monkeypatch.setattr(ps, 'MAX_BYTES', 30)
+    called = []
+    monkeypatch.setattr(ps.base64, 'b64decode', lambda *a, **k: called.append(1) or b'')
+    with pytest.raises(PhotoError):
+        ps.decode_b64('A' * 1000)
+    assert not called
+
+
+def test_decode_b64_requires_a_string():
+    with pytest.raises(PhotoError):
+        decode_b64(12345)

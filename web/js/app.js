@@ -61,6 +61,8 @@ function showView(view) {
     const settingsView  = document.getElementById('settingsView');
     const btnEmployee    = document.getElementById('btnEmployee');
     const employeeView   = document.getElementById('employeeView');
+    const btnProjects    = document.getElementById('btnProjects');
+    const projectsView   = document.getElementById('projectsView');
 
     if (!btnDaily || !btnReport || !dailyView || !reportView) return;
 
@@ -71,6 +73,7 @@ function showView(view) {
     if (btnDashboard) btnDashboard.className = 'px-4 py-2 rounded-lg bg-slate-200';
     if (btnSettings)  btnSettings.className  = 'px-4 py-2 rounded-lg bg-slate-200';
     if (btnEmployee)  btnEmployee.className  = 'px-4 py-2 rounded-lg bg-slate-200';
+    if (btnProjects)  btnProjects.className  = 'px-4 py-2 rounded-lg bg-slate-200';
 
     // 모든 뷰 숨기기
     dailyView.classList.add('hidden');
@@ -79,6 +82,7 @@ function showView(view) {
     if (dashboardView) dashboardView.classList.add('hidden');
     if (settingsView)  settingsView.classList.add('hidden');
     if (employeeView)  employeeView.classList.add('hidden');
+    if (projectsView)  projectsView.classList.add('hidden');
 
     // 선택된 뷰 표시
     if (view === 'dashboard') {
@@ -108,6 +112,10 @@ function showView(view) {
                 !currentUser?.erp_input && currentUser?.role !== 'admin');
         }
         showSettingsTab('userSettings'); // 기본 탭: 사용자 설정
+    } else if (view === 'projects') {
+        if (btnProjects) btnProjects.className = 'px-4 py-2 rounded-lg bg-blue-600 text-white';
+        if (projectsView) projectsView.classList.remove('hidden');
+        openProjectsTab();   // js/projects_tab.js — PDM 공사현황
     } else if (view === 'employee') {
         if (btnEmployee) btnEmployee.className = 'px-4 py-2 rounded-lg bg-blue-600 text-white';
         if (employeeView) employeeView.classList.remove('hidden');
@@ -3482,6 +3490,7 @@ document.addEventListener('keydown', function(e) {
         case '3': e.preventDefault(); showView('report');    break;
         case '4': e.preventDefault(); showView('search');    break;
         case '5': e.preventDefault(); showView('employee');  break;
+        case '6': e.preventDefault(); showView('projects');  break;
 
         // 날짜 이동 (일일 뷰에서만)
         case 'ArrowLeft': {

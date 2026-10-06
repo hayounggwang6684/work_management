@@ -92,3 +92,20 @@ def test_work_db_is_read_only(work_db):
     with pytest.raises(sqlite3.OperationalError):
         conn.execute("INSERT INTO work_records (date) VALUES ('x')")
     conn.close()
+
+
+def test_update_is_atomic_when_another_save_lands_between_check_and_update(db, monkeypatch):
+    """확인(SELECT)과 갱신(UPDATE) 사이에 다른 저장이 끼어들면 덮어쓰지 않고 충돌로 처리한다."""
+    doc_id = db.create_document('service_report', 'SH-1', '', 't', {}, 'u')
+    ts = db.get_document(doc_id)['updatedAt']
+    from PDM.backend import pdm_db
+    real = pdm_db._next_ts
+
+    def interleave(conn, previous):
+        monkeypatch.setattr(pdm_db, '_next_ts', real)                # 끼어드는 저장은 정상 함수로
+        db.update_document(doc_id, ts, 'other user', {}, 'b')       # 다른 사용자가 먼저 저장
+        return real(conn, previous)
+    monkeypatch.setattr(pdm_db, '_next_ts', interleave)
+    with pytest.raises(ConflictError):
+        db.update_document(doc_id, ts, 'me', {}, 'a')
+    assert db.get_document(doc_id)['title'] == 'other user'

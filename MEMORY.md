@@ -1,5 +1,20 @@
 # MEMORY
 
+## Features Added
+
+### 2026-10: PDM — 공사현황 탭 + 서비스레포트/계측지 (미배포, 브랜치 `feature/pdm`)
+
+`PDM/` 폴더에서 독립 개발 → 본체에 연결. 상세 구조/체크리스트는 `PDM/INTEGRATION.md`.
+
+- **진입점**: 메뉴 `공사현황`(기간별 주문 목록). 행 우클릭 → `서비스레포트 ▸ / 계측지 ▸`(새 문서 + 작성된 파일), 더블클릭 → 서비스레포트.
+- **본체 접점은 `PDM/backend/adapters.py` 훅 4개** (현재 사용자, 권한 판정, 작업현황 DB, pdm.db 경로).
+  `src/web/pdm_bridge.py` 가 서버 세션(`permissions.access_denial`)으로 주입. 모든 `pdm_*` API 에 `@guarded` 등급.
+- **`web/pdm/` 은 `PDM/web/` 의 복사본** (Eel 은 `web/` 의 .js/.html 만 서빙). PDM/web 을 고치면
+  `python scripts/sync_pdm_web.py` 후 함께 커밋 (`tests/test_pdm_sync.py` 가 검사).
+- 데이터는 별도 `pdm.db` (본체 DB 와 같은 폴더). **클라우드 동기화·자동 백업 대상 아님** — 공유 방식 결정 필요.
+- 메뉴가 한 탭 늘어 버튼 글자가 줄바꿈되던 문제: 메뉴 컨테이너에 `[&_button]:whitespace-nowrap`.
+  (`showView` 가 버튼 className 을 통째로 덮어쓰므로 **버튼 개별 클래스로 넣으면 첫 클릭 뒤 사라진다**)
+
 ## Bug Fixes Applied
 
 ### 2026-09-02: 게스트 휴가자 현황 + 읽기전용 누락

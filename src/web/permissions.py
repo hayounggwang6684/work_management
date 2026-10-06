@@ -22,7 +22,7 @@
 import functools
 import logging
 import threading
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -136,6 +136,41 @@ def _empty_for(func: Callable, message: str, code: str) -> Any:
 # 데코레이터
 # ============================================================================
 
+def access_denial(tier: str) -> Optional[Tuple[str, str]]:
+    """
+    현재 서버 세션이 tier 를 만족하지 못하면 (거부 코드, 메시지), 만족하면 None.
+
+    `require` 데코레이터와 외부 모듈(PDM 등)이 같은 판정을 쓰도록 분리한 함수다.
+    판정 규칙을 바꿀 때는 여기 한 곳만 고친다.
+    """
+    if tier not in TIERS:
+        return ('UNKNOWN_TIER', '알 수 없는 권한 등급입니다.')      # 모르는 등급은 허용하지 않는다 (fail-closed)
+    if tier == 'public':
+        return None
+
+    user = current_user()
+    if user is None:
+        return ('NO_SESSION', '로그인이 필요합니다.')
+    if tier == 'guest':
+        return None
+    if user.get('is_guest'):
+        return ('GUEST_FORBIDDEN', '조회 전용 접속입니다. 이 기능은 로그인 후 사용할 수 있습니다.')
+    if tier == 'login':
+        return None
+
+    # 관리자는 can_write 컬럼과 무관하게 항상 쓰기 허용.
+    # auth_manager.validate_remember_token() 은 이 예외를 적용하는데
+    # authenticate() 는 적용하지 않아, 두 경로의 can_write 가 달라질 수 있다.
+    # 게이트 쪽에서 한 번 더 맞춰 준다.
+    if tier == 'write' and not user.get('can_write') and user.get('role') != 'admin':
+        return ('NO_WRITE', '쓰기 권한이 없습니다.')
+    if tier == 'admin' and user.get('role') != 'admin':
+        return ('NOT_ADMIN', '관리자 권한이 필요합니다.')
+    if tier == 'erp' and not user.get('erp_input'):
+        return ('NO_ERP', 'ERP 입력 권한이 없습니다.')
+    return None
+
+
 def require(tier: str) -> Callable:
     """지정한 권한 등급을 서버 세션 기준으로 강제한다."""
     if tier not in TIERS:
@@ -144,46 +179,12 @@ def require(tier: str) -> Callable:
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
-            if tier == 'public':
-                return func(*args, **kwargs)
-
-            user = current_user()
-
-            if user is None:
-                logger.warning(f"권한 거부(세션 없음): {func.__name__} [{tier}]")
-                return _empty_for(func, '로그인이 필요합니다.', 'NO_SESSION')
-
-            if tier == 'guest':
-                return func(*args, **kwargs)
-
-            if user.get('is_guest'):
-                logger.warning(f"권한 거부(게스트): {func.__name__} [{tier}]")
-                return _empty_for(
-                    func, '조회 전용 접속입니다. 이 기능은 로그인 후 사용할 수 있습니다.',
-                    'GUEST_FORBIDDEN')
-
-            if tier == 'login':
-                return func(*args, **kwargs)
-
-            # 관리자는 can_write 컬럼과 무관하게 항상 쓰기 허용.
-            # auth_manager.validate_remember_token() 은 이 예외를 적용하는데
-            # authenticate() 는 적용하지 않아, 두 경로의 can_write 가 달라질 수 있다.
-            # 게이트 쪽에서 한 번 더 맞춰 준다.
-            if tier == 'write' and not user.get('can_write') and user.get('role') != 'admin':
-                logger.warning(f"권한 거부(쓰기 없음): {func.__name__} "
-                               f"user={user.get('user_id')}")
-                return _empty_for(func, '쓰기 권한이 없습니다.', 'NO_WRITE')
-
-            if tier == 'admin' and user.get('role') != 'admin':
-                logger.warning(f"권한 거부(관리자 아님): {func.__name__} "
-                               f"user={user.get('user_id')}")
-                return _empty_for(func, '관리자 권한이 필요합니다.', 'NOT_ADMIN')
-
-            if tier == 'erp' and not user.get('erp_input'):
-                logger.warning(f"권한 거부(ERP 없음): {func.__name__} "
-                               f"user={user.get('user_id')}")
-                return _empty_for(func, 'ERP 입력 권한이 없습니다.', 'NO_ERP')
-
+            denial = access_denial(tier)
+            if denial:
+                code, message = denial
+                user = current_user() or {}
+                logger.warning(f"권한 거부({code}): {func.__name__} [{tier}] user={user.get('user_id', '-')}")
+                return _empty_for(func, message, code)
             return func(*args, **kwargs)
 
         wrapper.__auth_tier__ = tier

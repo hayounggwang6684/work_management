@@ -38,7 +38,8 @@ def png_uri():
 
 
 def deny(monkeypatch):
-    monkeypatch.setattr(adapters, 'can_manage_templates', lambda user=None: False)
+    # 본체 연동 시와 같은 경로: guard → adapters.check_access. admin 등급만 거부, 조회(guest)는 허용
+    monkeypatch.setattr(adapters, 'check_access', lambda tier: '이 설정은 관리자만 변경할 수 있습니다.' if tier == 'admin' else None)
 
 
 def test_layout_defaults_then_save_and_read_back():

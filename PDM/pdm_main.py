@@ -7,6 +7,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import eel
 
 import PDM.backend.api  # noqa: F401  (@eel.expose 등록)
+from PDM.backend import adapters
+
+adapters.enable_dev_mode()      # 단독 실행에는 본체 세션이 없으므로 권한 판정 없이 허용 (본체에서는 pdm_bridge 가 훅을 주입)
 
 WEB_DIR = Path(__file__).resolve().parent / 'web'
 PORT = 8765  # 본체 앱 포트와 겹치지 않게

@@ -1,61 +1,34 @@
-// PDM 진입점. 통합 시: PDM.mount(container) 1회 + 작업목록 행 우클릭에서 PDM.showOrderMenu(x, y, 계약번호) 호출.
-// 의존: dom.js(h, DOC_LABEL, showContextMenu), sr_editor.js(SrEditor), mm_editor.js(MmEditor), layout_editor.js, form_manager.js, print_layout.js(PdmLayout), eel
+// PDM 진입점.
+//   본체: 공사현황 탭을 처음 열 때  await PdmLoader.load(); PDM.mount(containerEl)  /  다시 열 때 PDM.show()
+//   화면: 공사현황(기간별 주문 목록) → 행 우클릭 메뉴 / 더블클릭 → 서비스레포트·계측지 편집기
+// 의존: dom.js(h, DOC_LABEL, showContextMenu), projects_view.js, sr_editor.js, mm_editor.js, layout_editor.js, form_manager.js,
+//       print_layout.js(PdmLayout), print_view.js(PrintView), eel
 const PDM = (() => {
     let container;
+    let atHome = false;      // 지금 화면이 공사현황(홈)인가 — 탭을 다시 열 때 목록 갱신 여부 판단
 
     async function showHome() {
+        atHome = true;
         const info = await eel.pdm_ping()();
-        const results = h('div', { class: 'mt-3 space-y-1' });
-        const docs = h('div', { class: 'mt-6' });
-
-        const search = async () => {
-            const q = input.value.trim();
-            if (!q) { results.replaceChildren(); return; }
-            const r = await eel.pdm_search_orders(q)();
-            const orders = r.orders || [];
-            results.replaceChildren(...(orders.length
-                ? orders.map(orderRow)
-                : [h('p', { class: 'text-sm text-slate-500' }, '검색 결과 없음')]));
-        };
-        const input = h('input', {
-            class: 'flex-1 border border-slate-300 rounded px-3 py-2',
-            placeholder: '계약번호 / 선박명 / 업체명 검색 (예: SH-2026-057-T, GL2030)',
-            onkeydown: e => { if (e.key === 'Enter') search(); },
-        });
-
+        if (info.authError) { container.replaceChildren(h('p', { class: 'text-slate-500 p-4' }, info.message)); return; }
+        const projects = ProjectsView.create({ onMenu: showOrderMenu, onOpen: openDefault });
         container.replaceChildren(
-            h('div', { class: 'bg-white rounded-lg shadow p-4 max-w-4xl mx-auto' },
+            h('div', { class: 'bg-white rounded-lg shadow p-4 mx-auto max-w-7xl space-y-3' },
                 h('div', { class: 'flex items-baseline justify-between' },
-                    h('h1', { class: 'text-xl font-bold' }, 'PDM — 문서 관리'),
-                    h('span', { class: 'text-sm text-slate-500' }, '작성자: ' + (info.user || '-'))),
-                h('div', { class: 'flex gap-2 mt-2 text-sm' },
-                    h('button', { class: 'px-3 py-1 rounded bg-slate-100 hover:bg-slate-200', onclick: () => LayoutEditor.render(container, showHome, info.canManage) }, '⚙ 출력 양식 설정'),
-                    h('button', { class: 'px-3 py-1 rounded bg-slate-100 hover:bg-slate-200', onclick: () => FormManager.render(container, showHome, info.canManage) }, '📋 양식 관리')),
-                h('div', { class: 'flex gap-2 mt-3' }, input,
-                    h('button', { class: 'px-4 py-2 bg-blue-600 text-white rounded', onclick: search }, '검색')),
-                results, docs));
-        loadDocs(docs);
+                    h('h1', { class: 'text-xl font-bold' }, '공사현황'),
+                    h('div', { class: 'flex items-center gap-3 text-sm' },
+                        h('span', { class: 'text-slate-500' }, '작성자: ' + (info.user || '-')),
+                        h('button', { class: 'px-3 py-1 rounded bg-slate-100 hover:bg-slate-200', onclick: () => { atHome = false; LayoutEditor.render(container, showHome, info.canManage); } }, '⚙ 출력 양식 설정'),
+                        h('button', { class: 'px-3 py-1 rounded bg-slate-100 hover:bg-slate-200', onclick: () => { atHome = false; FormManager.render(container, showHome, info.canManage); } }, '📋 양식 관리'))),
+                projects.el));
     }
 
-    // 개발용 작업목록 대역 — 본체 작업목록 행과 같은 방식(우클릭)으로 메뉴를 띄운다.
-    function orderRow(o) {
-        const row = h('div', { class: 'flex items-center gap-3 border rounded px-3 py-2 text-sm cursor-context-menu' },
-            h('span', { class: 'font-mono w-36' }, o.contractNumber),
-            h('span', { class: 'w-40 truncate' }, o.shipName),
-            h('span', { class: 'flex-1 truncate text-slate-500' }, `${o.company} · ${o.engineModel}`),
-            h('span', { class: 'text-xs text-slate-400' }, '우클릭 ▸'));
-        row.addEventListener('contextmenu', e => {
-            e.preventDefault();
-            showOrderMenu(e.clientX, e.clientY, o.contractNumber);
-        });
-        return row;
-    }
-
-    // ★ 외부 진입점: 작업목록 행 우클릭 → PDM.showOrderMenu(x, y, 계약번호)
-    // 메뉴: 서비스레포트 ▸ [＋ 새 문서 / 작성된 파일들…], 계측지 ▸ [＋ 새 문서 / 작성된 파일들…]
+    // ★ 우클릭 메뉴: PDM.showOrderMenu(x, y, 계약번호)
+    // 서비스레포트 ▸ [＋ 새 문서 / 작성된 파일들…], 계측지 ▸ [＋ 새 문서 / 작성된 파일들…]
     async function showOrderMenu(x, y, contractNumber) {
         if (!contractNumber) return;
         const r = await eel.pdm_list_documents(contractNumber)();
+        if (r.authError) { alert(r.message); return; }
         const docs = r.success ? r.documents : [];
         const group = type => {
             const mine = docs.filter(d => d.docType === type);
@@ -75,29 +48,21 @@ const PDM = (() => {
         showContextMenu(x, y, [group('service_report'), group('measurement')]);
     }
 
+    // 더블클릭: 작성된 서비스레포트가 있으면 가장 최근 것을 열고, 없으면 메뉴를 띄운다 (실수로 빈 문서가 생기지 않게).
+    async function openDefault(contractNumber, x, y) {
+        const r = await eel.pdm_list_documents(contractNumber, 'service_report')();
+        if (r.success && r.documents.length) openEditor(r.documents[0]);
+        else showOrderMenu(x, y, contractNumber);
+    }
+
     async function createAndOpen(docType, contractNumber) {
         const r = await eel.pdm_create_document(docType, contractNumber)();
         if (r.success) openEditor(r.document);
         else alert(r.message);
     }
 
-    async function loadDocs(target) {
-        const r = await eel.pdm_list_documents()();
-        const list = r.documents || [];
-        target.replaceChildren(
-            h('h2', { class: 'font-bold mb-2' }, `작성된 문서 (${list.length})`),
-            ...list.map(d => h('div', {
-                class: 'flex items-center gap-3 border-b px-2 py-2 text-sm cursor-pointer hover:bg-slate-50',
-                ondblclick: () => openEditor(d),
-            },
-                h('span', { class: 'w-28' }, DOC_LABEL[d.docType] || d.docType),
-                h('span', { class: 'flex-1' }, d.title),
-                h('span', { class: 'text-slate-500' }, `${d.updatedBy} · ${d.updatedAt.slice(0, 16)}`),
-                h('button', { class: 'px-2 py-0.5 bg-slate-200 rounded', onclick: () => openEditor(d) }, '열기'))),
-            ...(list.length ? [h('p', { class: 'text-xs text-slate-400 mt-1' }, '더블클릭 또는 [열기]')] : []));
-    }
-
     function openEditor(doc) {
+        atHome = false;
         (doc.docType === 'service_report' ? SrEditor : MmEditor).render(container, doc.id, showHome);
     }
 
@@ -109,7 +74,9 @@ const PDM = (() => {
         const printId = Number(new URLSearchParams(location.search).get('print'));
         if (printId) PrintView.open(printId);
     }
-    return { mount, showOrderMenu };
-})();
 
-window.addEventListener('load', () => PDM.mount(document.getElementById('pdmRoot')));
+    // 탭을 다시 열 때: 목록을 최신(문서 건수 포함)으로 갱신한다. 편집 중이던 화면은 그대로 둔다.
+    const show = () => (atHome ? showHome() : undefined);
+
+    return { mount, show, showOrderMenu };
+})();

@@ -6,6 +6,7 @@ from typing import Any, Dict, List
 
 import eel
 
+from PDM.backend.guard import guarded
 from PDM.backend import adapters
 from PDM.backend.photo_service import PhotoError, decode_b64, process_image, resize_jpeg
 from PDM.backend.photo_store import SlotOccupied
@@ -23,6 +24,7 @@ def _touch(doc_id: int) -> str:
 
 
 @eel.expose
+@guarded('guest')
 def pdm_list_photos(doc_id: int, known_ids: List[int] = None) -> Dict[str, Any]:
     """사진 목록. 썸네일은 클라이언트가 이미 가진 id(known_ids)는 생략해 전송량을 줄인다."""
     try:
@@ -35,10 +37,11 @@ def pdm_list_photos(doc_id: int, known_ids: List[int] = None) -> Dict[str, Any]:
                            for p in photos]}
     except Exception as e:
         logger.exception('pdm_list_photos')
-        return fail(f'사진 목록 오류: {e}')
+        return fail('사진 목록 중 오류가 발생했습니다.')
 
 
 @eel.expose
+@guarded('write')
 def pdm_add_photo(doc_id: int, slot_index: int, data: str) -> Dict[str, Any]:
     """slot_index 칸에 사진 입력 (base64/data URI). 이미 사진이 있는 칸은 거부."""
     try:
@@ -55,10 +58,11 @@ def pdm_add_photo(doc_id: int, slot_index: int, data: str) -> Dict[str, Any]:
         return fail('문서를 찾을 수 없습니다.')
     except Exception as e:
         logger.exception('pdm_add_photo')
-        return fail(f'사진 입력 오류: {e}')
+        return fail('사진 입력 중 오류가 발생했습니다.')
 
 
 @eel.expose
+@guarded('guest')
 def pdm_get_photo(photo_id: int, max_edge: int = 0) -> Dict[str, Any]:
     """저장된 이미지 (편집용: 전체 크기 / 인쇄용: max_edge 로 긴 변 제한)."""
     try:
@@ -67,10 +71,11 @@ def pdm_get_photo(photo_id: int, max_edge: int = 0) -> Dict[str, Any]:
         return fail('사진을 찾을 수 없습니다.')
     except Exception as e:
         logger.exception('pdm_get_photo')
-        return fail(f'사진 조회 오류: {e}')
+        return fail('사진 조회 중 오류가 발생했습니다.')
 
 
 @eel.expose
+@guarded('write')
 def pdm_update_photo(doc_id: int, photo_id: int, data: str) -> Dict[str, Any]:
     """편집(크기 조정/그리기)한 이미지로 교체. 최초 편집 시 원본을 보존한다."""
     try:
@@ -82,10 +87,11 @@ def pdm_update_photo(doc_id: int, photo_id: int, data: str) -> Dict[str, Any]:
         return fail(str(e))
     except Exception as e:
         logger.exception('pdm_update_photo')
-        return fail(f'사진 저장 오류: {e}')
+        return fail('사진 저장 중 오류가 발생했습니다.')
 
 
 @eel.expose
+@guarded('write')
 def pdm_restore_photo_original(doc_id: int, photo_id: int) -> Dict[str, Any]:
     """편집 전 원본으로 되돌리기."""
     try:
@@ -99,10 +105,11 @@ def pdm_restore_photo_original(doc_id: int, photo_id: int) -> Dict[str, Any]:
         return {'success': True, 'updatedAt': _touch(doc_id)}
     except Exception as e:
         logger.exception('pdm_restore_photo_original')
-        return fail(f'원본 복원 오류: {e}')
+        return fail('원본 복원 중 오류가 발생했습니다.')
 
 
 @eel.expose
+@guarded('write')
 def pdm_set_photo_caption(doc_id: int, photo_id: int, caption: str) -> Dict[str, Any]:
     try:
         if not get_photos().set_caption(doc_id, photo_id, (caption or '')[:200]):
@@ -110,10 +117,11 @@ def pdm_set_photo_caption(doc_id: int, photo_id: int, caption: str) -> Dict[str,
         return {'success': True, 'updatedAt': _touch(doc_id)}
     except Exception as e:
         logger.exception('pdm_set_photo_caption')
-        return fail(f'캡션 저장 오류: {e}')
+        return fail('캡션 저장 중 오류가 발생했습니다.')
 
 
 @eel.expose
+@guarded('write')
 def pdm_remove_photo(doc_id: int, slot_index: int, pull: bool) -> Dict[str, Any]:
     """사진 제거. pull=True: 뒤 사진을 당김 / False: 빈칸 유지."""
     try:
@@ -122,10 +130,11 @@ def pdm_remove_photo(doc_id: int, slot_index: int, pull: bool) -> Dict[str, Any]
         return {'success': True, 'updatedAt': _touch(doc_id)}
     except Exception as e:
         logger.exception('pdm_remove_photo')
-        return fail(f'사진 제거 오류: {e}')
+        return fail('사진 제거 중 오류가 발생했습니다.')
 
 
 @eel.expose
+@guarded('write')
 def pdm_insert_blank_slot(doc_id: int, slot_index: int) -> Dict[str, Any]:
     """새 항목: slot_index 에 빈칸을 끼우고 뒤 사진을 한 칸씩 민다."""
     try:
@@ -135,4 +144,4 @@ def pdm_insert_blank_slot(doc_id: int, slot_index: int) -> Dict[str, Any]:
         return fail(str(e))
     except Exception as e:
         logger.exception('pdm_insert_blank_slot')
-        return fail(f'새 항목 오류: {e}')
+        return fail('새 항목 중 오류가 발생했습니다.')

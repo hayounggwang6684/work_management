@@ -6,9 +6,12 @@ from dataclasses import dataclass
 
 from PIL import Image, ImageOps, UnidentifiedImageError
 
+Image.MAX_IMAGE_PIXELS = 80_000_000     # Pillow 자체 방어선 (이 값의 2배 초과는 예외) — 우리 상한(MAX_PIXELS)이 먼저 걸린다
+
 MAX_EDGE = 1600        # 저장 이미지 긴 변
 THUMB_EDGE = 320       # 화면 목록용 썸네일 긴 변
 MAX_BYTES = 30 * 1024 * 1024
+MAX_PIXELS = 40_000_000        # 해상도 상한 (압축률 높은 거대 이미지가 디코딩 때 메모리를 폭주시키는 것 방지)
 JPEG_QUALITY = 80
 THUMB_QUALITY = 72
 
@@ -27,7 +30,11 @@ class ProcessedImage:
 
 def decode_b64(data: str) -> bytes:
     """base64 또는 data URI → bytes. 크기 제한/형식 검증."""
+    if not isinstance(data, str):
+        raise PhotoError('사진 데이터가 올바르지 않습니다.')
     payload = data.split(',', 1)[1] if data.startswith('data:') else data
+    if len(payload) > MAX_BYTES * 4 // 3 + 8:               # base64 는 4/3 배 — 디코딩(메모리 할당) 전에 먼저 거른다
+        raise PhotoError(f'사진이 너무 큽니다 (최대 {MAX_BYTES // 1024 // 1024}MB).')
     try:
         raw = base64.b64decode(payload, validate=True)
     except (binascii.Error, ValueError):
@@ -35,6 +42,12 @@ def decode_b64(data: str) -> bytes:
     if len(raw) > MAX_BYTES:
         raise PhotoError(f'사진이 너무 큽니다 (최대 {MAX_BYTES // 1024 // 1024}MB).')
     return raw
+
+
+def _check_pixels(img: Image.Image) -> None:
+    """Image.open 직후(헤더만 읽은 상태)에 해상도를 검사한다 — 실제 디코딩 전에 거부."""
+    if img.width * img.height > MAX_PIXELS:
+        raise PhotoError(f'이미지 해상도가 너무 큽니다 (최대 {MAX_PIXELS // 1_000_000}메가픽셀).')
 
 
 def _to_jpeg(img: Image.Image, quality: int) -> bytes:
@@ -56,6 +69,7 @@ def _flatten_rgb(img: Image.Image) -> Image.Image:
 def process_image(raw: bytes) -> ProcessedImage:
     try:
         with Image.open(io.BytesIO(raw)) as src:
+            _check_pixels(src)
             img = ImageOps.exif_transpose(src)
             img = _flatten_rgb(img)
     except (UnidentifiedImageError, OSError, Image.DecompressionBombError):
@@ -74,6 +88,7 @@ def resize_jpeg(data: bytes, max_edge: int) -> bytes:
         return data
     try:
         with Image.open(io.BytesIO(data)) as src:
+            _check_pixels(src)
             if max(src.size) <= max_edge:
                 return data
             img = src.convert('RGB')
@@ -96,6 +111,7 @@ def normalize_image_uri(uri: str, max_edge: int, keep_alpha: bool) -> str:
         raise PhotoError(f'이미지가 너무 큽니다 (최대 {MAX_ASSET_BYTES // 1024 // 1024}MB).')
     try:
         with Image.open(io.BytesIO(raw)) as src:
+            _check_pixels(src)
             img = ImageOps.exif_transpose(src)
             img = img.convert('RGBA') if keep_alpha else _flatten_rgb(img)
     except (UnidentifiedImageError, OSError, Image.DecompressionBombError):

@@ -161,7 +161,7 @@
                     <h1 class="text-2xl font-bold">금일작업현황 관리</h1>
                     <span id="appVersionBadge" class="text-xs text-slate-400 font-normal">v-.-.-</span>
                 </div>
-                <div class="flex items-center gap-4">
+                <div class="flex items-center gap-3 [&_button]:whitespace-nowrap">
                     <button onclick="showView('dashboard')" id="btnDashboard" 
                             class="px-4 py-2 rounded-lg bg-blue-600 text-white">대시보드</button>
                     <button onclick="showView('daily')" id="btnDaily" 
@@ -170,6 +170,8 @@
                             class="px-4 py-2 rounded-lg bg-slate-200">보고서</button>
                     <button onclick="showView('search')" id="btnSearch"
                             class="px-4 py-2 rounded-lg bg-slate-200">조회</button>
+                    <button onclick="showView('projects')" id="btnProjects"
+                            class="px-4 py-2 rounded-lg bg-slate-200">공사현황</button>
                     <button onclick="showView('employee')" id="btnEmployee"
                             class="px-4 py-2 rounded-lg bg-slate-200">직원 관리</button>
                     <span id="currentUser" class="font-medium"></span>
@@ -427,6 +429,9 @@
 
                 </div>
             </div>
+
+            <!-- 공사현황 화면 (PDM: 기간별 공사 목록 → 서비스레포트/계측지). 처음 열 때 pdm/ 스크립트를 불러와 채운다 -->
+            <div id="projectsView" class="hidden"></div>
 
             <!-- 직원 관리 화면 -->
             <div id="employeeView" class="hidden">
@@ -1842,6 +1847,8 @@
     <script src="js/app.js?v=2.4.8"></script>
     <script src="js/report.js?v=2.4.8"></script>
     <script src="js/update.js?v=2.4.8"></script>
+    <script src="js/projects_tab.js?v=2.4.8"></script>
+    <script src="pdm/pdm_loader.js?v=2.4.8"></script>
 
     <script>
         // eel이 준비되면 스플래시 닫기

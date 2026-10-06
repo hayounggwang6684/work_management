@@ -39,7 +39,11 @@ project-root/
 │       ├── patch_system.py      # ZIP 패치 적용
 │       ├── telegram_notifier.py # 텔레그램 봇 알림
 │       └── daily_scheduler.py   # 자동 백업 / 일일 요약 스케줄러
+├── PDM/                         # 공사현황·서비스레포트·계측지 (독립 개발 모듈 — PDM/INTEGRATION.md)
+│   ├── backend/adapters.py      #   본체 접점 훅 (현재 사용자/권한/DB 경로)
+│   └── web/                     #   화면 원본 → scripts/sync_pdm_web.py 로 web/pdm/ 에 복사
 ├── web/
+│   ├── pdm/                     # PDM/web 의 복사본 (직접 수정 금지)
 │   ├── index.html               # SPA — 모든 뷰 포함
 │   └── js/
 │       ├── app.js               # 메인 앱 로직 (뷰 전환, 레코드, 조회)
@@ -168,6 +172,9 @@ work_hours_ot_overrides (employee_name, work_date, start_time, end_time, note)
    | 신기능 추가 | `MEMORY.md` + 아키텍처 변경 시 `CLAUDE.md` + 관련 스킬 파일 |
    | 아키텍처 변경 | `CLAUDE.md` (핵심 아키텍처 패턴 또는 DB 스키마 섹션) |
    | 절대 규칙 위반 패턴 발견 | `CLAUDE.md` 절대 규칙 섹션에 추가 |
+
+11. **`web/pdm/` 은 `PDM/web/` 의 복사본 — 직접 수정 금지** — `PDM/web` 을 고친 뒤 `python scripts/sync_pdm_web.py` 를 실행해 함께 커밋 (`tests/test_pdm_sync.py` 가 어긋남 검사).
+    새 `@eel.expose pdm_*` API 에는 반드시 `@guarded(등급)` 을 달 것 (`PDM/tests/test_guard.py` 가 누락 검사).
 
 ---
 
