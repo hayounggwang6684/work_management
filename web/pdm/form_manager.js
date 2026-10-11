@@ -1,5 +1,5 @@
 // 양식 관리 — 계측 양식을 화면에서 추가/수정/삭제/복제. 내장 양식은 읽기 전용(복제해서 수정).
-// 만들 수 있는 형태: 크랭크핀형 격자 (규격표 1~2행 + F/A × TB/PS 또는 F/A 표 1~3개 + Remarks), 구분(PORT/STBD 등) 1~4개.
+// 만들 수 있는 형태: 크랭크핀형 격자 (규격표 1~2행 + F/A × TB/PS 또는 F/A 표 1~3개 + Remarks).
 // 서버가 정의를 검증/정규화하므로 여기서는 입력만 모아 보낸다. 출력 미리보기는 저장하지 않고 초안으로 확인한다.
 // 의존: dom.js(h, showChoice, blobToDataURL), mm_print.js(MmPrint), print_view.js(PrintView), mm_assets.js, eel
 const FormManager = (() => {
@@ -10,14 +10,14 @@ const FormManager = (() => {
 
     const blankTable = (role, op = '') => ({ title: '', colLabel: 'No.', cols: 8, rowsKind: ROLE_ROWS[role] || 'FA_TBPS', role, unitBase: '', unitOp: op });
     const blankDraft = () => ({
-        label: '', title: '', indexTitle: '', code: '', sides: ['PORT', 'STBD'], diagramImage: null,
+        label: '', title: '', indexTitle: '', code: '', diagramImage: null,
         spec: [{ label: '', standard: '', limit: '' }, { label: '', standard: '', limit: '' }],
         tables: [blankTable('outer', '-'), blankTable('inner', '+'), blankTable('clearance')],
     });
 
     // 저장된 양식 → 편집 초안. 복제면 내장 도면(JS 자산)도 이미지로 옮긴다.
     const draftFromForm = form => ({
-        label: form.label, title: form.title, indexTitle: form.indexTitle, code: form.code || '', sides: [...form.sides],
+        label: form.label, title: form.title, indexTitle: form.indexTitle, code: form.code || '',
         diagramImage: form.diagramImage || (form.diagram ? PDM_MM_ASSETS['diagram_' + form.diagram] || null : null),
         spec: form.spec.map(s => ({ label: s.label, standard: s.standard, limit: s.limit })),
         tables: form.tables.map(t => ({
@@ -46,7 +46,7 @@ const FormManager = (() => {
         const again = msg => renderList(container, onBack, canManage, msg);
 
         const previewForm = async form => {
-            const r = await eel.pdm_new_measurement_form(form.id, form.sides[0])();
+            const r = await eel.pdm_new_measurement_form(form.id)();
             if (!r.success) { status.textContent = '⚠ ' + r.message; return; }
             PrintView.preview(form.title, async () => [MmPrint.previewPage(form, r.form)]);
         };
@@ -61,7 +61,6 @@ const FormManager = (() => {
         const rows = tpl.forms.map(form => h('tr', { class: 'border-t' },
             h('td', { class: 'px-2 py-2 font-medium' }, form.label),
             h('td', { class: 'px-2 text-xs ' + (form.builtin ? 'text-slate-500' : 'text-emerald-700') }, form.builtin ? '🔒 내장' : '사용자 정의'),
-            h('td', { class: 'px-2 text-sm text-slate-600' }, form.sides.join(', ')),
             h('td', { class: 'px-2 text-sm text-slate-600' }, form.layout === 'conrodGrid' ? '격자 1개' : `표 ${form.tables.length}개`),
             h('td', { class: 'px-2 text-right whitespace-nowrap' },
                 btn('미리보기', () => previewForm(form)),
@@ -77,7 +76,7 @@ const FormManager = (() => {
                 status),
             h('div', { class: 'max-w-4xl mx-auto bg-white rounded-lg shadow p-4' },
                 h('table', { class: 'w-full text-left' }, h('thead', {}, h('tr', { class: 'text-xs text-slate-500' },
-                    ...['이름', '종류', '구분', '구성', ''].map(t => h('th', { class: 'px-2 pb-1 font-normal' }, t)))), h('tbody', {}, ...rows)),
+                    ...['이름', '종류', '구성', ''].map(t => h('th', { class: 'px-2 pb-1 font-normal' }, t)))), h('tbody', {}, ...rows)),
                 h('p', { class: 'text-xs text-slate-400 mt-3' }, '내장 양식은 수정할 수 없고 [복제]해서 고칩니다. 새 양식은 크랭크핀형(규격표 + F/A × TB/PS 표) 형태로 만들 수 있고, 만든 즉시 계측지의 "계측 항목 선택"에 나타납니다.')));
     }
 
@@ -85,8 +84,6 @@ const FormManager = (() => {
     function renderEditor(container, onBack, canManage, draft, formId) {
         while (draft.spec.length < 2) draft.spec.push({ label: '', standard: '', limit: '' });     // 규격 행은 항상 2칸을 보여 주고, 비운 행은 저장 때 제외
         const status = h('span', { class: 'text-sm text-slate-500' });
-        const sidesInput = h('input', { class: INPUT, value: draft.sides.join(', '), placeholder: 'PORT, STBD' });
-        sidesInput.addEventListener('input', () => { draft.sides = sidesInput.value.split(',').map(s => s.trim()).filter(Boolean); });
 
         const toDefinition = () => ({
             ...draft,
@@ -155,8 +152,8 @@ const FormManager = (() => {
                     h('div', { class: 'grid grid-cols-2 gap-3' },
                         field('이름 (선택 목록에 표시)', bound(draft, 'label')), field('양식 번호 (출력 왼쪽 아래)', bound(draft, 'code')),
                         field('출력 제목 (예: RECORD OF … )', bound(draft, 'title'), 'col-span-2'),
-                        field('표지 목차 제목 (비우면 출력 제목)', bound(draft, 'indexTitle'), 'col-span-2'),
-                        field('구분 (쉼표로 구분, 최대 4개)', sidesInput, 'col-span-2'))),
+                        field('표지 목차 제목 (비우면 출력 제목)', bound(draft, 'indexTitle'), 'col-span-2')),
+                    h('p', { class: 'text-xs text-slate-400' }, '장 수와 장 구분(PORT, 1호기 등)은 계측지에서 문서마다 정합니다.')),
                 h('section', { class: 'bg-white rounded-lg shadow p-4 space-y-3' }, h('h2', { class: 'font-bold' }, '규격표 (ITEM / STANDARD / LIMIT)'), specRows,
                     h('p', { class: 'text-xs text-slate-400' }, '이름을 비운 행은 사용하지 않습니다.')),
                 h('section', { class: 'bg-white rounded-lg shadow p-4 space-y-3' }, h('h2', { class: 'font-bold' }, '도면 이미지 (선택)'),

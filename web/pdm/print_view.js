@@ -10,6 +10,7 @@ const PrintView = (() => {
 
     const CSS = `
     @page { size: A4; margin: 0; }
+    @page landscape { size: A4 landscape; margin: 0; }
     #pdmPrint { position: fixed; inset: 0; z-index: 80; background: #64748b; overflow: auto; }
     #pdmPrint .pp-bar { position: sticky; top: 0; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 12px;
         padding: 8px 16px; background: #1e293b; color: #fff; font: 14px 'Malgun Gothic', sans-serif; }
@@ -21,6 +22,7 @@ const PrintView = (() => {
     .pdm-page { position: relative; width: 210mm; height: 297mm; margin: 0 auto 12px; background: #fff; overflow: hidden;
         box-shadow: 0 2px 10px rgba(0,0,0,.4); box-sizing: border-box; color: #000;
         font-family: 'Times New Roman', 'Batang', '바탕', serif; font-size: 11.1pt; }
+    .pdm-page.pdm-landscape { width: 297mm; height: 210mm; page: landscape; }      /* 가로 용지로 인쇄되는 페이지 */
     .pdm-page * { box-sizing: border-box; }
     .pdm-page img { display: block; max-width: none; }
     * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }

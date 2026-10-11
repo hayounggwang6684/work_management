@@ -1,10 +1,9 @@
-// 사진 그리드 — 한 페이지 2열×3행(6칸), 칸마다 캡션. 서비스레포트 사진 페이지의 화면 편집용.
+// 사진 그리드 — 한 페이지 6칸(2열×3행) 또는 4칸(가로 2열×2행, options.perPage), 칸마다 캡션. 서비스레포트 사진 페이지의 화면 편집용.
 // 입력: ① 파일 드래그앤드롭 ② 우클릭 메뉴 [입력] ③ 빈칸 더블클릭 → 모두 파일 선택/드롭 후 같은 경로로 저장.
 // 우클릭 메뉴: 입력 / 수정 / 제거 / 새 항목. 사진 더블클릭 = 수정(photo_editor.js).
 // 칸에 맞추는 방식(cover/contain)은 출력과 같은 PDM_LAYOUT.photoFit 을 따른다 (화면 = 인쇄 결과).
 // 의존: dom.js(h, showContextMenu, showChoice, blobToDataURL), photo_editor.js, print_layout.js(PDM_LAYOUT), eel
 const PhotoGrid = (() => {
-    const PER_PAGE = 6;
     const UPLOAD_EDGE = 1600;   // 전송 전 긴 변 축소 (서버도 동일 상한으로 다시 처리)
 
     // 칸 밖에 파일을 떨어뜨리면 브라우저가 앱을 떠나 이미지를 열어버리므로 전역에서 막는다.
@@ -32,9 +31,10 @@ const PhotoGrid = (() => {
         }
     }
 
-    // options: {docId, pageTitles, onTouched(updatedAt)}
+    // options: {docId, pageTitles, perPage(6|4, 기본 6), onTouched(updatedAt)}
     function create(options) {
         const { docId, onTouched } = options;
+        const perPage = options.perPage === 4 ? 4 : 6;           // 6장 = 세로 페이지, 4장 = 가로 페이지 (출력과 같은 기준)
         const pageTitles = { ...(options.pageTitles || {}) };
         const bySlot = new Map();       // slotIndex → {id, caption, thumb, ...}
         const thumbs = new Map();       // photoId → thumb data URI (캐시)
@@ -160,18 +160,18 @@ const PhotoGrid = (() => {
         function pageEl(page) {
             const title = h('input', {
                 class: 'w-full border border-slate-400 bg-sky-50 rounded px-2 py-1 text-sm text-center',
-                placeholder: `페이지 ${page + 1} 제목 (예: NO.1 엔진 정비)`, value: pageTitles[page] || '',
+                placeholder: `페이지 ${page + 1} 제목 (비우면 출력에 제목 띠가 나오지 않음)`, value: pageTitles[page] || '',
             });
             title.addEventListener('input', () => { pageTitles[page] = title.value; });
             const cells = [];
-            for (let i = 0; i < PER_PAGE; i++) cells.push(slotEl(page * PER_PAGE + i));
+            for (let i = 0; i < perPage; i++) cells.push(slotEl(page * perPage + i));
             return h('div', { class: 'border border-slate-200 rounded p-3' },
-                h('div', { class: 'text-xs text-slate-400 mb-1' }, `사진 페이지 ${page + 1}`),
+                h('div', { class: 'text-xs text-slate-400 mb-1' }, `사진 페이지 ${page + 1}${perPage === 4 ? ' (가로)' : ''}`),
                 title, h('div', { class: 'grid grid-cols-2 gap-3 mt-2' }, cells));
         }
 
         function render() {
-            const pages = Math.floor((lastSlot() + 1) / PER_PAGE) + 1;   // 마지막 페이지가 가득 차면 새 페이지 하나 더
+            const pages = Math.floor((lastSlot() + 1) / perPage) + 1;   // 마지막 페이지가 가득 차면 새 페이지 하나 더
             pagesEl.replaceChildren(...Array.from({ length: pages }, (_, p) => pageEl(p)));
         }
 

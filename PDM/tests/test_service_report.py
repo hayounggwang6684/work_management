@@ -91,3 +91,11 @@ def test_normalize_summary_must_be_a_list_of_strings():
 def test_normalize_survives_garbage_values():
     out = normalize_header({'summary': {'a': 1}, 'pageTitles': ['x'], 'remark': None, 'vesselName': 5})
     assert out['summary'] == [] and out['pageTitles'] == {} and out['remark'] == '' and out['vesselName'] == '5'
+
+
+def test_photos_per_page_is_limited_to_the_supported_layouts():
+    assert normalize_header(full_header())['photosPerPage'] == 6                  # 기본값
+    assert normalize_header(full_header(photosPerPage=4))['photosPerPage'] == 4    # 가로 2x2
+    assert normalize_header(full_header(photosPerPage='4'))['photosPerPage'] == 4  # 문자열로 와도 정수로
+    for bad in (5, 0, 99, -1, None, 'abc', [], {}):
+        assert normalize_header(full_header(photosPerPage=bad))['photosPerPage'] == 6

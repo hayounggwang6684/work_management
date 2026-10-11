@@ -17,7 +17,7 @@ from PDM.backend.pdm_db import PdmDb
 
 def raw_def(**over):
     base = {
-        'label': '캠샤프트 저널', 'title': 'RECORD OF CAMSHAFT JOURNAL', 'code': 'SJ-200', 'sides': ['PORT', 'STBD'],
+        'label': '캠샤프트 저널', 'title': 'RECORD OF CAMSHAFT JOURNAL', 'code': 'SJ-200',
         'spec': [{'label': 'CAM JOURNAL\nOUT DIA', 'standard': '59.9', 'limit': '0.05'}],
         'tables': [
             {'title': 'CAM JOURNAL OUT DIA', 'colLabel': 'Journal\nNo.', 'cols': 6, 'rowsKind': 'FA_TBPS', 'role': 'outer', 'unitBase': '60', 'unitOp': '-'},
@@ -37,17 +37,13 @@ def test_valid_definition_is_normalized_into_form_structure():
     assert f['tables'][2]['rows'] == [['F'], ['A']] and f['tables'][2]['unit'] is None
     assert f['tables'][0]['unit'] == {'base': '60', 'op': '-'} and f['tables'][1]['unit'] == {'base': '', 'op': '+'}
     assert [s['id'] for s in f['spec']] == ['primary'] and f['spec'][0]['standard'] == '59.9'
-    assert f['sides'] == ['PORT', 'STBD']
+    assert 'sides' not in f                                  # 구분(PORT/STBD)은 양식이 아니라 문서에서 장마다 정한다
 
 
 @pytest.mark.parametrize('mutate', [
     lambda d: d.update(label=''),
     lambda d: d.update(title='  '),
     lambda d: d.update(tables=[]),
-    lambda d: d.update(sides=[]),
-    lambda d: d.update(sides=['A', 'A']),
-    lambda d: d.update(sides=['A', 'B', 'C', 'D', 'E']),
-    lambda d: d.update(sides=['X' * 13]),
     lambda d: d.update(spec=[]),
     lambda d: d.update(spec=[{'label': 'a'}] * 3),
     lambda d: d['tables'][0].update(cols=0),
@@ -116,5 +112,5 @@ def test_builtin_tables_declare_roles():
 def test_preview_instance_works_for_unsaved_definition():
     form = F.validate_definition(raw_def())                  # id 없음 — 저장 전 초안
     inst = M.preview_instance(form)
-    assert inst['side'] == 'PORT' and inst['formId'] == form.get('id', '')
+    assert inst['label'] == '' and inst['formId'] == form.get('id', '')
     assert len(inst['tables']['t1']) == 4 and inst['spec']['primary']['standard'] == '59.9'

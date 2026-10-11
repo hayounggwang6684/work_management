@@ -47,7 +47,18 @@ const SrEditor = (() => {
         const sugg = (await eel.pdm_summary_suggestions(doc.header.model)()).items || [];
 
         // 사진 변경은 즉시 서버에 저장되며 문서의 최종 수정 시각이 바뀌므로, 바에 알려 본문 저장 충돌을 막는다.
-        const grid = PhotoGrid.create({ docId: doc.id, pageTitles: doc.header.pageTitles, onTouched: ts => bar.touch(ts) });
+        // 한 장에 들어가는 사진 수: 6장(세로) / 4장(가로). 바꾸면 사진은 그대로 두고 페이지 묶음만 달라진다.
+        let perPage = doc.header.photosPerPage === 4 ? 4 : 6;
+        let grid;
+        const photosBox = h('div', { class: 'mt-8' });
+        const mountGrid = (pageTitles) => {
+            grid = PhotoGrid.create({ docId: doc.id, pageTitles, perPage, onTouched: ts => bar.touch(ts) });
+            const select = h('select', { class: 'ml-3 border border-slate-300 rounded px-2 py-0.5 text-sm bg-white font-normal', title: '한 페이지에 나오는 사진 장수' },
+                h('option', { value: '6', selected: perPage === 6 }, '6장 (세로)'), h('option', { value: '4', selected: perPage === 4 }, '4장 (가로)'));
+            select.addEventListener('change', () => { perPage = Number(select.value); mountGrid(grid.getPageTitles()); });
+            photosBox.replaceChildren(h('h3', { class: 'font-bold text-lg mb-1' }, '■ Photos', select), grid.el);
+        };
+        mountGrid(doc.header.pageTitles);
         const root = h('div', { class: 'bg-white rounded-lg shadow p-6 max-w-3xl mx-auto' },
             h('h2', { class: 'text-3xl font-serif font-bold text-center mb-4' }, 'Service report'),
             headerTable(doc),
@@ -61,13 +72,11 @@ const SrEditor = (() => {
                     },
                 }, t))) : null,
             textBlock('Remark', 'remark', doc, 4),
-            h('div', { class: 'mt-8' },
-                h('h3', { class: 'font-bold text-lg mb-1' }, '■ Photos'),
-                grid.el));
+            photosBox);
 
         const bar = EditorBar.create({
             doc, onBack,
-            getHeader: () => ({ ...collect(root, bar.current()), pageTitles: grid.getPageTitles() }),
+            getHeader: () => ({ ...collect(root, bar.current()), pageTitles: grid.getPageTitles(), photosPerPage: perPage }),
         });
         container.replaceChildren(bar.el, root);
     }

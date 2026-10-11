@@ -70,7 +70,7 @@ const MmPrint = (() => {
         const row = (top, cells) => gridBox(x0, top, cells.map(c => c.w), [rowH], cells.map((c, i) => ({ r: 0, c: i, content: c.t, style: c.style })));
         const lab = { style: `font-size:9.9pt;` };
         const phaseMark = which => (inst.phase === which ? '✓' : '');
-        const marker = inst.side ? MmLogic.makerTypeFor(header, inst.side) : header.makerType;
+        const marker = MmLogic.makerTypeFor(header, inst.label);       // 엔진 + 장 구분 라벨 (예: M/E FUSSO 91A PORT)
         const rows = [
             row(y0, [
                 { w: seg(0, cut[0]), t: 'WORK NO' }, { w: seg(cut[0], cut[1]), t: header.workNo },

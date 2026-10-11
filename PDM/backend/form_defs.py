@@ -1,4 +1,4 @@
-"""사용자 정의 계측 양식 (크랭크핀형 격자: 규격표 + F/A x TB/PS 표 최대 3개 + Remarks). 서버측 검증.
+"""사용자 정의 계측 양식 (크랭크핀형 격자: 규격표 + F/A x TB/PS 표 최대 3개 + Remarks). 서버측 검증. 장 수·장 구분(PORT/1호기…)은 문서에서 정한다.
 
 화면에서 입력한 '단순 정의'(rowsKind, unitBase/unitOp, role …)를 measurement.py 가 쓰는 양식 구조로 정규화한다.
 내장 양식(measurement_forms.json)은 읽기 전용이고, 사용자 정의 양식만 DB(pdm_form_templates)에 저장된다.
@@ -11,7 +11,6 @@ from PDM.backend.photo_service import normalize_image_uri
 DIAGRAM_MAX_EDGE = 1200
 MAX_TABLES = 3
 MAX_SPEC = 2
-MAX_SIDES = 4
 MAX_COLS = 8
 ROLES = ('plain', 'outer', 'inner', 'clearance')
 UNIQUE_ROLES = ('outer', 'inner', 'clearance')          # 자동 계산이 의존하므로 양식당 최대 1개
@@ -28,18 +27,6 @@ def _text(value: Any, name: str, limit: int, required: bool = False) -> str:
     if required and not out:
         raise ValueError(f'{name}을(를) 입력하세요.')
     return out
-
-
-def _sides(raw: Any) -> List[str]:
-    given = [('' if s is None else str(s)).strip() for s in raw] if isinstance(raw, list) else []
-    sides = [s for s in given if s]
-    if not 1 <= len(sides) <= MAX_SIDES:
-        raise ValueError(f'구분(PORT/STBD 등)은 1~{MAX_SIDES}개여야 합니다.')
-    if any(len(s) > 12 for s in sides):
-        raise ValueError('구분 이름은 12자 이내여야 합니다.')
-    if len({s.upper() for s in sides}) != len(sides):
-        raise ValueError('구분 이름이 중복되었습니다.')
-    return sides
 
 
 def _spec(raw: Any) -> List[Dict[str, str]]:
@@ -94,5 +81,5 @@ def validate_definition(raw: Dict[str, Any]) -> Dict[str, Any]:
         'indexTitle': _text(raw.get('indexTitle'), '표지 목차 제목', 60) or title.replace('&', '').replace('  ', ' ').strip(),
         'code': _text(raw.get('code'), '양식 번호', 40), 'layout': 'journalGrid', 'diagram': '',
         'diagramImage': normalize_image_uri(image, DIAGRAM_MAX_EDGE, keep_alpha=False) if image else None,
-        'sides': _sides(raw.get('sides')), 'spec': _spec(raw.get('spec')), 'tables': _tables(raw.get('tables')), 'custom': True,
+        'spec': _spec(raw.get('spec')), 'tables': _tables(raw.get('tables')), 'custom': True,
     }

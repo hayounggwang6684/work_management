@@ -13,6 +13,8 @@ TEMPLATE_PATH = Path(__file__).resolve().parent / 'templates' / 'measurement_for
 MAX_CELL_LEN = 12
 MAX_TEXT_LEN = 100
 MAX_REMARKS_LEN = 2000
+MAX_LABEL_LEN = 20          # 장 구분 라벨 (예: PORT, STBD, 1호기)
+MAX_PER_FORM = 6            # 같은 양식을 넣을 수 있는 최대 장 수
 PHASES = ('', 'before', 'after')
 COMMON_TEXT_KEYS = ('workNo', 'inspDate', 'owner', 'shipName', 'inspBy', 'apprBy', 'makerType', 'coverEngine', 'coverShip')
 
@@ -49,29 +51,22 @@ def _form(form_id: str) -> Dict[str, Any]:
         raise ValueError(f'알 수 없는 계측 양식: {form_id}')
 
 
-def _check_side(form: Dict[str, Any], side: str) -> None:
-    if side not in form['sides']:
-        raise ValueError(f"{form['id']} 양식에 없는 구분입니다: {side}")
-
-
 def _blank_grid(rows: int, cols: int) -> List[List[str]]:
     return [[''] * cols for _ in range(rows)]
 
 
-def default_instance(form_id: str, side: str) -> Dict[str, Any]:
-    """양식 하나(예: 크랭크핀 PORT)의 빈 입력 구조. 규격·기준값은 정의의 기본값."""
-    form = _form(form_id)
-    _check_side(form, side)
-    return _blank_instance(form, side)
+def default_instance(form_id: str, label: str = '') -> Dict[str, Any]:
+    """양식 한 장(예: 크랭크핀 1장)의 빈 입력 구조. 규격·기준값은 정의의 기본값. label 은 장 구분(PORT, 1호기 …)."""
+    return _blank_instance(_form(form_id), label)
 
 
 def preview_instance(form: Dict[str, Any]) -> Dict[str, Any]:
-    """저장 전 양식 초안(id 없을 수 있음)의 첫 구분 기준 빈 입력 구조 — 양식 관리 미리보기용."""
-    return _blank_instance(form, form['sides'][0])
+    """저장 전 양식 초안(id 없을 수 있음)의 빈 입력 구조 — 양식 관리 미리보기용."""
+    return _blank_instance(form, '')
 
 
-def _blank_instance(form: Dict[str, Any], side: str) -> Dict[str, Any]:
-    base = {'formId': form.get('id', ''), 'side': side, 'phase': '', 'gaugeNo': ''}
+def _blank_instance(form: Dict[str, Any], label: str) -> Dict[str, Any]:
+    base = {'formId': form.get('id', ''), 'label': label, 'phase': '', 'gaugeNo': ''}
     if form['layout'] == 'conrodGrid':
         cols = len(form['positions']) * len(form['subColumns'])
         return {**base, **form['defaults'], 'rowLabels': list(form['defaultRowLabels']),
@@ -114,9 +109,9 @@ def _grid(value: Any, rows: int, cols: int) -> List[List[str]]:
 
 def _normalize_instance(raw: Dict[str, Any]) -> Dict[str, Any]:
     form = _form(_text(raw.get('formId'), MAX_TEXT_LEN))
-    side = _text(raw.get('side'), MAX_TEXT_LEN)
-    default = default_instance(form['id'], side)
-    out = {'formId': form['id'], 'side': side,
+    label = _text(raw.get('label', raw.get('side')), MAX_LABEL_LEN)        # 예전 문서의 side(PORT/STBD)는 라벨로 읽는다
+    default = default_instance(form['id'], label)
+    out = {'formId': form['id'], 'label': label,
            'phase': raw.get('phase') if raw.get('phase') in PHASES else '',
            'gaugeNo': _text(raw.get('gaugeNo'), MAX_TEXT_LEN)}
     if form['layout'] == 'conrodGrid':
@@ -138,17 +133,16 @@ def _normalize_instance(raw: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def normalize_header(header: Dict[str, Any]) -> Dict[str, Any]:
-    """저장 전 검증/정리. 알 수 없는 양식·구분, 중복 항목은 ValueError."""
+    """저장 전 검증/정리. 알 수 없는 양식은 ValueError. 같은 양식은 장마다 따로(최대 MAX_PER_FORM 장)."""
     out = {k: _text(header.get(k), MAX_TEXT_LEN) for k in COMMON_TEXT_KEYS}
-    forms, seen = [], set()
+    forms, per_form = [], {}
     for raw in header.get('forms') or []:
         if not isinstance(raw, dict):
             raise ValueError('계측 항목 형식이 올바르지 않습니다.')
         inst = _normalize_instance(raw)
-        key = (inst['formId'], inst['side'])
-        if key in seen:
-            raise ValueError(f'같은 계측 항목이 중복되었습니다: {key[0]} {key[1]}')
-        seen.add(key)
+        per_form[inst['formId']] = per_form.get(inst['formId'], 0) + 1
+        if per_form[inst['formId']] > MAX_PER_FORM:
+            raise ValueError(f"같은 양식은 최대 {MAX_PER_FORM}장까지 넣을 수 있습니다: {inst['formId']}")
         forms.append(inst)
     out['forms'] = forms
     return out

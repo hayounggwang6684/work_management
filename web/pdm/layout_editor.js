@@ -1,7 +1,7 @@
 // 출력 양식 설정 화면 — 로고, 회사 정보, 제목 문구, 사진 채움 방식, 직인(표시/이미지/위치).
 // 저장하면 서버(DB)에 공유 저장되어 모든 사용자의 출력에 반영된다. 변경은 관리자만 (canManage).
 // 직인 위치는 사진 페이지 축소 미리보기에서 끌어 조정하거나 숫자(mm)로 입력한다.
-// 의존: dom.js(h, blobToDataURL), print_layout.js(PdmLayout), sr_print.js(SrPrint.PHOTO), eel
+// 의존: dom.js(h, blobToDataURL), print_layout.js(PdmLayout), print_logic.js(PrintLogic.PHOTO_GEOMETRY), eel
 const LayoutEditor = (() => {
     const PAGE_W = 210, PAGE_H = 297, PREVIEW_PX = 300;
     const MAX_IMAGE_BYTES = 3 * 1024 * 1024;
@@ -71,10 +71,10 @@ const LayoutEditor = (() => {
             sealImg.addEventListener('pointerup', up);
         });
 
-        const P = SrPrint.PHOTO;
+        const G = PrintLogic.PHOTO_GEOMETRY[6];       // 직인 위치는 세로 A4(6장) 기준
         const mock = h('div', { class: 'relative bg-white border border-slate-400 shrink-0', style: `width:${PREVIEW_PX}px;height:${PAGE_H * k}px;overflow:hidden` },
             h('div', { class: 'absolute bg-sky-100 border border-slate-500', style: `left:${24.9 * k}px;top:${26.6 * k}px;width:${159.9 * k}px;height:${9.6 * k}px` }),
-            ...[0, 1, 2].flatMap(r => [0, 1].map(c => h('div', { class: 'absolute bg-slate-200', style: `left:${P.colX[c] * k}px;top:${P.rowY[r] * k}px;width:${P.w * k}px;height:${P.h * k}px` }))),
+            ...[0, 1, 2].flatMap(r => [0, 1].map(c => h('div', { class: 'absolute bg-slate-200', style: `left:${G.cols[c] * k}px;top:${G.rows[r] * k}px;width:${G.photo.w * k}px;height:${G.photo.h * k}px` }))),
             sealImg);
 
         const enabled = h('input', { type: 'checkbox', checked: state.seal.enabled, disabled: lock });

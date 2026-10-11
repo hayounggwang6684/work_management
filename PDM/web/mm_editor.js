@@ -1,4 +1,5 @@
-// 계측지 편집기 — 공통 헤더 + 계측 항목 선택(양식 × PORT/STBD) + 선택한 양식별 입력 격자.
+// 계측지 편집기 — 공통 헤더 + 계측 항목 선택(양식마다 안 함/1장/2장…) + 선택한 양식별 입력 격자.
+// 같은 엔진의 1호기·2호기처럼 표지는 하나이고 계측 장만 여러 장일 때, 양식별 장 수를 정하고 장마다 구분 라벨(예: PORT, 1호기)을 쓴다.
 // 양식 구조는 서버의 항목 정의(pdm_measurement_templates)로 그려지므로 정의에 양식을 추가하면 선택 목록에 나타난다.
 // 편집 중인 값은 이 화면의 작업 복사본(header)에 쌓이고, [저장] 때 서버가 검증·정규화해 저장한다.
 // 의존: dom.js(h, showChoice), mm_logic.js(MmLogic), editor_bar.js(EditorBar), eel
@@ -14,12 +15,9 @@ const MmEditor = (() => {
     const lines = s => String(s).replace(/\n/g, ' ');
     const hasData = inst => !!(inst.gaugeNo || inst.remarks || [].concat(...Object.values(inst.tables || {}), inst.cells || []).some(r => r.some(Boolean)));
 
-    // 선택 순서 대신 정의 순서(양식 → 구분)로 항상 정렬해 표지 INDEX 순서를 일정하게 한다.
-    const sortForms = (forms, templates) => {
-        const order = Object.fromEntries(templates.map((t, i) => [t.id, i]));
-        return [...forms].sort((a, b) => order[a.formId] - order[b.formId]
-            || templates.find(t => t.id === a.formId).sides.indexOf(a.side) - templates.find(t => t.id === b.formId).sides.indexOf(b.side));
-    };
+    const MAX_UI_PAGES = 4;       // 선택 목록에 보여 주는 장 수 상한 (서버 상한은 measurement.MAX_PER_FORM)
+    const LABEL_SUGGESTIONS = ['PORT', 'STBD', '1호기', '2호기'];
+    let radioSeq = 0;             // 장마다 BEFORE/AFTER 라디오 그룹 이름이 겹치지 않게
 
     // ── 입력 격자 ────────────────────────────────────────────────────────────
     // grid 모델(2차원 문자열 배열)을 input 격자로. Enter/↑↓ 이동, 엑셀 붙여넣기 지원. get/set 으로 모델과 연결.
@@ -61,9 +59,10 @@ const MmEditor = (() => {
         label, (() => { const i = h('input', { class: INPUT + ' text-sm', value, ...attrs }); i.addEventListener('input', () => onInput(i.value.trim())); return i; })());
 
     function commonRow(inst) {
+        const group = `phase-${++radioSeq}`;
         return h('div', { class: 'flex flex-wrap items-end gap-4' },
             h('div', { class: 'text-sm' }, '구분: ', ...PHASES.map(([val, text]) => h('label', { class: 'mr-3' },
-                (() => { const r = h('input', { type: 'radio', name: `phase-${inst.formId}-${inst.side}`, checked: inst.phase === val }); r.addEventListener('change', () => { inst.phase = val; }); return r; })(),
+                (() => { const r = h('input', { type: 'radio', name: group, checked: inst.phase === val }); r.addEventListener('change', () => { inst.phase = val; }); return r; })(),
                 ' ' + text))),
             field('계측기기 No.', inst.gaugeNo, v => { inst.gaugeNo = v; }, { cls: 'w-48' }));
     }
@@ -128,9 +127,15 @@ const MmEditor = (() => {
         ];
     }
 
-    function formCard(form, inst, index) {
-        return h('section', { class: 'bg-white rounded-lg shadow p-4 space-y-3', 'data-form': `${inst.formId}:${inst.side}` },
-            h('h3', { class: 'font-bold' }, `${index + 1}. ${form.indexTitle}(${inst.side})`),
+    // nth = 같은 양식 안에서의 몇 번째 장 (0부터)
+    function formCard(form, inst, index, nth) {
+        const label = h('input', {
+            class: INPUT + ' !w-44 !text-left', value: inst.label || '', maxlength: 20, list: 'pdmLabelSuggest',
+            placeholder: '장 구분 (예: PORT, 1호기)', title: '표지 목차와 MAKER/TYPE 에 표시됩니다',
+        });
+        label.addEventListener('input', () => { inst.label = label.value.trim(); });
+        return h('section', { class: 'bg-white rounded-lg shadow p-4 space-y-3', 'data-form': `${inst.formId}:${nth}` },
+            h('div', { class: 'flex items-center gap-3' }, h('h3', { class: 'font-bold' }, `${index + 1}. ${form.indexTitle}`), label),
             commonRow(inst),
             ...(form.layout === 'conrodGrid' ? conrodBody(form, inst) : journalBody(form, inst)));
     }
@@ -146,33 +151,41 @@ const MmEditor = (() => {
         const selectorEl = h('div', { class: 'space-y-1' });
 
         const renderForms = () => {
-            header.forms = sortForms(header.forms, templates);
+            header.forms = MmLogic.sortForms(header.forms, templates);
+            const seen = {};
             formsEl.replaceChildren(...(header.forms.length
-                ? header.forms.map((inst, i) => formCard(byId[inst.formId], inst, i))
-                : [h('p', { class: 'text-sm text-slate-500 text-center py-8' }, '위에서 계측할 항목을 선택하세요.')]));
+                ? header.forms.map((inst, i) => formCard(byId[inst.formId], inst, i, (seen[inst.formId] = (seen[inst.formId] ?? -1) + 1)))
+                : [h('p', { class: 'text-sm text-slate-500 text-center py-8' }, '위에서 계측할 항목의 장 수를 선택하세요.')]));
         };
 
-        async function toggle(form, side, on, checkbox) {
-            const idx = header.forms.findIndex(f => f.formId === form.id && f.side === side);
-            if (on && idx < 0) {
-                const r = await eel.pdm_new_measurement_form(form.id, side)();
-                if (!r.success) { checkbox.checked = false; alert(r.message); return; }
-                header.forms.push(r.form);
-            } else if (!on && idx >= 0) {
-                if (hasData(header.forms[idx]) && await showChoice('항목 제거', `${form.indexTitle}(${side})에 입력한 값이 모두 사라집니다. 제거할까요?`,
-                    [{ label: '제거', value: true, primary: true }, { label: '취소', value: false }]) !== true) { checkbox.checked = true; return; }
-                header.forms.splice(idx, 1);
+        // 양식 하나의 장 수를 바꾼다. 늘릴 때는 서버에서 기본 입력 구조를 받아 오고,
+        // 줄일 때 값이 들어 있는 장이 사라지면 확인한다 (취소하면 선택을 되돌림).
+        async function setCount(form, count, select) {
+            const have = MmLogic.countOf(header.forms, form.id);
+            if (count < have) {
+                const dropped = MmLogic.droppedBy(header.forms, form.id, count);
+                if (dropped.some(hasData) && await showChoice('장 줄이기',
+                    `${form.indexTitle} ${dropped.length}장에 입력한 값이 사라집니다. 줄일까요?`,
+                    [{ label: '줄이기', value: true, primary: true }, { label: '취소', value: false }]) !== true) { select.value = String(have); return; }
             }
+            const fresh = [];
+            for (let i = have; i < count; i++) {
+                const r = await eel.pdm_new_measurement_form(form.id)();
+                if (!r.success) { select.value = String(have); alert(r.message); return; }
+                fresh.push(r.form);
+            }
+            header.forms = MmLogic.withPageCount(header.forms, form.id, count, i => fresh[i - have]);
             renderForms();
         }
 
-        selectorEl.replaceChildren(...templates.map(form => h('div', { class: 'flex items-center gap-4 text-sm' },
-            h('span', { class: 'w-44 font-medium' }, form.label),
-            ...form.sides.map(side => h('label', {}, (() => {
-                const cb = h('input', { type: 'checkbox', checked: header.forms.some(f => f.formId === form.id && f.side === side) });
-                cb.addEventListener('change', () => toggle(form, side, cb.checked, cb));
-                return cb;
-            })(), ' ' + side)))));
+        selectorEl.replaceChildren(...templates.map(form => {
+            const current = MmLogic.countOf(header.forms, form.id);
+            const select = h('select', { class: 'border border-slate-300 rounded px-2 py-1 text-sm bg-white' },
+                ...Array.from({ length: Math.max(MAX_UI_PAGES, current) + 1 }, (_, n) =>
+                    h('option', { value: String(n), selected: n === current }, n === 0 ? '안 함' : `${n}장`)));
+            select.addEventListener('change', () => setCount(form, Number(select.value), select));
+            return h('div', { class: 'flex items-center gap-4 text-sm' }, h('span', { class: 'w-44 font-medium' }, form.label), select);
+        }));
 
         const headerGrid = h('div', { class: 'grid grid-cols-3 gap-3' }, ...HEADER_FIELDS.map(([label, key, type]) =>
             field(label, header[key] || '', v => { header[key] = v; }, type ? { type } : {})));
@@ -180,8 +193,9 @@ const MmEditor = (() => {
         container.replaceChildren(bar.el, h('div', { class: 'max-w-5xl mx-auto space-y-4' },
             h('div', { class: 'bg-white rounded-lg shadow p-4 space-y-3' },
                 h('h2', { class: 'font-bold' }, '계측지 공통 정보 (작업현황에서 자동 입력)'), headerGrid),
-            h('div', { class: 'bg-white rounded-lg shadow p-4 space-y-2' }, h('h2', { class: 'font-bold' }, '계측 항목 선택'), selectorEl),
-            formsEl));
+            h('div', { class: 'bg-white rounded-lg shadow p-4 space-y-2' }, h('h2', { class: 'font-bold' }, '계측 항목 선택 (같은 엔진이 여러 대면 장 수를 늘리세요)'), selectorEl),
+            formsEl,
+            h('datalist', { id: 'pdmLabelSuggest' }, ...LABEL_SUGGESTIONS.map(v => h('option', { value: v })))));
         renderForms();
     }
 

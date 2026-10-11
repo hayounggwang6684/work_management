@@ -1,23 +1,24 @@
 // 서비스레포트 출력 페이지 — 양식(GL2030 PDF)의 치수(mm)를 그대로 옮겼다.
 //   표지(1p): 로고, 프레임, 제목, 헤더 표(9행), Summary of works(18줄), Remark
-//   이어지는 Summary: 프레임 + 목록,   사진 페이지: 로고, 제목 띠, 2열×3행 사진 + 캡션
+//   이어지는 Summary: 프레임 + 목록,   사진 페이지: 로고, 제목 띠(제목이 있을 때만), 사진 + 캡션
+//   사진 페이지 배치는 한 장에 6장(세로 2×3) / 4장(가로 2×2) — print_logic.js 의 PHOTO_GEOMETRY
 // 의존: dom.js(h), sr_fields.js(SR_ROWS), print_logic.js(PrintLogic), print_view.js(PrintView)
 const SrPrint = (() => {
     const LINE_MM = 5.89;                          // 본문 줄 간격 (양식 16.7pt)
     const COL_MM = [38.5, 48.7, 38.9, 48.5];       // 헤더 표 열 폭 (라벨/값/라벨/값)
-    const PHOTO = { w: 70.4, h: 53.2, colX: [24.8, 114.2], rowY: [40.8, 122.7, 204.6], captionDy: 63, captionH: 9.4 };
     const GOTHIC = "'Malgun Gothic', '맑은 고딕', sans-serif";
 
     const abs = (style, ...children) => h('div', { style: 'position:absolute;' + style }, ...children);
 
     const logo = layout => h('img', { src: layout.logo, style: 'position:absolute;left:10mm;top:8mm;width:103.9mm;height:19.3mm' });
 
-    function footer(layout) {
+    // top = 푸터 첫 줄 y (세로 페이지 277.3mm, 가로 페이지는 짧아서 더 위)
+    function footer(layout, top = 277.3) {
         const f = `font-family:${GOTHIC};font-size:11.1pt;line-height:${LINE_MM}mm;`;
         return [
-            abs(`left:10mm;top:277.3mm;${f}`, layout.company, h('br'), layout.address),
-            abs(`left:0;right:0;top:283mm;text-align:center;${f}`, h('span', { 'data-page-no': '' })),
-            abs(`right:10mm;top:277.3mm;text-align:left;${f}`, `TEL ${layout.tel}`, h('br'), `Fax ${layout.fax}`),
+            abs(`left:10mm;top:${top}mm;${f}`, layout.company, h('br'), layout.address),
+            abs(`left:0;right:0;top:${top + 5.7}mm;text-align:center;${f}`, h('span', { 'data-page-no': '' })),
+            abs(`right:10mm;top:${top}mm;text-align:left;${f}`, `TEL ${layout.tel}`, h('br'), `Fax ${layout.fax}`),
         ];
     }
 
@@ -73,38 +74,44 @@ const SrPrint = (() => {
         withFit(lines, 38, PrintLogic.SR_NEXT_PAGE_LINES * LINE_MM, 'Summary of works'),
         ...footer(layout));
 
-    // 직인: 사진 페이지 위에 겹쳐 찍는다 (출력 양식 설정에서 켜기/끄기, 위치/크기 조정)
-    const seal = layout => (layout.seal.enabled
-        ? [h('img', { src: layout.seal.image, style: `position:absolute;left:${layout.seal.x}mm;top:${layout.seal.y}mm;width:${layout.seal.w}mm;height:auto` })]
-        : []);
+    // 직인: 사진 페이지 위에 겹쳐 찍는다 (출력 양식 설정에서 켜기/끄기, 위치/크기 조정).
+    // 위치는 세로 A4 기준 값이므로 가로 페이지에서는 같은 자리(가운데 아래)에 오도록 페이지 크기 차이만큼 옮긴다.
+    const seal = (layout, g) => {
+        if (!layout.seal.enabled) return [];
+        const x = layout.seal.x + (g.page.w - 210) / 2, y = layout.seal.y + (g.page.h - 297);
+        return [h('img', { src: layout.seal.image, style: `position:absolute;left:${x}mm;top:${y}mm;width:${layout.seal.w}mm;height:auto` })];
+    };
 
-    function photoPage(doc, layout, imageOf, { page, slots }) {
-        const title = (doc.header.pageTitles || {})[page] || '';
+    function photoPage(doc, layout, imageOf, { page, slots }, perPage) {
+        const g = PrintLogic.PHOTO_GEOMETRY[perPage];
+        const title = ((doc.header.pageTitles || {})[page] || '').trim();
         const cells = slots.flatMap((photo, i) => {
             if (!photo) return [];
-            const x = PHOTO.colX[i % 2], y = PHOTO.rowY[Math.floor(i / 2)];
+            const { x, y } = PrintLogic.slotPosition(perPage, i);
             return [
-                abs(`left:${x}mm;top:${y}mm;width:${PHOTO.w}mm;height:${PHOTO.h}mm`,
-                    h('img', { src: imageOf(photo.id) || '', style: `width:${PHOTO.w}mm;height:${PHOTO.h}mm;object-fit:${layout.photoFit}` })),
-                abs(`left:${x}mm;top:${y + PHOTO.captionDy}mm;width:${PHOTO.w}mm;height:${PHOTO.captionH}mm;border:.25mm solid #333;` +
-                    `text-align:center;line-height:${PHOTO.captionH - 0.5}mm;overflow:hidden;white-space:nowrap`, photo.caption || ''),
+                abs(`left:${x}mm;top:${y}mm;width:${g.photo.w}mm;height:${g.photo.h}mm`,
+                    h('img', { src: imageOf(photo.id) || '', style: `width:${g.photo.w}mm;height:${g.photo.h}mm;object-fit:${layout.photoFit}` })),
+                abs(`left:${x}mm;top:${y + g.captionDy}mm;width:${g.photo.w}mm;height:${g.captionH}mm;border:.25mm solid #333;` +
+                    `text-align:center;line-height:${g.captionH - 0.5}mm;overflow:hidden;white-space:nowrap`, photo.caption || ''),
             ];
         });
-        return h('section', { class: 'pdm-page' }, logo(layout),
-            abs("left:24.9mm;top:26.6mm;width:159.9mm;height:9.6mm;background:#DAEEF3;border:3px solid #000;text-align:center;" +
-                "line-height:9.1mm;overflow:hidden;white-space:nowrap;font-family:'Dotum','돋움','Malgun Gothic',sans-serif", title),
-            ...cells, ...seal(layout), ...footer(layout));
+        // 제목을 입력하지 않았으면 제목 띠(색 박스)를 아예 그리지 않는다
+        const band = title ? [abs(`left:${g.band.x}mm;top:${g.band.y}mm;width:${g.band.w}mm;height:${g.band.h}mm;background:#DAEEF3;border:3px solid #000;text-align:center;` +
+            "line-height:9.1mm;overflow:hidden;white-space:nowrap;font-family:'Dotum','돋움','Malgun Gothic',sans-serif", title)] : [];
+        return h('section', { class: 'pdm-page' + (g.landscape ? ' pdm-landscape' : '') }, logo(layout),
+            ...band, ...cells, ...seal(layout, g), ...footer(layout, g.footerTop));
     }
 
     async function build({ doc, photos, imageOf, layout }) {
         const [first, ...rest] = PrintLogic.splitSummary(doc.header.summary || []);
+        const perPage = doc.header.photosPerPage === 4 ? 4 : 6;
         return [
             coverPage(doc, layout, first),
             ...rest.map(lines => continuationPage(layout, lines)),
-            ...PrintLogic.photoPages(photos).map(pg => photoPage(doc, layout, imageOf, pg)),
+            ...PrintLogic.photoPages(photos, perPage).map(pg => photoPage(doc, layout, imageOf, pg, perPage)),
         ];
     }
 
     PrintView.register('service_report', build);
-    return { build, PHOTO };
+    return { build };
 })();

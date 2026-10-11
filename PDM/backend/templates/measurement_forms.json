@@ -8,7 +8,6 @@
       "code": "SJ-105(0 / '05.03.25)",
       "layout": "journalGrid",
       "diagram": "crankpin",
-      "sides": ["PORT", "STBD"],
       "spec": [
         {"id": "primary", "label": "CRANK PIN OUT\nDIA", "standard": "89.91", "limit": "0.05"},
         {"id": "clearance", "label": "CRANK &\nBEG' CLERANCE", "standard": "", "limit": ""}
@@ -30,7 +29,6 @@
       "code": "SJ-104 (0/ '05.03.25)",
       "layout": "journalGrid",
       "diagram": "mainjournal",
-      "sides": ["PORT", "STBD"],
       "spec": [
         {"id": "primary", "label": "MAIN JOURNAL\nOUT DIA", "standard": "99.9", "limit": "0.05"},
         {"id": "clearance", "label": "JOURNAL &\nBEG' CLERANCE", "standard": "", "limit": ""}
@@ -52,7 +50,6 @@
       "code": "SJ-108(0/'05.03.25)",
       "layout": "conrodGrid",
       "diagram": "conrod",
-      "sides": ["PORT", "STBD"],
       "positions": ["D1", "D2", "D3", "D4"],
       "subColumns": ["F", "A"],
       "rowCount": 12,

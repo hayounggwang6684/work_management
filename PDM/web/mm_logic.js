@@ -43,18 +43,43 @@ const MmLogic = (() => {
         return out;
     }
 
-    // 표지 INDEX 줄: "1. RECORD OF CRANK PIN BEARING(PORT)"
+    // 표지 INDEX 줄: "1. RECORD OF CRANK PIN BEARING(1호기)" — 장 구분 라벨이 없으면 괄호 생략
     function indexLines(forms, templates) {
         const byId = Object.fromEntries(templates.map(t => [t.id, t]));
-        return forms.map((f, i) => `${i + 1}. ${byId[f.formId].indexTitle}(${f.side})`);
+        return forms.map((f, i) => `${i + 1}. ${byId[f.formId].indexTitle}${f.label ? `(${f.label})` : ''}`);
     }
 
-    const makerTypeFor = (header, side) => [header.makerType, side].filter(Boolean).join(' ');
+    // 양식 정의 순서로 정렬 (같은 양식 안에서는 입력한 순서 유지). 새 배열 반환.
+    function sortForms(forms, templates) {
+        const order = Object.fromEntries(templates.map((t, i) => [t.id, i]));
+        return forms.map((f, i) => [f, i]).sort((a, b) => order[a[0].formId] - order[b[0].formId] || a[1] - b[1]).map(x => x[0]);
+    }
+
+    const countOf = (forms, formId) => forms.filter(f => f.formId === formId).length;
+
+    // 양식 하나의 장 수를 count 로 맞춘 새 배열. 늘리면 같은 양식 뒤에 makeInstance(번째)로 만든 장을 붙이고,
+    // 줄이면 뒤쪽 장부터 뺀다. 이미 있는 장(앞쪽)은 그대로 유지한다.
+    function withPageCount(forms, formId, count, makeInstance) {
+        const have = countOf(forms, formId);
+        if (count <= have) {
+            let seen = 0;
+            return forms.filter(f => f.formId !== formId || ++seen <= count);
+        }
+        const added = Array.from({ length: count - have }, (_, i) => makeInstance(have + i));
+        const lastAt = forms.map(f => f.formId).lastIndexOf(formId);
+        const at = lastAt >= 0 ? lastAt + 1 : forms.length;
+        return [...forms.slice(0, at), ...added, ...forms.slice(at)];
+    }
+
+    // 장 수를 count 로 줄일 때 사라질 장들 (확인 대화상자용)
+    const droppedBy = (forms, formId, count) => forms.filter(f => f.formId === formId).slice(count);
+
+    const makerTypeFor = (header, label) => [header.makerType, label].filter(Boolean).join(' ');
 
     // "Unit : ( 89.91 ) - C/100 mm" (기준값이 비면 직접 쓸 빈칸)
     const formatUnit = (base, op) => `Unit : ( ${base || '        '} ) ${op} C/100 mm`;
 
-    return { parseNum, calcClearance, roleIds, applyPaste, indexLines, makerTypeFor, formatUnit };
+    return { parseNum, calcClearance, roleIds, applyPaste, indexLines, sortForms, countOf, withPageCount, droppedBy, makerTypeFor, formatUnit };
 })();
 
 if (typeof module !== 'undefined') module.exports = MmLogic;

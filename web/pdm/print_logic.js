@@ -24,7 +24,30 @@ const PrintLogic = (() => {
 
     const pageLabel = (n, total) => `${n} / ${total}`;
 
-    return { SR_FIRST_PAGE_LINES, SR_NEXT_PAGE_LINES, PHOTOS_PER_PAGE, splitSummary, photoPages, pageLabel };
+    // 사진 페이지 배치 (mm). 키 = 한 장에 들어가는 사진 수.
+    //   6장: 세로 A4, 2열×3행 (원본 양식 GL2030 치수)
+    //   4장: 가로 A4, 2열×2행 — 사진칸은 편집기 자르기 비율(4:3)과 같다
+    // photo = 사진칸 크기, cols/rows = 칸 왼쪽 위 좌표, captionDy = 사진 위쪽에서 캡션 박스까지 거리, footerTop = 푸터 시작 y
+    const PHOTO_GEOMETRY = {
+        6: {
+            landscape: false, page: { w: 210, h: 297 }, photo: { w: 70.4, h: 53.2 },
+            cols: [24.8, 114.2], rows: [40.8, 122.7, 204.6], captionDy: 63, captionH: 9.4,
+            band: { x: 24.9, y: 26.6, w: 159.9, h: 9.6 }, footerTop: 277.3,
+        },
+        4: {
+            landscape: true, page: { w: 297, h: 210 }, photo: { w: 80, h: 60 },
+            cols: [53.5, 163.5], rows: [40, 114], captionDy: 62, captionH: 9.4,
+            band: { x: 53.5, y: 26.6, w: 190, h: 9.6 }, footerTop: 190.3,
+        },
+    };
+
+    // 칸 번호(페이지 안, 0부터) → 칸 왼쪽 위 좌표(mm). 왼→오, 위→아래.
+    function slotPosition(perPage, index) {
+        const g = PHOTO_GEOMETRY[perPage];
+        return { x: g.cols[index % 2], y: g.rows[Math.floor(index / 2)] };
+    }
+
+    return { SR_FIRST_PAGE_LINES, SR_NEXT_PAGE_LINES, PHOTOS_PER_PAGE, PHOTO_GEOMETRY, splitSummary, photoPages, pageLabel, slotPosition };
 })();
 
 if (typeof module !== 'undefined') module.exports = PrintLogic;

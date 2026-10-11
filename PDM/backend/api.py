@@ -156,9 +156,9 @@ def pdm_measurement_templates() -> Dict[str, Any]:
 
 @eel.expose
 @guarded('guest')
-def pdm_new_measurement_form(form_id: str, side: str) -> Dict[str, Any]:
-    """선택한 양식(예: 크랭크핀 PORT)의 빈 입력 구조. 기본 규격/기준값이 채워져 있다."""
+def pdm_new_measurement_form(form_id: str, label: str = '') -> Dict[str, Any]:
+    """선택한 양식 한 장의 빈 입력 구조. 기본 규격/기준값이 채워져 있고 label 은 장 구분(선택)."""
     try:
-        return {'success': True, 'form': measurement.default_instance(form_id, side)}
+        return {'success': True, 'form': measurement.default_instance(form_id, (label or '')[:measurement.MAX_LABEL_LEN])}
     except ValueError as e:
         return _fail(str(e))

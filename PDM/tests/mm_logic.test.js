@@ -50,11 +50,11 @@ test('applyPaste: 한 칸 값, 끝의 빈 줄/CRLF, 앞뒤 공백', () => {
     assert.deepEqual(L.applyPaste(blank(2, 2), 0, 0, ' 7 \r\n'), [['7', ''], ['', '']]);
 });
 
-test('indexLines: 선택 순서대로 번호를 붙이고 (구분) 표기', () => {
-    const forms = [{ formId: 'crankpin', side: 'PORT' }, { formId: 'conrod', side: 'STBD' }];
+test('indexLines: 양식 순서대로 번호를 붙이고, 장 구분 라벨이 있으면 (라벨) 표기', () => {
+    const forms = [{ formId: 'crankpin', label: '1호기' }, { formId: 'crankpin', label: '2호기' }, { formId: 'conrod', label: '' }];
     const tpl = [{ id: 'crankpin', indexTitle: 'RECORD OF CRANK PIN BEARING' }, { id: 'conrod', indexTitle: 'RECORD OF CON ROD BIG END HOUSING' }];
     assert.deepEqual(L.indexLines(forms, tpl), [
-        '1. RECORD OF CRANK PIN BEARING(PORT)', '2. RECORD OF CON ROD BIG END HOUSING(STBD)']);
+        '1. RECORD OF CRANK PIN BEARING(1호기)', '2. RECORD OF CRANK PIN BEARING(2호기)', '3. RECORD OF CON ROD BIG END HOUSING']);
 });
 
 test('makerTypeFor: 엔진 모델 + 구분', () => {
@@ -79,4 +79,37 @@ test('roleIds: 양식 정의에서 역할별 표 id', () => {
     const form = { tables: [{ id: 'outDia', role: 'outer' }, { id: 'innerDia', role: 'inner' }, { id: 'clearance', role: 'clearance' }] };
     assert.deepEqual(L.roleIds(form), { outer: 'outDia', inner: 'innerDia', clearance: 'clearance' });
     assert.deepEqual(L.roleIds({ tables: [{ id: 't1', role: 'plain' }] }), { outer: undefined, inner: undefined, clearance: undefined });
+});
+
+const TPL = [{ id: 'crankpin' }, { id: 'mainjournal' }, { id: 'conrod' }];
+const inst = (formId, label = '') => ({ formId, label });
+
+test('sortForms: 양식 정의 순서로 정렬하되 같은 양식 안에서는 입력한 순서를 유지 (안정 정렬)', () => {
+    const forms = [inst('conrod', 'A'), inst('crankpin', '2호기'), inst('crankpin', '1호기'), inst('mainjournal')];
+    assert.deepEqual(L.sortForms(forms, TPL).map(f => `${f.formId}:${f.label}`),
+        ['crankpin:2호기', 'crankpin:1호기', 'mainjournal:', 'conrod:A']);
+    assert.equal(forms[0].formId, 'conrod');                 // 원본 불변
+});
+
+test('countOf: 양식별 장 수', () => {
+    assert.equal(L.countOf([inst('crankpin'), inst('crankpin'), inst('conrod')], 'crankpin'), 2);
+    assert.equal(L.countOf([], 'crankpin'), 0);
+});
+
+test('withPageCount: 늘리면 새 장을 뒤에 추가, 줄이면 뒤쪽 장부터 제거, 다른 양식은 그대로', () => {
+    const base = [inst('crankpin', '1호기'), inst('conrod', 'X')];
+    const made = [];
+    const up = L.withPageCount(base, 'crankpin', 3, i => { made.push(i); return inst('crankpin', `new${i}`); });
+    assert.deepEqual(up.map(f => f.label), ['1호기', 'new1', 'new2', 'X']);          // 같은 양식끼리 붙여서 추가
+    assert.deepEqual(made, [1, 2]);                          // 이미 있는 0번째는 새로 만들지 않는다
+    const down = L.withPageCount(up, 'crankpin', 1, () => { throw new Error('no new'); });
+    assert.deepEqual(down.map(f => f.label), ['1호기', 'X']);
+    assert.equal(L.withPageCount(base, 'conrod', 0, () => null).length, 1);
+    assert.equal(base.length, 2);                            // 원본 불변
+});
+
+test('droppedBy: 장 수를 줄일 때 사라질 장 (뒤쪽부터)', () => {
+    const forms = [inst('crankpin', 'a'), inst('crankpin', 'b'), inst('crankpin', 'c')];
+    assert.deepEqual(L.droppedBy(forms, 'crankpin', 1).map(f => f.label), ['b', 'c']);
+    assert.deepEqual(L.droppedBy(forms, 'crankpin', 3), []);
 });

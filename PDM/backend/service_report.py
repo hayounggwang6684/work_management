@@ -47,6 +47,7 @@ MAX_SUMMARY_LINES = 60
 MAX_SUMMARY_LINE_LEN = 200
 MAX_REMARK_LEN = 2000
 MAX_PAGE_TITLES = 100            # 사진 페이지 번호 0 ~ 99
+PHOTOS_PER_PAGE_CHOICES = (6, 4)  # 6장 = 세로 2x3, 4장 = 가로 2x2
 
 
 def _text(value: Any, limit: int) -> str:
@@ -71,10 +72,19 @@ def _page_titles(raw: Any) -> Dict[str, str]:
     return out
 
 
+def _photos_per_page(raw: Any) -> int:
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return PHOTOS_PER_PAGE_CHOICES[0]
+    return value if value in PHOTOS_PER_PAGE_CHOICES else PHOTOS_PER_PAGE_CHOICES[0]
+
+
 def normalize_header(header: Dict[str, Any]) -> Dict[str, Any]:
     """저장 전 검증/정리: 알려진 필드만 남기고 길이/줄 수를 제한한다 (공유 DB 비대화·오염 방지)."""
     out: Dict[str, Any] = {key: _text(header.get(key), MAX_TEXT_LEN) for key in TEXT_KEYS}
     out['summary'] = _summary(header.get('summary'))
     out['remark'] = _text(header.get('remark'), MAX_REMARK_LEN)
     out['pageTitles'] = _page_titles(header.get('pageTitles'))
+    out['photosPerPage'] = _photos_per_page(header.get('photosPerPage'))
     return out
