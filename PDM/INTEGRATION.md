@@ -79,10 +79,9 @@ venv/Scripts/python tests/test_pdm_sync.py                      # web/pdm 일치
 3. 버전 규칙(CLAUDE.md 절대 규칙 8·9): `settings.json`/`settings.example.json`/`build_installer.iss`/`patch.json` 버전 동기화.
 4. `index.html` 의 `?v=` 캐시 파라미터는 릴리스 버전과 맞춘다.
 
-## 7. 결정이 필요한 사항 (미해결)
+## 7. 결정 사항 / 남은 확인
 
-- **pdm.db 공유**: 현재 클라우드 동기화는 `work_management.db` 한 파일만 복사한다. `pdm.db`(문서·사진)는 같은 폴더에 있지만
-  **동기화/자동 백업 대상이 아니다.** 여러 PC 가 같은 폴더(네트워크 경로)를 쓰면 그대로 공유되지만, 복사 동기화
-  (company/external 모드)를 쓰면 `pdm.db` 도 복사하도록 `cloud_sync.py`·`settings_manager.create_backup` 을 확장해야 한다.
-  사진 BLOB 때문에 파일이 커질 수 있어 본체 DB 와 분리한 상태다.
-- **클리어런스 자동 계산 규칙**: `(안지름 기준 + C/100) − (외경 기준 − C/100)` 의 TB/PS 방향별 **큰 값**으로 가정 (`PDM/web/mm_logic.js`).
+- **pdm.db 동기화·백업: 하지 않기로 결정 (2026-10-07).** `pdm.db`(문서·사진)는 클라우드 동기화(`cloud_sync.py`)와 자동 백업
+  (`settings_manager.create_backup`) 대상이 아니다 — 두 기능은 `work_management.db` 한 파일만 다룬다. 각 PC 의 `pdm.db` 는 독립이며,
+  여러 PC 가 같은 폴더(네트워크 경로)를 `database.local_path` 로 쓰는 경우에만 공유된다.
+- **클리어런스 자동 계산 규칙**: `(안지름 기준 + C/100) − (외경 기준 − C/100)` 의 TB/PS 방향별 **큰 값**으로 가정 (`PDM/web/mm_logic.js`). 실제 규칙 확인 필요.
