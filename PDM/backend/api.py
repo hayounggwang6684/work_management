@@ -12,7 +12,7 @@ import eel
 from PDM.backend.guard import guarded
 from PDM.backend import adapters
 from PDM.backend.naming import default_title
-from PDM.backend import measurement, photo_album, photo_api, settings_api, standards, standards_api  # noqa: F401  (photo/settings/standards_api: @eel.expose 등록)
+from PDM.backend import export_api, measurement, photo_album, photo_api, settings_api, standards, standards_api  # noqa: F401  (photo/settings/standards/export_api: @eel.expose 등록)
 from PDM.backend.pdm_db import ConflictError
 from PDM.backend.runtime import fail as _fail, get_db
 from PDM.backend.service_report import build_header, normalize_header as normalize_service_report_header
