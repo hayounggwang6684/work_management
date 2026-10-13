@@ -1,6 +1,16 @@
 """서비스레포트 헤더 구성 (순수 함수 — 작업현황 정보 + 작성자 → 헤더 dict)."""
+import re
 from datetime import date
 from typing import Any, Dict, List
+
+# 작업현황에는 엔진 제조사를 줄여 적는다 (CUM', CAT …). 서비스레포트에는 풀네임으로 — web/print_logic.js 의 ENGINE_FULL_NAMES 와 같아야 한다.
+ENGINE_FULL_NAMES = {'CUM': 'CUMMINS', 'CAT': 'CATERPILLAR', 'MHI': 'MITSUBISHI'}
+_ENGINE_ABBR = re.compile(r"\b(CUM|CAT|MHI)\b['’.]?", re.IGNORECASE)
+
+
+def expand_engine(text: str) -> str:
+    """엔진 문자열의 제조사 약어를 풀네임으로 (예: "CUM' KTA19" → "CUMMINS KTA19"). 이미 풀네임이면 그대로."""
+    return _ENGINE_ABBR.sub(lambda m: ENGINE_FULL_NAMES[m.group(1).upper()], text or '')
 
 
 def _dotted(iso: str) -> str:
@@ -25,7 +35,7 @@ def build_header(info: Dict[str, Any], reported_by: str, today: date) -> Dict[st
         'imoNo': '',
         'engineType': '',
         'serialNo': '',
-        'model': info.get('engineModel', ''),
+        'model': expand_engine(info.get('engineModel', '')),
         'date': today.strftime('%Y.%m.%d'),
         'orderNo': info.get('contractNumber', ''),
         'reportedBy': reported_by,

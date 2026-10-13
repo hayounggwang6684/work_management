@@ -242,3 +242,55 @@ def test_oversized_base64_is_rejected_before_it_is_decoded(monkeypatch):
 def test_decode_b64_requires_a_string():
     with pytest.raises(PhotoError):
         decode_b64(12345)
+
+
+# ── 소제목 구간(섹션) 안에서만 밀고 당기기 / 페이지 끼우기 ────────────────────────
+
+def slots_of(s, doc_id):
+    return [p['slotIndex'] for p in s.list_photos(doc_id)]
+
+
+def test_insert_blank_with_end_slot_only_shifts_inside_the_section(store):
+    s, doc = store
+    for slot in (0, 1, 2, 6, 7):                      # 구간 1 = 슬롯 0~5, 구간 2 = 슬롯 6~
+        s.add_photo(doc, slot, IMG)
+    s.insert_blank(doc, 1, end_slot=6)
+    assert slots_of(s, doc) == [0, 2, 3, 6, 7]       # 구간 1 만 밀리고 구간 2(6, 7)는 그대로
+
+
+def test_insert_blank_refuses_when_the_section_is_full(store):
+    s, doc = store
+    for slot in range(6):
+        s.add_photo(doc, slot, IMG)
+    with pytest.raises(ValueError):
+        s.insert_blank(doc, 2, end_slot=6)
+    assert slots_of(s, doc) == list(range(6))
+
+
+def test_remove_with_pull_stops_at_the_section_end(store):
+    s, doc = store
+    for slot in (0, 1, 2, 6, 7):
+        s.add_photo(doc, slot, IMG)
+    assert s.remove(doc, 0, pull=True, end_slot=6)
+    assert slots_of(s, doc) == [0, 1, 6, 7]
+
+
+def test_insert_page_pushes_later_photos_and_page_titles_by_one_page(store):
+    s, doc = store
+    for slot in (0, 5, 6, 7, 12):
+        s.add_photo(doc, slot, IMG)
+    with s.db.connect() as conn:
+        conn.execute('UPDATE pdm_documents SET header_json=? WHERE id=?', ('{"pageTitles": {"0": "1호기", "1": "2호기", "2": "3호기"}}', doc))
+    titles = s.insert_page(doc, 1, 6)
+    assert slots_of(s, doc) == [0, 5, 12, 13, 18]
+    assert titles == {'0': '1호기', '2': '2호기', '3': '3호기'}
+    assert s.db.get_document(doc)['header']['pageTitles'] == titles
+
+
+def test_insert_page_at_the_end_changes_nothing_and_validates_input(store):
+    s, doc = store
+    s.add_photo(doc, 0, IMG)
+    assert s.insert_page(doc, 3, 6) == {}
+    assert slots_of(s, doc) == [0]
+    with pytest.raises(ValueError):
+        s.insert_page(doc, 1, 5)

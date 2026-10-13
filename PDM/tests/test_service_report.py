@@ -99,3 +99,13 @@ def test_photos_per_page_is_limited_to_the_supported_layouts():
     assert normalize_header(full_header(photosPerPage='4'))['photosPerPage'] == 4  # 문자열로 와도 정수로
     for bad in (5, 0, 99, -1, None, 'abc', [], {}):
         assert normalize_header(full_header(photosPerPage=bad))['photosPerPage'] == 6
+
+
+def test_engine_manufacturer_abbreviations_are_expanded_to_full_names():
+    from PDM.backend.service_report import expand_engine
+    assert expand_engine("CUM' KTA19") == 'CUMMINS KTA19'
+    assert expand_engine('M/E CAT 3512') == 'M/E CATERPILLAR 3512'
+    assert expand_engine('CUMMINS KTA38') == 'CUMMINS KTA38' and expand_engine('') == ''
+    from datetime import date
+    hd = build_header({'engineModel': "CUM' 6BT"}, 'u', date(2026, 1, 1))
+    assert hd['model'] == 'CUMMINS 6BT'

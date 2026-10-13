@@ -66,8 +66,25 @@ const PrintView = (() => {
         });
     }
 
+    // 한 줄 칸([data-shrink])의 글자가 넘치면 칸에 맞게 줄인다: ① 글자 크기를 60% 까지 줄이고, ② 그래도 넘치면 두 줄로 나눠 칸 높이에 들어갈 때까지 더 줄인다.
+    // (칸 크기는 그대로라 양식 배치가 흐트러지지 않는다. 그래도 안 들어가면 아래 경고가 뜬다)
+    const overflowsBox = el => el.scrollWidth > el.clientWidth + 0.5 || el.scrollHeight > el.clientHeight + 0.5;
+    function shrinkToFit(root) {
+        for (const el of root.querySelectorAll('[data-shrink]')) {
+            let size = parseFloat(getComputedStyle(el).fontSize);
+            const original = size;
+            while (el.scrollWidth > el.clientWidth + 0.5 && size > original * 0.6) { size -= 0.5; el.style.fontSize = size + 'px'; }
+            if (el.scrollWidth <= el.clientWidth + 0.5) continue;
+            el.style.whiteSpace = 'normal';                         // 두 줄
+            el.style.lineHeight = (el.clientHeight / 2.1) + 'px';
+            el.style.overflowWrap = 'anywhere';
+            while (overflowsBox(el) && size > original * 0.35) { size -= 0.5; el.style.fontSize = size + 'px'; }
+        }
+    }
+
     const overflowing = pagesEl => [...pagesEl.querySelectorAll('[data-fit]')]
-        .filter(el => el.scrollHeight > el.clientHeight + 1).map(el => el.dataset.fit);
+        .filter(el => el.scrollHeight > el.clientHeight + 1).map(el => el.dataset.fit)
+        .concat([...pagesEl.querySelectorAll('[data-shrink]')].filter(el => el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1).map(() => '글자가 너무 길어 일부가 잘림'));
 
     function printNow(title) {
         const prev = document.title;
@@ -94,6 +111,7 @@ const PrintView = (() => {
         const pages = await build(msg => { status.textContent = msg; });
         pagesEl.replaceChildren(...pages);
         numberPages(pages);
+        shrinkToFit(pagesEl);
         await Promise.all([...pagesEl.querySelectorAll('img')].map(img => img.decode().catch(() => {})));
 
         const warn = overflowing(pagesEl);

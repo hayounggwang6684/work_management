@@ -2,8 +2,9 @@
 
 빈칸은 행이 없는 번호다 (사진이 없는 slot_index). 페이지/행·열 배치는 화면(출력)이 정한다.
 """
+import json
 from contextlib import contextmanager
-from typing import Any, Dict, Iterator, List, Sequence
+from typing import Any, Dict, Iterator, List, Optional, Sequence
 
 from PDM.backend.pdm_db import PdmDb
 from PDM.backend.photo_service import ProcessedImage
@@ -94,24 +95,53 @@ class PhotoStore:
             return bool(conn.execute('UPDATE pdm_photos SET caption=? WHERE id=? AND doc_id=?',
                                      (caption, photo_id, doc_id)).rowcount)
 
-    def remove(self, doc_id: int, slot_index: int, pull: bool) -> bool:
-        """사진 제거. pull=True 면 뒤 사진을 한 칸씩 당기고, False 면 빈칸으로 둔다. 없던 칸이면 False."""
+    # end_slot: 이 번호 앞까지만 당기거나 민다 (None = 문서 끝까지). 소제목 구간(섹션)이 뒤 구간을 밀어내지 않도록 구간 끝을 넘겨 준다.
+    def remove(self, doc_id: int, slot_index: int, pull: bool, end_slot: Optional[int] = None) -> bool:
+        """사진 제거. pull=True 면 뒤 사진(end_slot 앞까지)을 한 칸씩 당기고, False 면 빈칸으로 둔다. 없던 칸이면 False."""
+        limit = MAX_SLOTS if end_slot is None else end_slot
         with self._tx() as conn:
             deleted = conn.execute('DELETE FROM pdm_photos WHERE doc_id=? AND slot_index=?',
                                    (doc_id, slot_index)).rowcount
             if deleted and pull:
                 conn.execute('UPDATE pdm_photos SET slot_index = slot_index - 1 '
-                             'WHERE doc_id=? AND slot_index > ?', (doc_id, slot_index))
+                             'WHERE doc_id=? AND slot_index > ? AND slot_index < ?', (doc_id, slot_index, limit))
             return bool(deleted)
 
-    def insert_blank(self, doc_id: int, slot_index: int) -> None:
-        """slot_index 에 빈칸을 끼우고 그 이후 사진을 한 칸씩 뒤로 민다."""
+    def insert_blank(self, doc_id: int, slot_index: int, end_slot: Optional[int] = None) -> None:
+        """slot_index 에 빈칸을 끼우고 그 이후 사진(end_slot 앞까지)을 한 칸씩 뒤로 민다.
+        end_slot 이 있으면 구간 마지막 칸(end_slot-1)에 사진이 없어야 한다 — 있으면 ValueError (먼저 페이지를 늘려야 함)."""
         self._check_slot(slot_index)
+        limit = MAX_SLOTS if end_slot is None else end_slot
         with self._tx() as conn:
-            last = conn.execute('SELECT MAX(slot_index) FROM pdm_photos WHERE doc_id=?', (doc_id,)).fetchone()[0]
+            last = conn.execute('SELECT MAX(slot_index) FROM pdm_photos WHERE doc_id=? AND slot_index < ?', (doc_id, limit)).fetchone()[0]
             if last is None or last < slot_index:
                 return
+            if end_slot is not None and last + 1 >= end_slot:
+                raise ValueError('이 구간의 마지막 칸까지 차 있어 밀 수 없습니다. 먼저 페이지를 추가하세요.')
             if last + 1 >= MAX_SLOTS:
                 raise ValueError('더 이상 사진칸을 추가할 수 없습니다.')
             conn.execute('UPDATE pdm_photos SET slot_index = slot_index + 1 '
-                         'WHERE doc_id=? AND slot_index >= ?', (doc_id, slot_index))
+                         'WHERE doc_id=? AND slot_index >= ? AND slot_index < ?', (doc_id, slot_index, limit))
+
+    def insert_page(self, doc_id: int, before_page: int, per_page: int) -> Dict[str, str]:
+        """before_page 앞에 빈 페이지를 끼운다: 그 페이지 이후의 사진을 한 페이지(per_page 칸)씩 뒤로 밀고,
+        저장된 페이지 제목(header.pageTitles)도 같이 민다. 앞 구간(소제목 묶음)이 커질 때 뒤 구간을 통째로 밀어내는 데 쓴다.
+        반환: 밀린 뒤의 pageTitles."""
+        if per_page not in (4, 6) or before_page < 0:
+            raise ValueError('페이지 정보가 올바르지 않습니다.')
+        from_slot = before_page * per_page
+        with self._tx() as conn:
+            last = conn.execute('SELECT MAX(slot_index) FROM pdm_photos WHERE doc_id=?', (doc_id,)).fetchone()[0]
+            if last is not None and last >= from_slot:
+                if last + per_page >= MAX_SLOTS:
+                    raise ValueError('더 이상 페이지를 추가할 수 없습니다.')
+                conn.execute('UPDATE pdm_photos SET slot_index = slot_index + ? WHERE doc_id=? AND slot_index >= ?',
+                             (per_page, doc_id, from_slot))
+            row = conn.execute('SELECT header_json FROM pdm_documents WHERE id=?', (doc_id,)).fetchone()
+            if row is None:
+                raise KeyError(doc_id)
+            header = json.loads(row['header_json'])
+            titles = {str(int(k) + 1 if int(k) >= before_page else int(k)): v for k, v in (header.get('pageTitles') or {}).items() if str(k).isdigit()}
+            header['pageTitles'] = titles
+            conn.execute('UPDATE pdm_documents SET header_json=? WHERE id=?', (json.dumps(header, ensure_ascii=False), doc_id))
+            return titles

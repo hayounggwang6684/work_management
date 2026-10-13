@@ -9,6 +9,8 @@ const SrPrint = (() => {
     const GOTHIC = "'Malgun Gothic', '맑은 고딕', sans-serif";
 
     const abs = (style, ...children) => h('div', { style: 'position:absolute;' + style }, ...children);
+    // 한 줄 칸: 글자가 길면 칸에 맞게 자동으로 줄인다 (print_view.js shrinkToFit)
+    const shrink = el => { el.dataset.shrink = ''; return el; };
 
     const logo = layout => h('img', { src: layout.logo, style: 'position:absolute;left:10mm;top:8mm;width:103.9mm;height:19.3mm' });
 
@@ -39,14 +41,14 @@ const SrPrint = (() => {
     }
 
     function headerTable(header) {
-        const cell = (extra, ...c) => h('td', {
+        const cell = (extra, ...c) => shrink(h('td', {
             style: 'height:5.59mm;line-height:5.59mm;padding:0 1mm;border-top:.3mm solid #000;text-align:center;overflow:hidden;white-space:nowrap;' + extra,
-        }, ...c);
+        }, ...c));
         const rows = SR_ROWS.map((row, ri) => {
             const bottom = ri === SR_ROWS.length - 1 ? 'border-bottom:.3mm solid #000;' : '';   // 표 맨 아래 선
             return h('tr', {}, ...row.flatMap(([label, key], ci) => [
                 cell((ci > 0 ? 'border-left:.3mm solid #000;' : '') + bottom, label),
-                Object.assign(cell('border-left:.3mm solid #000;' + bottom, header[key] || ''), row.length === 1 ? { colSpan: 3 } : {}),
+                Object.assign(cell('border-left:.3mm solid #000;' + bottom, key === 'model' ? PrintLogic.expandEngine(header[key]) : (header[key] || '')), row.length === 1 ? { colSpan: 3 } : {}),
             ]));
         });
         return abs('left:17.53mm;top:45.67mm;width:174.6mm',
@@ -55,7 +57,9 @@ const SrPrint = (() => {
                 h('tbody', {}, ...rows)));
     }
 
-    function coverPage(doc, layout, summaryLines) {
+    const remarkLines = hd => String(hd.remark || '').split('\n');
+
+    function coverPage(doc, layout, summaryLines, remarkOnFirst) {
         const hd = doc.header;
         return h('section', { class: 'pdm-page' },
             logo(layout), frame(),
@@ -63,16 +67,23 @@ const SrPrint = (() => {
             headerTable(hd),
             heading('Summary of works', 109.5),
             withFit(summaryLines, 116.3, PrintLogic.SR_FIRST_PAGE_LINES * LINE_MM, 'Summary of works'),
-            heading('Remark', 227.4),
-            withFit((hd.remark || '').split('\n'), 235, 38, 'Remark'),
+            ...(remarkOnFirst ? [heading('Remark', 227.4), withFit(remarkLines(hd), 235, 38, 'Remark')] : []),
             ...footer(layout));
     }
 
-    const continuationPage = (layout, lines) => h('section', { class: 'pdm-page' },
-        logo(layout), frame(),
-        heading('Summary of works (continued)', 30),
-        withFit(lines, 38, PrintLogic.SR_NEXT_PAGE_LINES * LINE_MM, 'Summary of works'),
-        ...footer(layout));
+    const FRAME_BOTTOM = 274;          // 프레임 안쪽 아래 (mm)
+
+    // 이어지는 페이지: Summary(남은 줄) + (마지막이면) 그 아래 Remark. remark: false | 'after'(Summary 바로 아래) | 'top'(Remark 만 있는 페이지)
+    function continuationPage(layout, hd, { lines, remark }) {
+        const summaryBottom = 38 + lines.length * LINE_MM;
+        const remarkTop = remark === 'after' ? summaryBottom + (PrintLogic.REMARK_HEADING_LINES - 1) * LINE_MM : 30;
+        return h('section', { class: 'pdm-page' },
+            logo(layout), frame(),
+            ...(remark === 'top' ? [] : [heading('Summary of works (continued)', 30),
+                withFit(lines, 38, PrintLogic.SR_NEXT_PAGE_LINES * LINE_MM, 'Summary of works')]),
+            ...(remark ? [heading('Remark', remarkTop), withFit(remarkLines(hd), remarkTop + 7.6, FRAME_BOTTOM - (remarkTop + 7.6), 'Remark')] : []),
+            ...footer(layout));
+    }
 
     // 직인: 사진 페이지 위에 겹쳐 찍는다 (출력 양식 설정에서 켜기/끄기, 위치/크기 조정).
     // 위치는 세로 A4 기준 값이므로 가로 페이지에서는 같은 자리(가운데 아래)에 오도록 페이지 크기 차이만큼 옮긴다.
@@ -91,23 +102,23 @@ const SrPrint = (() => {
             return [
                 abs(`left:${x}mm;top:${y}mm;width:${g.photo.w}mm;height:${g.photo.h}mm`,
                     h('img', { src: imageOf(photo.id) || '', style: `width:${g.photo.w}mm;height:${g.photo.h}mm;object-fit:${layout.photoFit}` })),
-                abs(`left:${x}mm;top:${y + g.captionDy}mm;width:${g.photo.w}mm;height:${g.captionH}mm;border:.25mm solid #333;` +
-                    `text-align:center;line-height:${g.captionH - 0.5}mm;overflow:hidden;white-space:nowrap`, photo.caption || ''),
+                shrink(abs(`left:${x}mm;top:${y + g.captionDy}mm;width:${g.photo.w}mm;height:${g.captionH}mm;border:.25mm solid #333;` +
+                    `text-align:center;line-height:${g.captionH - 0.5}mm;overflow:hidden;white-space:nowrap`, photo.caption || '')),
             ];
         });
         // 제목을 입력하지 않았으면 제목 띠(색 박스)를 아예 그리지 않는다
-        const band = title ? [abs(`left:${g.band.x}mm;top:${g.band.y}mm;width:${g.band.w}mm;height:${g.band.h}mm;background:#DAEEF3;border:3px solid #000;text-align:center;` +
-            "line-height:9.1mm;overflow:hidden;white-space:nowrap;font-family:'Dotum','돋움','Malgun Gothic',sans-serif", title)] : [];
+        const band = title ? [shrink(abs(`left:${g.band.x}mm;top:${g.band.y}mm;width:${g.band.w}mm;height:${g.band.h}mm;background:#DAEEF3;border:3px solid #000;text-align:center;` +
+            "line-height:9.1mm;overflow:hidden;white-space:nowrap;font-family:'Dotum','돋움','Malgun Gothic',sans-serif", title))] : [];
         return h('section', { class: 'pdm-page' + (g.landscape ? ' pdm-landscape' : '') }, logo(layout),
             ...band, ...cells, ...seal(layout, g), ...footer(layout, g.footerTop));
     }
 
     async function build({ doc, photos, imageOf, layout }) {
-        const [first, ...rest] = PrintLogic.splitSummary(doc.header.summary || []);
+        const plan = PrintLogic.planServiceReport(doc.header.summary || [], remarkLines(doc.header).filter((line, i, all) => line.trim() || i < all.length - 1));
         const perPage = doc.header.photosPerPage === 4 ? 4 : 6;
         return [
-            coverPage(doc, layout, first),
-            ...rest.map(lines => continuationPage(layout, lines)),
+            coverPage(doc, layout, plan.first, plan.remarkOnFirst),
+            ...plan.rest.map(page => continuationPage(layout, doc.header, page)),
             ...PrintLogic.photoPages(photos, perPage).map(pg => photoPage(doc, layout, imageOf, pg, perPage)),
         ];
     }

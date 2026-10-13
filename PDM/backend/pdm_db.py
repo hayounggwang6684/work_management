@@ -5,6 +5,8 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional
 
+from PDM.backend.service_report import expand_engine
+
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS pdm_documents (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -295,7 +297,8 @@ class PdmDb:
             for doc in conn.execute('SELECT id, header_json FROM pdm_documents WHERE contract_number = ? COLLATE NOCASE', (old['contract_number'],)).fetchall():
                 header = json.loads(doc['header_json'])
                 for key, (before, after) in swaps.items():
-                    if before and header.get(key) == before:
+                    same = (expand_engine(header.get(key) or '') == expand_engine(before)) if key == 'model' else header.get(key) == before   # 서비스레포트 엔진은 제조사 풀네임으로 저장돼 있다
+                    if before and same:
                         header[key] = after
                 conn.execute('UPDATE pdm_documents SET contract_number=?, ship_name=?, header_json=? WHERE id=?',
                              (contract_number, ship_name, json.dumps(header, ensure_ascii=False), doc['id']))

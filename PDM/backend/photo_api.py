@@ -146,10 +146,10 @@ def pdm_set_photo_caption(doc_id: int, photo_id: int, caption: str) -> Dict[str,
 @eel.expose
 @guarded('write')
 @_visible_doc
-def pdm_remove_photo(doc_id: int, slot_index: int, pull: bool) -> Dict[str, Any]:
-    """사진 제거. pull=True: 뒤 사진을 당김 / False: 빈칸 유지."""
+def pdm_remove_photo(doc_id: int, slot_index: int, pull: bool, end_slot: int = None) -> Dict[str, Any]:
+    """사진 제거. pull=True: 뒤 사진(end_slot 앞까지 = 같은 소제목 구간)을 당김 / False: 빈칸 유지."""
     try:
-        if not get_photos().remove(doc_id, slot_index, bool(pull)):
+        if not get_photos().remove(doc_id, slot_index, bool(pull), end_slot):
             return fail('해당 칸에 사진이 없습니다.')
         return {'success': True, 'updatedAt': _touch(doc_id)}
     except Exception as e:
@@ -160,13 +160,28 @@ def pdm_remove_photo(doc_id: int, slot_index: int, pull: bool) -> Dict[str, Any]
 @eel.expose
 @guarded('write')
 @_visible_doc
-def pdm_insert_blank_slot(doc_id: int, slot_index: int) -> Dict[str, Any]:
-    """새 항목: slot_index 에 빈칸을 끼우고 뒤 사진을 한 칸씩 민다."""
+def pdm_insert_blank_slot(doc_id: int, slot_index: int, end_slot: int = None) -> Dict[str, Any]:
+    """새 항목: slot_index 에 빈칸을 끼우고 뒤 사진(end_slot 앞까지 = 같은 소제목 구간)을 한 칸씩 민다."""
     try:
-        get_photos().insert_blank(doc_id, slot_index)
+        get_photos().insert_blank(doc_id, slot_index, end_slot)
         return {'success': True, 'updatedAt': _touch(doc_id)}
     except ValueError as e:
         return fail(str(e))
     except Exception as e:
         logger.exception('pdm_insert_blank_slot')
         return fail('새 항목 중 오류가 발생했습니다.')
+
+
+@eel.expose
+@guarded('write')
+@_visible_doc
+def pdm_insert_photo_page(doc_id: int, before_page: int, per_page: int) -> Dict[str, Any]:
+    """before_page 앞에 빈 페이지를 끼운다 (뒤 사진과 저장된 페이지 제목이 한 페이지씩 밀림) — 앞 소제목 구간이 한 페이지 늘어날 때."""
+    try:
+        titles = get_photos().insert_page(doc_id, int(before_page), int(per_page))
+        return {'success': True, 'pageTitles': titles, 'updatedAt': _touch(doc_id)}
+    except ValueError as e:
+        return fail(str(e))
+    except Exception:
+        logger.exception('pdm_insert_photo_page')
+        return fail('페이지 추가 중 오류가 발생했습니다.')

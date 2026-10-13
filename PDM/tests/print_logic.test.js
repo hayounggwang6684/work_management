@@ -87,16 +87,88 @@ test('photoPages: 4장 기준으로 묶으면 페이지가 더 많아진다', ()
 
 // ── 부품사진첩 표지 INDEX ─────────────────────────────────────────────────────
 
-test('albumIndexLines: 사진이 있는 페이지마다 "번호. 제목 (n매)", 제목이 없으면 작업 사진', () => {
+test('albumIndexLines: 구간(소제목)마다 "번호. 제목 (n매)", 제목이 하나도 없으면 작업 사진 한 줄', () => {
     const pages = L.photoPages([{ id: 1, slotIndex: 0 }, { id: 2, slotIndex: 1 }, { id: 3, slotIndex: 6 }], 6);
-    assert.deepEqual(L.albumIndexLines(pages, { 0: ' NO.1 G/E 쿨러 외 ' }), ['1. NO.1 G/E 쿨러 외 (2매)', '2. 작업 사진 (1매)']);
+    assert.deepEqual(L.albumIndexLines(pages, { 0: ' NO.1 G/E 쿨러 외 ' }), ['1. NO.1 G/E 쿨러 외 (3매)']);       // 둘째 페이지는 제목이 없어 앞 구간에 합산
+    assert.deepEqual(L.albumIndexLines(pages, { 0: 'A', 1: 'B' }), ['1. A (2매)', '2. B (1매)']);
+    assert.deepEqual(L.albumIndexLines(pages, {}), ['1. 작업 사진 (3매)']);
+});
+
+test('albumIndexLines: 제목 없는 이어지는 페이지는 앞 구간에 합산 (구간 = 소제목 하나)', () => {
+    const photos = Array.from({ length: 14 }, (_, i) => ({ id: i, slotIndex: i < 8 ? i : 12 + (i - 8) }));   // 구간1: 페이지 0~1(8장), 구간2: 페이지 2
+    const pages = L.photoPages(photos, 6);
+    assert.deepEqual(L.albumIndexLines(pages, { 0: '1호기', 2: '2호기' }), ['1. 1호기 (8매)', '2. 2호기 (6매)']);
 });
 
 test('albumIndexLines: 최대 줄 수를 넘으면 마지막 줄을 "… 외 N건"으로', () => {
     const pages = L.photoPages(Array.from({ length: 8 }, (_, i) => ({ id: i, slotIndex: i * 6 })), 6);
-    const lines = L.albumIndexLines(pages, {}, 6);
+    const titles = Object.fromEntries(Array.from({ length: 8 }, (_, i) => [i, `항목${i + 1}`]));
+    const lines = L.albumIndexLines(pages, titles, 6);
     assert.equal(lines.length, 6);
-    assert.equal(lines[4], '5. 작업 사진 (1매)');
+    assert.equal(lines[4], '5. 항목5 (1매)');
     assert.equal(lines[5], '… 외 3건');
     assert.deepEqual(L.albumIndexLines([], {}), []);
+});
+
+// ── 소제목 구간(섹션) ─────────────────────────────────────────────────────────
+
+test('sectionOf: 제목 있는 페이지가 구간 시작, 제목 없는 페이지는 앞 구간에 속함', () => {
+    const titles = { 0: '1호기', 2: '2호기', 5: '3호기' };
+    assert.deepEqual(L.sectionOf(titles, 0), { startPage: 0, endPage: 2 });
+    assert.deepEqual(L.sectionOf(titles, 1), { startPage: 0, endPage: 2 });
+    assert.deepEqual(L.sectionOf(titles, 2), { startPage: 2, endPage: 5 });
+    assert.deepEqual(L.sectionOf(titles, 4), { startPage: 2, endPage: 5 });
+    assert.deepEqual(L.sectionOf(titles, 5), { startPage: 5, endPage: null });     // 마지막 구간은 끝까지
+    assert.deepEqual(L.sectionOf(titles, 9), { startPage: 5, endPage: null });
+});
+
+test('sectionOf: 제목이 하나도 없으면 문서 전체가 한 구간, 공백뿐인 제목은 없는 것으로', () => {
+    assert.deepEqual(L.sectionOf({}, 3), { startPage: 0, endPage: null });
+    assert.deepEqual(L.sectionOf({ 1: '   ' }, 2), { startPage: 0, endPage: null });
+    assert.deepEqual(L.sectionOf({ 0: 'A', 3: 'B' }, 1), { startPage: 0, endPage: 3 });
+});
+
+test('shiftTitles: 지정 페이지 이상의 제목만 한 페이지씩 뒤로, 원본은 그대로', () => {
+    const titles = { 0: '1호기', 2: '2호기', 3: '3호기' };
+    assert.deepEqual(L.shiftTitles(titles, 1), { 0: '1호기', 3: '2호기', 4: '3호기' });
+    assert.deepEqual(L.shiftTitles(titles, 0), { 1: '1호기', 3: '2호기', 4: '3호기' });
+    assert.deepEqual(titles, { 0: '1호기', 2: '2호기', 3: '3호기' });
+});
+
+test('expandEngine: 제조사 약어를 풀네임으로 (CUM\' CUM. CAT), 이미 풀네임/다른 글자는 그대로', () => {
+    assert.equal(L.expandEngine("CUM' KTA19"), 'CUMMINS KTA19');
+    assert.equal(L.expandEngine('M/E CUM. KTA38'), 'M/E CUMMINS KTA38');
+    assert.equal(L.expandEngine('cat 3512'), 'CATERPILLAR 3512');
+    assert.equal(L.expandEngine('CUMMINS KTA38'), 'CUMMINS KTA38');
+    assert.equal(L.expandEngine('CUMBERLAND X'), 'CUMBERLAND X');
+    assert.equal(L.expandEngine(null), '');
+});
+
+// ── Summary / Remark 배치 ─────────────────────────────────────────────────────
+
+const sum = n => Array.from({ length: n }, (_, i) => `line ${i + 1}`);
+
+test('planServiceReport: Summary 가 첫 페이지에 들어가면 Remark 도 첫 페이지 정해진 자리', () => {
+    const p = L.planServiceReport(sum(18), ['r']);
+    assert.equal(p.remarkOnFirst, true);
+    assert.deepEqual(p.rest, []);
+    assert.equal(p.first.length, 18);
+});
+
+test('planServiceReport: Summary 가 넘치면 Remark 는 첫 페이지에서 빠지고 마지막 Summary 줄 아래로', () => {
+    const p = L.planServiceReport(sum(30), ['r1', 'r2']);
+    assert.equal(p.remarkOnFirst, false);
+    assert.equal(p.first.length, 18);
+    assert.deepEqual(p.rest.map(r => [r.lines.length, r.remark]), [[12, 'after']]);
+});
+
+test('planServiceReport: 마지막 페이지에 Remark 가 들어갈 줄이 없으면 Remark 만 있는 새 페이지', () => {
+    assert.deepEqual(L.planServiceReport(sum(18 + 37), ['r']).rest.map(r => [r.lines.length, r.remark]), [[37, false], [0, 'top']]);
+    // 38줄 가득이면 제목 2줄 + 1줄이 모자라고, 35줄이면 딱 들어간다
+    assert.deepEqual(L.planServiceReport(sum(18 + 35), ['r']).rest.map(r => [r.lines.length, r.remark]), [[35, 'after']]);
+    assert.deepEqual(L.planServiceReport(sum(19), Array(40).fill('x')).rest.map(r => [r.lines.length, r.remark]), [[1, false], [0, 'top']]);
+});
+
+test('planServiceReport: Remark 가 비어 있어도 Remark 제목 자리는 Summary 뒤에 둔다 (최소 1줄)', () => {
+    assert.deepEqual(L.planServiceReport(sum(40), []).rest.map(r => r.remark), ['after']);
 });
