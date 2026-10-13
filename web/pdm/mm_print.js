@@ -25,6 +25,27 @@ const MmPrint = (() => {
             tables: [{ top: 116.3, hdr: 9.3, row: 6.8 }, { top: 172.2, hdr: 9.4, row: 6.8 }, { top: 221.7, hdr: 9.3, row: 6.8 }],
             labelCols: [11.0, 16.8], x0: 15.8, dataX0: 43.6, dataX1: 188.1,
         },
+        // 신양식 엑셀(SJ-102/103/106) 기준: 가로는 열 폭 4.63mm, 세로는 엑셀 행 높이(mm) 그대로. 헤더 표 행은 7.13mm.
+        linerpiston: {
+            frame: [10.2, 32.5, 200.4, 275.9], titleTop: 21.2, hdrRowH: 7.13, gaugeY: 55.2, unitTextY: 61.5, remarksY: 261.5, footerY: 279.1,
+            spec: { top: 68.5, x: [128.3, 146.8, 170.0, 193.1], rows: [9.2, 9.3, 9.3], labelPt: 8.2 },
+            tables: [{ top: 110.5, hdr: 10.1, row: 9.0 }, { top: 191.4, hdr: 10.1, row: 9.0 }],
+            labelCols: [9.3, 9.3], x0: 12.6, titleX: 12.1, dataX0: 31.2, dataX1: 197.9,
+        },
+        // 피스톤 핀: 엑셀은 표 두 개가 페이지를 넘기므로 행 높이를 8.2mm 로 줄였다 (빈 윗부분도 당김)
+        pistonpin: {
+            frame: [10.2, 32.5, 200.4, 266.0], titleTop: 21.2, hdrRowH: 7.13, gaugeY: 55.2, unitTextY: null, remarksY: 247.0, footerY: 279.1,
+            spec: { top: 0, x: [0, 0, 0, 0], rows: [] },
+            tables: [{ top: 78.0, hdr: 10.1, row: 8.2 }, { top: 164.0, hdr: 10.1, row: 8.2 }],
+            labelCols: [9.3, 9.3], x0: 12.6, titleX: 12.1, dataX0: 31.2, dataX1: 197.9,
+        },
+        camshaft: {
+            frame: [10.2, 32.5, 200.4, 274.4], titleTop: 21.2, hdrRowH: 7.13, gaugeY: 55.2, unitTextY: 55.0, remarksY: 255.3, footerY: 279.1,
+            spec: { top: 63.7, x: [142.2, 160.7, 188.5], rows: [6.9, 6.6] },
+            diagram: { x: 18, y: 80, w: 118 },
+            tables: [{ top: 118.7, hdr: 10.1, row: 6.1 }, { top: 167.4, hdr: 10.1, row: 6.1 }, { top: 216.1, hdr: 10.1, row: 6.1 }],
+            labelCols: [9.3, 13.9], x0: 17.2, dataX0: 40.4, dataX1: 193.2,
+        },
         conrodGrid: {
             frame: [11.4, 35.7, 199.0, 273.0], titleTop: 21.6, gaugeY: 60.4, unitTextY: 0, footerY: 280.4,
             diagram: { x: 15, y: 66, w: 170 },
@@ -63,7 +84,7 @@ const MmPrint = (() => {
     // ── 공통: 제목, 헤더 표, 계측기기, 푸터 ─────────────────────────────────
     function pageHeader(geo, form, header, inst) {
         const [x0, y0, x1, y1] = geo.frame;
-        const W = x1 - x0, rowH = 8.05;
+        const W = x1 - x0, rowH = geo.hdrRowH || 8.05;
         const fr = v => +(v / 190.2 * W).toFixed(2);                    // 크랭크핀 기준 열 위치를 프레임 폭에 비례
         const cut = [46.3, 82.7, 115.5, 150.8, 169.5, 178.7, 192.4].map(v => v - 10.2);
         const seg = (a, b) => fr(b - a);
@@ -98,18 +119,26 @@ const MmPrint = (() => {
         abs(`right:19.4mm;top:${geo.footerY}mm;font-size:10.8pt;font-family:${GOTHIC}`, 'SUNJIN JONGHAP CO., LTD.'),
     ];
 
-    const diagram = (geo, form) => h('img', {
-        src: form.diagramImage || PDM_MM_ASSETS['diagram_' + form.diagram] || '',    // 사용자 정의 양식은 올린 도면, 내장 양식은 추출한 도면
-        style: `position:absolute;left:${geo.diagram.x}mm;top:${geo.diagram.y}mm;width:${geo.diagram.w}mm`,
-    });
+    // 도면 없는 양식(피스톤 핀 등)은 아무것도 그리지 않는다
+    function diagram(geo, form) {
+        const src = form.diagramImage || PDM_MM_ASSETS['diagram_' + form.diagram];     // 사용자 정의 양식은 올린 도면, 내장 양식은 추출한 도면
+        return src && geo.diagram ? h('img', { src, style: `position:absolute;left:${geo.diagram.x}mm;top:${geo.diagram.y}mm;width:${geo.diagram.w}mm` }) : '';
+    }
 
     // ── journalGrid 페이지 ────────────────────────────────────────────────────
     function specTable(geo, form, inst) {
         const s = geo.spec, cols = s.x.slice(1).map((v, i) => v - s.x[i]);
+        if (!form.spec.length) return '';
+        if (form.specStyle === 'stacked') {            // 캠샤프트: STANDARD / LIMIT 두 줄 (항목 이름 칸 없음)
+            const sp = form.spec[0], v = inst.spec[sp.id];
+            return gridBox(s.x[0], s.top, cols, s.rows, [
+                { r: 0, c: 0, content: 'STANDARD' }, { r: 0, c: 1, content: v.standard, style: 'font-size:10.8pt' },
+                { r: 1, c: 0, content: 'LIMIT' }, { r: 1, c: 1, content: v.limit, style: 'font-size:10.8pt' }]);
+        }
         const cells = [
             { r: 0, c: 0, content: 'ITEM' }, { r: 0, c: 1, content: 'STANDARD' }, { r: 0, c: 2, content: 'LIMIT' },
             ...form.spec.flatMap((sp, i) => [
-                { r: i + 1, c: 0, content: sp.label, style: 'font-size:5.9pt;white-space:pre;line-height:1.15' },
+                { r: i + 1, c: 0, content: sp.label, style: `font-size:${s.labelPt || 5.9}pt;white-space:pre;line-height:1.15` },
                 { r: i + 1, c: 1, content: inst.spec[sp.id].standard, style: 'font-size:10.8pt' },
                 { r: i + 1, c: 2, content: inst.spec[sp.id].limit, style: 'font-size:10.8pt' }]),
         ];
@@ -126,7 +155,8 @@ const MmPrint = (() => {
                        ...Array.from({ length: table.cols }, (_, i) => ({ r: 0, c: lc + i, content: String(i + 1) }))];
         table.rows.forEach((labels, ri) => {
             if (lc === 2) {
-                if (labels[1] === 'TB') cells.push({ r: ri + 1, c: 0, rs: 2, content: labels[0] });
+                if (table.split) cells.push({ r: ri + 1, c: 0, content: labels[0] });              // 위/아래 칸이 따로 (예: T / (  ))
+                else if (labels[1] === 'TB') cells.push({ r: ri + 1, c: 0, rs: 2, content: labels[0] });
                 cells.push({ r: ri + 1, c: 1, content: labels[1] });
             } else cells.push({ r: ri + 1, c: 0, content: labels[0] });
             data[ri].forEach((v, ci) => cells.push({ r: ri + 1, c: lc + ci, content: v }));
@@ -134,7 +164,7 @@ const MmPrint = (() => {
         const x = geo.x0;
         const unit = table.unit ? MmLogic.formatUnit(inst.unitBase[table.id], table.unit.op) : '';
         return [
-            abs(`left:16.7mm;top:${t.top - 4.3}mm;font-size:9.9pt;font-family:${GOTHIC};white-space:nowrap`, '■ ' + table.title),
+            abs(`left:${geo.titleX ?? 16.7}mm;top:${t.top - 4.3}mm;font-size:9.9pt;font-family:${GOTHIC};white-space:nowrap`, '■ ' + table.title),
             ...(unit ? [abs(`right:${210 - geo.dataX1}mm;top:${t.top - 6}mm;font-size:9.8pt;font-family:${GOTHIC};white-space:pre`, unit)] : []),
             gridBox(x, t.top, cols, rows, cells),
         ];
@@ -144,10 +174,10 @@ const MmPrint = (() => {
         const geo = GEO[form.id] || GEO.journalGrid;
         return h('section', { class: 'pdm-page', style: `font-family:${GOTHIC}` },
             ...pageHeader(geo, form, header, inst),
-            abs(`right:15.6mm;top:${geo.unitTextY}mm;font-size:10.8pt;font-family:${GOTHIC}`, 'UNIT : mm'),
+            ...(geo.unitTextY == null ? [] : [abs(`right:15.6mm;top:${geo.unitTextY}mm;font-size:10.8pt;font-family:${GOTHIC}`, 'UNIT : mm')]),
             diagram(geo, form), specTable(geo, form, inst),
             ...form.tables.flatMap((tb, i) => dataTable(geo, form, tb, geo.tables[i], inst)),
-            abs(`left:16.7mm;top:${geo.remarksY}mm;width:170mm;font-size:9.9pt;font-family:${GOTHIC}`,
+            abs(`left:${geo.titleX ?? 16.7}mm;top:${geo.remarksY}mm;width:170mm;font-size:9.9pt;font-family:${GOTHIC}`,
                 h('div', {}, '■ Remarks :'),
                 (() => { const r = h('div', { style: 'white-space:pre-wrap;line-height:4.6mm;max-height:13mm;overflow:hidden;padding-left:2mm' }, inst.remarks || ''); r.dataset.fit = `Remarks(${form.indexTitle})`; return r; })()),
             ...pageFooter(geo, form));

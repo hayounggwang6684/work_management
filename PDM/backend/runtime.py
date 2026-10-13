@@ -4,9 +4,11 @@ from typing import Any, Dict
 from PDM.backend import adapters, measurement
 from PDM.backend.pdm_db import PdmDb
 from PDM.backend.photo_store import PhotoStore
+from PDM.backend.standards import StandardsStore
 
 _db: PdmDb = None
 _photos: PhotoStore = None
+_standards: StandardsStore = None
 
 
 def get_db() -> PdmDb:
@@ -22,6 +24,13 @@ def get_photos() -> PhotoStore:
     if _photos is None:
         _photos = PhotoStore(get_db())
     return _photos
+
+
+def get_standards() -> StandardsStore:
+    global _standards
+    if _standards is None:
+        _standards = StandardsStore(get_db())
+    return _standards
 
 
 def fail(message: str, **extra: Any) -> Dict[str, Any]:

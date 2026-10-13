@@ -13,10 +13,27 @@ INFO = {'contractNumber': 'SH-2026-179-T', 'company': '선진엔텍', 'shipName'
         'engineModel': 'M/E FUSSO 91A', 'location': '부산', 'startDate': '2026-09-10', 'endDate': '2026-09-16'}
 
 
-def test_templates_define_the_three_forms_without_fixed_sides():
+def test_templates_define_the_forms_without_fixed_sides():
     forms = M.load_templates()
-    assert [f['id'] for f in forms] == ['crankpin', 'mainjournal', 'conrod']
+    assert [f['id'] for f in forms] == ['crankpin', 'mainjournal', 'conrod', 'linerpiston', 'pistonpin', 'camshaft']
     assert all('sides' not in f for f in forms)           # PORT/STBD 고정 구분은 없다 — 장 수와 라벨을 사용자가 정한다
+
+
+def test_new_forms_have_the_shape_of_the_new_excel_forms():
+    liner, pin, cam = (M.default_instance(i) for i in ('linerpiston', 'pistonpin', 'camshaft'))
+    assert set(liner['spec']) == {'liner', 'piston'} and [len(liner['tables'][t]) for t in ('linerDia', 'pistonDia')] == [6, 6]
+    assert all(len(r) == 12 for rows in liner['tables'].values() for r in rows)
+    assert pin['spec'] == {} and [len(pin['tables'][t]) for t in ('pinDia', 'bossBush')] == [8, 8]
+    assert [len(cam['tables'][t]) for t in ('innerDia', 'outDia', 'clearance')] == [4, 4, 4]
+    assert all(len(r) == 11 for rows in cam['tables'].values() for r in rows)
+    assert pin['unitBase'] == {'pinDia': '', 'bossBush': ''}
+
+
+def test_new_forms_survive_normalization_and_resize_to_the_definition():
+    header = {'forms': [{**M.default_instance(i), 'tables': {}} for i in ('linerpiston', 'pistonpin', 'camshaft')]}
+    forms = M.normalize_header(header)['forms']
+    assert [len(f['tables']) for f in forms] == [2, 2, 3]
+    assert all(len(r) == 12 for r in forms[0]['tables']['linerDia'])
 
 
 def test_default_journal_instance_matches_template_dimensions():

@@ -1,0 +1,1347 @@
+{
+ "source": "계측 STANDARD.xlsx",
+ "rows": [
+  {
+   "maker": "DOOSAN",
+   "model": "180",
+   "data": {
+    "crankpin_std": "89.99",
+    "crankpin_limit": "0.05",
+    "main_std": "103.99",
+    "main_limit": "0.05",
+    "liner_std": "128.01",
+    "liner_limit": "0.1"
+   }
+  },
+  {
+   "maker": "DOOSAN",
+   "model": "222",
+   "data": {
+    "crankpin_std": "89.99",
+    "crankpin_limit": "0.05",
+    "main_std": "103.99",
+    "main_limit": "0.05",
+    "block_bore": "111",
+    "liner_std": "128.01",
+    "liner_limit": "0.1",
+    "conrod_std": "94.5",
+    "conrod_limit": "±0.1",
+    "conrod_torque": "10kg 90eh"
+   }
+  },
+  {
+   "maker": "DAEWOO",
+   "model": "0846",
+   "data": {
+    "crankpin_std": "70.99",
+    "crankpin_limit": "0.05",
+    "crankpin_n": "6",
+    "main_std": "83.99",
+    "main_limit": "0.05",
+    "main_n": "7",
+    "conrod_std": "70.97",
+    "conrod_limit": "±0.08",
+    "conrod_n": "6"
+   }
+  },
+  {
+   "maker": "BENZ",
+   "model": "12V 183",
+   "data": {
+    "crankpin_std": "90",
+    "crankpin_limit": "0.05",
+    "main_std": "103.98",
+    "main_limit": "0.05",
+    "block_bore": "111",
+    "liner_std": "128.01",
+    "liner_limit": "0.15",
+    "piston_std": "128",
+    "piston_limit": "0.233~0.271(사이 간극)",
+    "conrod_std": "95",
+    "conrod_limit": "±0.1",
+    "pin": "46",
+    "bush": "46.01",
+    "cam_std": "70.03",
+    "cam_limit": "69.94"
+   }
+  },
+  {
+   "maker": "EMD",
+   "model": "12V-645",
+   "data": {
+    "crankpin_std": "165.1",
+    "crankpin_limit": "0.09",
+    "crankpin_n": "6",
+    "main_std": "190.5",
+    "main_limit": "0.09",
+    "block_bore": "190.74",
+    "main_torque": "650",
+    "liner_std": "230",
+    "conrod_std": "195.4",
+    "conrod_limit": "0.6"
+   }
+  },
+  {
+   "maker": "DOOSAN",
+   "model": "158TI",
+   "data": {
+    "crankpin_std": "90",
+    "crankpin_limit": "-0.05",
+    "crankpin_n": "8",
+    "main_std": "104",
+    "main_limit": "0.05",
+    "main_n": "5",
+    "block_bore": "111",
+    "block_n": "5",
+    "liner_std": "128.01",
+    "liner_limit": "0.15",
+    "piston_std": "127.75",
+    "conrod_std": "89.98",
+    "conrod_limit": "±0.1",
+    "conrod_n": "8",
+    "ring1_std": "0.3",
+    "ring1_limit": "0.35~0.55",
+    "ring2_std": "1.5",
+    "ring2_limit": "0.050~0.082",
+    "ring3_std": "1.5",
+    "ring3_limit": "0.030~0.062"
+   }
+  },
+  {
+   "maker": "DAEWOO",
+   "model": "2156",
+   "data": {
+    "crankpin_std": "82.98",
+    "crankpin_limit": "0.05",
+    "crankpin_n": "6",
+    "main_std": "95.98",
+    "main_limit": "0.05",
+    "main_n": "7",
+    "conrod_original": "82.98",
+    "conrod_limit": "±0.1",
+    "conrod_n": "6"
+   }
+  },
+  {
+   "maker": "CATERPILLAR",
+   "model": "3304",
+   "data": {
+    "crankpin_std": "76.18",
+    "crankpin_limit": "0.05",
+    "main_std": "88.88",
+    "main_limit": "0.05",
+    "block_bore": "96.93",
+    "conrod_original": "82.55",
+    "conrod_limit": "±0.1",
+    "conrod_n": "4"
+   }
+  },
+  {
+   "maker": "CATERPILLAR",
+   "model": "3306",
+   "data": {
+    "crankpin_std": "76.18",
+    "crankpin_limit": "0.05",
+    "crankpin_n": "6",
+    "main_std": "88.88",
+    "main_limit": "0.05",
+    "main_n": "7",
+    "block_bore": "96.93",
+    "block_n": "7",
+    "main_torque": "180lb",
+    "liner_std": "120.68",
+    "liner_limit": "0.08",
+    "conrod_original": "82.55",
+    "conrod_limit": "±0.1",
+    "conrod_n": "6"
+   }
+  },
+  {
+   "maker": "CATERPILLAR",
+   "model": "3406",
+   "data": {
+    "crankpin_std": "97.03",
+    "crankpin_limit": "0.05",
+    "crankpin_n": "6",
+    "main_std": "120.65",
+    "main_limit": "0.05",
+    "main_n": "7",
+    "block_bore": "129.89",
+    "block_n": "7",
+    "liner_std": "137.19",
+    "liner_limit": "0.08",
+    "piston_n": "6",
+    "conrod_original": "103.5",
+    "conrod_limit": "±0.1",
+    "conrod_n": "6",
+    "conrod_torque": "60lB  120"
+   }
+  },
+  {
+   "maker": "CATERPILLAR",
+   "model": "신형 3406",
+   "data": {
+    "crankpin_std": "90",
+    "crankpin_limit": "0.05",
+    "crankpin_n": "6",
+    "main_std": "120.65",
+    "main_limit": "0.05",
+    "main_n": "7",
+    "block_bore": "129.89",
+    "block_n": "7",
+    "liner_std": "137.19",
+    "liner_limit": "0.08",
+    "conrod_original": "96.2",
+    "conrod_limit": "±0.1",
+    "conrod_n": "6",
+    "conrod_torque": "180lb"
+   }
+  },
+  {
+   "maker": "CATERPILLAR",
+   "model": "3408",
+   "data": {
+    "crankpin_std": "97.028",
+    "crankpin_limit": "0.05",
+    "crankpin_n": "8",
+    "main_std": "120.65",
+    "main_limit": "0.05",
+    "main_n": "5",
+    "block_bore": "129.89",
+    "block_n": "5",
+    "liner_std": "137.19",
+    "liner_limit": "0.08",
+    "piston_n": "8",
+    "conrod_original": "103.5",
+    "conrod_limit": "±0.1",
+    "conrod_n": "8",
+    "pin": "50.79"
+   }
+  },
+  {
+   "maker": "CATERPILLAR",
+   "model": "3412",
+   "data": {
+    "crankpin_std": "97.028",
+    "crankpin_limit": "0.05",
+    "crankpin_n": "6",
+    "main_std": "120.65",
+    "main_limit": "0.05",
+    "main_n": "7",
+    "block_bore": "129.89",
+    "block_n": "7",
+    "main_torque": "550lb",
+    "liner_std": "137.19",
+    "liner_limit": "0.08",
+    "conrod_original": "103.5",
+    "conrod_limit": "±0.1",
+    "conrod_n": "12",
+    "conrod_torque": "180lb",
+    "pin": "50.79",
+    "cam_std": "69.98",
+    "cam_limit": "0.06",
+    "cam_n": "7"
+   }
+  },
+  {
+   "maker": "CATERPILLAR",
+   "model": "3412E",
+   "data": {
+    "crankpin_std": "97.028",
+    "crankpin_limit": "0.05",
+    "crankpin_n": "6",
+    "main_std": "120.65",
+    "main_limit": "0.05",
+    "main_n": "7",
+    "block_bore": "129.08",
+    "block_n": "7"
+   }
+  },
+  {
+   "maker": "CATERPILLAR",
+   "model": "3508",
+   "data": {
+    "crankpin_std": "135",
+    "crankpin_limit": "0.025",
+    "crankpin_n": "4",
+    "main_std": "160",
+    "main_limit": "0.025",
+    "main_n": "5",
+    "block_bore": "169.74",
+    "block_n": "5",
+    "conrod_std": "143.03",
+    "conrod_limit": "±0.1",
+    "conrod_n": "8",
+    "conrod_torque": "65lb+90˚"
+   }
+  },
+  {
+   "maker": "CATERPILLAR",
+   "model": "3512",
+   "data": {
+    "crankpin_std": "135",
+    "crankpin_limit": "0.05",
+    "crankpin_n": "6",
+    "main_std": "160",
+    "main_limit": "0.05",
+    "main_n": "7",
+    "block_bore": "169.74",
+    "conrod_std": "143.03",
+    "conrod_limit": "±0.1",
+    "conrod_n": "12",
+    "conrod_torque": "65lb+90˚"
+   }
+  },
+  {
+   "maker": "CATERPILLAR",
+   "model": "3516",
+   "data": {
+    "crankpin_std": "135",
+    "crankpin_limit": "0.05",
+    "crankpin_n": "8",
+    "main_std": "160",
+    "main_limit": "0.05",
+    "block_bore": "169.74",
+    "liner_std": "170.03",
+    "liner_limit": "0.1",
+    "piston_std": "16",
+    "conrod_std": "143.03",
+    "conrod_limit": "±0.1",
+    "conrod_n": "16",
+    "conrod_torque": "65lb+90˚",
+    "pin": "69.96",
+    "bush": "70"
+   }
+  },
+  {
+   "maker": "CATERPILLAR",
+   "model": "3608",
+   "data": {
+    "crankpin_std": "216",
+    "crankpin_limit": "0.05",
+    "crankpin_n": "8",
+    "conrod_original": "225",
+    "conrod_limit": "±0.1",
+    "conrod_n": "8",
+    "pin": "120",
+    "bush": "120.11"
+   }
+  },
+  {
+   "maker": "CATERPILLAR",
+   "model": "3616",
+   "data": {
+    "crankpin_std": "216",
+    "crankpin_limit": "0.05",
+    "crankpin_n": "8",
+    "liner_std": "280",
+    "piston_std": "280",
+    "piston_n": "16",
+    "conrod_original": "225",
+    "conrod_limit": "±0.1",
+    "conrod_n": "16",
+    "pin": "120",
+    "bush": "120.11"
+   }
+  },
+  {
+   "maker": "DAEWOO",
+   "model": "6BB1",
+   "data": {
+    "crankpin_std": "63.94",
+    "crankpin_limit": "0.05",
+    "crankpin_n": "6",
+    "main_std": "79.92",
+    "main_limit": "0.05",
+    "main_n": "7",
+    "block_bore": "80",
+    "block_n": "7",
+    "conrod_original": "64",
+    "conrod_limit": "±0.1",
+    "conrod_n": "6"
+   }
+  },
+  {
+   "maker": "CUMMINS",
+   "model": "6BT",
+   "data": {
+    "crankpin_std": "69.01",
+    "crankpin_limit": "0.05",
+    "crankpin_n": "6",
+    "main_std": "83.01",
+    "main_limit": "0.05",
+    "main_n": "7",
+    "block_bore": "83.1",
+    "block_n": "7",
+    "liner_std": "102.12",
+    "liner_limit": "0.08",
+    "conrod_original": "69.694",
+    "conrod_limit": "±0.1",
+    "conrod_n": "6"
+   }
+  },
+  {
+   "maker": "CUMMINS",
+   "model": "6BT5.9",
+   "data": {
+    "crankpin_std": "69.01",
+    "crankpin_limit": "0.05",
+    "crankpin_n": "6",
+    "main_std": "83.01",
+    "main_limit": "0.05",
+    "main_n": "7",
+    "block_bore": "88.02",
+    "block_n": "7",
+    "conrod_original": "73",
+    "conrod_std": "40.02(작은쪽)",
+    "conrod_limit": "±0.1",
+    "conrod_n": "6",
+    "conrod_type": "4형",
+    "conrod_torque": "33ft-lb + 90"
+   }
+  },
+  {
+   "maker": "CUMMINS",
+   "model": "6CT",
+   "data": {
+    "crankpin_std": "76",
+    "crankpin_limit": "0.05",
+    "main_std": "98",
+    "main_limit": "0.05",
+    "block_bore": "98.08",
+    "liner_std": "114",
+    "liner_limit": "0.1",
+    "conrod_original": "81",
+    "conrod_limit": "0.08"
+   }
+  },
+  {
+   "maker": "MTU",
+   "model": "8V183",
+   "data": {
+    "crankpin_std": "90",
+    "crankpin_limit": "0.05",
+    "crankpin_n": "4",
+    "main_std": "104",
+    "main_limit": "0.05",
+    "main_n": "5",
+    "block_bore": "111",
+    "block_n": "5",
+    "liner_std": "128.01",
+    "liner_limit": "0.08",
+    "piston_std": "128",
+    "piston_limit": "0.08",
+    "conrod_std": "95",
+    "conrod_limit": "±0.1",
+    "conrod_n": "8"
+   }
+  },
+  {
+   "maker": "DETROIT DISEL",
+   "model": "8V-71",
+   "data": {
+    "crankpin_std": "76.21",
+    "crankpin_limit": "0.05",
+    "crankpin_n": "4",
+    "main_std": "114.3",
+    "main_limit": "0.05",
+    "block_bore": "122.22",
+    "block_n": "1",
+    "liner_std": "107.92",
+    "liner_limit": "0.06",
+    "piston_std": "107.82",
+    "piston_limit": "-0.05",
+    "piston_n": "R1-4,L1-4",
+    "conrod_original": "82.54",
+    "conrod_limit": "±0.1",
+    "conrod_n": "R1-4,L1-4"
+   }
+  },
+  {
+   "maker": "DOOSAN",
+   "model": "AD034TI",
+   "data": {
+    "crankpin_std": "63.94",
+    "crankpin_limit": "0.05",
+    "crankpin_n": "4",
+    "main_std": "75.92",
+    "main_limit": "0.05",
+    "main_n": "5",
+    "block_bore": "76",
+    "block_n": "5",
+    "conrod_original": "64",
+    "conrod_limit": "0.3",
+    "conrod_n": "4"
+   }
+  },
+  {
+   "maker": "DOOSAN",
+   "model": "AD126TI",
+   "data": {
+    "crankpin_std": "82.99",
+    "crankpin_limit": "0.05",
+    "crankpin_n": "6",
+    "main_std": "95.99",
+    "main_limit": "0.05",
+    "main_n": "7",
+    "block_bore": "96.06",
+    "block_n": "7",
+    "liner_std": "128",
+    "conrod_original": "83.02",
+    "conrod_limit": "±0.1",
+    "conrod_n": "6"
+   }
+  },
+  {
+   "maker": "VOLVO",
+   "model": "D12",
+   "data": {
+    "crankpin_std": "92",
+    "crankpin_limit": "0.05",
+    "crankpin_n": "6",
+    "main_std": "108",
+    "main_limit": "0.05",
+    "main_n": "7",
+    "block_bore": "113",
+    "block_n": "7",
+    "conrod_original": "96.85",
+    "conrod_limit": "±0.1",
+    "conrod_n": "6"
+   }
+  },
+  {
+   "maker": "MAN",
+   "model": "D2366",
+   "data": {
+    "crankpin_std": "82.96",
+    "crankpin_limit": "0.1",
+    "main_std": "95.96",
+    "block_bore": "96.102",
+    "block_n": "7",
+    "conrod_original": "83.062"
+   }
+  },
+  {
+   "maker": "MAN",
+   "model": "D2842",
+   "data": {
+    "crankpin_std": "89.99",
+    "crankpin_limit": "0.05",
+    "crankpin_n": "6",
+    "main_std": "103.99",
+    "main_limit": "0.05",
+    "main_n": "7",
+    "block_bore": "111",
+    "block_n": "7",
+    "liner_std": "128.01",
+    "liner_limit": "0.1",
+    "piston_n": "6",
+    "conrod_std": "94.5",
+    "conrod_limit": "±0.1",
+    "conrod_n": "12",
+    "conrod_torque": "10kg 90eh"
+   }
+  },
+  {
+   "maker": "MAN",
+   "model": "D2866",
+   "data": {
+    "crankpin_std": "90",
+    "crankpin_limit": "0.05",
+    "crankpin_n": "6",
+    "main_std": "104",
+    "main_limit": "0.05",
+    "main_n": "7",
+    "block_bore": "111",
+    "block_n": "7",
+    "liner_std": "128",
+    "liner_limit": "0.15",
+    "piston_std": "128",
+    "piston_limit": "0.15",
+    "piston_n": "6",
+    "conrod_original": "95",
+    "conrod_std": "95",
+    "conrod_limit": "0.05",
+    "conrod_n": "6"
+   }
+  },
+  {
+   "maker": "CATERPILLAR",
+   "model": "D353",
+   "data": {
+    "crankpin_std": "104.78",
+    "crankpin_limit": "0.05",
+    "crankpin_n": "6",
+    "main_std": "117.48",
+    "main_limit": "0.05",
+    "main_n": "7",
+    "block_bore": "126.72",
+    "block_n": "7"
+   }
+  },
+  {
+   "maker": "CATERPILLAR",
+   "model": "D398",
+   "data": {
+    "crankpin_std": "126.98",
+    "crankpin_limit": "0.05",
+    "crankpin_n": "12",
+    "main_std": "146.03",
+    "block_bore": "161.86",
+    "block_n": "7",
+    "liner_std": "158.78",
+    "liner_limit": "0.12",
+    "piston_n": "12",
+    "conrod_original": "136.77",
+    "conrod_limit": "±0.1",
+    "conrod_n": "12",
+    "conrod_torque": "250lb",
+    "bush": "62.25"
+   }
+  },
+  {
+   "maker": "GUASCOR",
+   "model": "E318",
+   "data": {
+    "crankpin_std": "105.01",
+    "crankpin_limit": "104.9",
+    "main_std": "117.88",
+    "main_limit": "177.75",
+    "liner_std": "150",
+    "liner_limit": "150.4",
+    "conrod_std": "107.99"
+   }
+  },
+  {
+   "maker": "CUMMINS",
+   "model": "KTA19",
+   "data": {
+    "crankpin_std": "101.6",
+    "crankpin_limit": "0.05",
+    "crankpin_n": "6",
+    "main_std": "139.7",
+    "main_limit": "0.05",
+    "main_n": "7",
+    "block_bore": "148.5",
+    "block_n": "7",
+    "liner_std": "158.77",
+    "liner_limit": "0.08",
+    "piston_n": "6",
+    "conrod_original": "108",
+    "conrod_limit": "±0.1",
+    "conrod_n": "6",
+    "conrod_type": "3형",
+    "conrod_torque": "215lb",
+    "cam_std": "76.07",
+    "cam_limit": "0.05",
+    "cam_n": "(76.2) & 0.08"
+   }
+  },
+  {
+   "maker": "CUMMINS",
+   "model": "KTA38",
+   "data": {
+    "crankpin_std": "107.95",
+    "crankpin_limit": "0.05",
+    "crankpin_n": "6",
+    "main_std": "165.1",
+    "main_limit": "0.05",
+    "main_n": "7",
+    "block_bore": "173.86",
+    "block_n": "R1-6,L1-6",
+    "main_torque": "450 / 335",
+    "liner_std": "158.77",
+    "liner_limit": "0.08",
+    "piston_std": "158.53",
+    "piston_n": "R1-6,L1-6",
+    "conrod_original": "114.34",
+    "conrod_limit": "±0.1",
+    "conrod_n": "R1-6,L1-6",
+    "conrod_torque": "240lb"
+   }
+  },
+  {
+   "maker": "CUMMINS",
+   "model": "KTA50",
+   "data": {
+    "crankpin_std": "107.95",
+    "crankpin_limit": "0.08",
+    "crankpin_n": "8",
+    "main_std": "165.1",
+    "main_limit": "0.06",
+    "main_n": "9",
+    "block_bore": "173.86",
+    "block_n": "9",
+    "liner_std": "158.74",
+    "liner_limit": "0.14",
+    "piston_std": "158.53",
+    "piston_n": "R1-8,L1-8",
+    "conrod_std": "114.34",
+    "conrod_limit": "±0.1",
+    "conrod_n": "R1-8,L1-8",
+    "conrod_torque": "75 + 90도"
+   }
+  },
+  {
+   "maker": "CUMMINS",
+   "model": "N14",
+   "data": {
+    "liner_std": "139.7",
+    "liner_limit": "0.12",
+    "piston_std": "139.5",
+    "piston_limit": "-0.12",
+    "piston_n": "6",
+    "conrod_std": "97.73",
+    "conrod_limit": "±0.1",
+    "conrod_n": "6"
+   }
+  },
+  {
+   "maker": "CUMMINS",
+   "model": "NTA855",
+   "data": {
+    "crankpin_std": "79.38",
+    "crankpin_limit": "0.05",
+    "crankpin_n": "6",
+    "main_std": "114.3",
+    "main_limit": "0.05",
+    "main_n": "7",
+    "block_bore": "120.61",
+    "block_n": "7",
+    "liner_std": "139.7",
+    "liner_limit": "0.1",
+    "conrod_original": "84.22",
+    "conrod_limit": "±0.1",
+    "conrod_n": "6"
+   }
+  },
+  {
+   "maker": "CUMMINS",
+   "model": "QSM11",
+   "data": {
+    "crankpin_std": "78.987",
+    "crankpin_limit": "0.05",
+    "crankpin_n": "6",
+    "main_std": "114.015",
+    "main_limit": "0.05",
+    "main_n": "7",
+    "block_bore": "121.99",
+    "block_n": "7",
+    "conrod_original": "83.98",
+    "conrod_limit": "±0.1",
+    "conrod_n": "6",
+    "conrod_torque": "155"
+   }
+  },
+  {
+   "maker": "VOLVO",
+   "model": "TAMD 122",
+   "data": {
+    "crankpin_std": "92.03",
+    "crankpin_limit": "0.05",
+    "crankpin_n": "6",
+    "main_std": "107.93",
+    "main_limit": "0.05",
+    "main_n": "7",
+    "block_bore": "113.04",
+    "block_n": "7",
+    "conrod_original": "95.92",
+    "conrod_limit": "±0.1",
+    "conrod_n": "6",
+    "conrod_torque": "55lb 90도"
+   }
+  },
+  {
+   "maker": "CUMMINS",
+   "model": "VTA28",
+   "data": {
+    "crankpin_std": "95.21",
+    "crankpin_limit": "0.05",
+    "crankpin_n": "6",
+    "main_std": "146.01",
+    "main_limit": "0.05",
+    "main_n": "7",
+    "block_bore": "154.81",
+    "block_n": "7",
+    "liner_std": "139.69",
+    "liner_limit": "0.1",
+    "piston_n": "12",
+    "conrod_std": "101.66",
+    "conrod_limit": "±0.1",
+    "conrod_n": "12",
+    "cam_std": "53.85",
+    "cam_limit": "0.07",
+    "cam_n": "7",
+    "backlash": "0.15~0.36"
+   }
+  },
+  {
+   "maker": "MITSUBISHI",
+   "model": "S6B",
+   "data": {
+    "crankpin_std": "90",
+    "crankpin_n": "6",
+    "main_std": "115",
+    "main_torque": "56",
+    "liner_std": "135",
+    "liner_limit": "0.08",
+    "conrod_std": "95",
+    "conrod_limit": "0.03",
+    "conrod_torque": "23",
+    "pin": "55",
+    "backlash": "30",
+    "head_torque": "36",
+    "damper": "6",
+    "flywheel": "27",
+    "timing_gear": "8",
+    "pulley": "16"
+   }
+  },
+  {
+   "maker": "MITSUBISHI",
+   "model": "S6R2",
+   "data": {
+    "main_torque": "50kgf-m",
+    "liner_std": "170",
+    "liner_limit": "0.1",
+    "conrod_torque": "55kgf-m",
+    "head_torque": "55kgf-m"
+   }
+  },
+  {
+   "maker": "MITSUBISHI",
+   "model": "S6R2F",
+   "data": {
+    "crankpin_std": "124.95",
+    "crankpin_limit": "0.05",
+    "liner_std": "170",
+    "liner_limit": "0.1"
+   }
+  },
+  {
+   "maker": "CATERPILLAR",
+   "model": "C32",
+   "data": {
+    "crankpin_std": "97.03",
+    "crankpin_limit": "0.05",
+    "crankpin_n": "6",
+    "main_std": "120.65",
+    "main_limit": "0.05",
+    "main_n": "7",
+    "block_bore": "129.89",
+    "block_n": "7",
+    "main_torque": "200lb+120도",
+    "liner_std": "145",
+    "liner_limit": "0.1",
+    "conrod_std": "103.5",
+    "conrod_limit": "±0.1",
+    "conrod_torque": "55lb 60도",
+    "pin": "59.97"
+   }
+  },
+  {
+   "maker": "DOOSAN",
+   "model": "AD136TI",
+   "data": {
+    "crankpin_std": "70.99",
+    "crankpin_limit": "0.05",
+    "crankpin_n": "6",
+    "main_std": "83.98",
+    "main_limit": "0.05",
+    "main_n": "7",
+    "block_bore": "83.97",
+    "block_n": "7",
+    "main_torque": "30kgf-m",
+    "liner_std": "111.022",
+    "liner_limit": "0.1",
+    "piston_std": "110.801",
+    "conrod_std": "70.97",
+    "conrod_limit": "±0.1",
+    "conrod_torque": "18kgf-m",
+    "pin": "41.944",
+    "ring1_std": "`-",
+    "ring1_limit": "`-",
+    "ring2_std": "0.102",
+    "ring2_limit": "0.15",
+    "ring3_std": "0.085",
+    "ring3_limit": "0.15"
+   }
+  },
+  {
+   "maker": "MITSUBISHI",
+   "model": "6D16",
+   "data": {
+    "crankpin_std": "65",
+    "crankpin_n": "6",
+    "main_std": "80",
+    "main_n": "7"
+   }
+  },
+  {
+   "maker": "DOOSAN",
+   "model": "v222",
+   "data": {
+    "crankpin_std": "90",
+    "crankpin_limit": "0.05",
+    "main_std": "104",
+    "main_limit": "0.05",
+    "block_bore": "103.98",
+    "main_torque": "30KG+90",
+    "liner_std": "128.01",
+    "liner_limit": "0.1",
+    "conrod_original": "95",
+    "conrod_n": "10KG+90"
+   }
+  },
+  {
+   "maker": "DOOSAN",
+   "model": "AD086TI",
+   "data": {
+    "crankpin_std": "70.97",
+    "crankpin_limit": "0.05",
+    "main_std": "83.97",
+    "main_limit": "0.05",
+    "block_bore": "0.05~0.12",
+    "liner_std": "83.97",
+    "liner_limit": "0.1",
+    "piston_std": "110.95",
+    "piston_n": "6",
+    "conrod_std": "70.97",
+    "conrod_limit": "±0.1"
+   }
+  },
+  {
+   "maker": "DOOSAN",
+   "model": "AD222TI",
+   "data": {
+    "crankpin_std": "90",
+    "main_std": "104",
+    "block_bore": "103.98",
+    "liner_std": "128.01",
+    "conrod_original": "90",
+    "conrod_n": "10KG+90"
+   }
+  },
+  {
+   "maker": "YANMAR",
+   "model": "6RY",
+   "data": {
+    "crankpin_std": "125",
+    "crankpin_limit": "0.05",
+    "liner_std": "165",
+    "liner_limit": "0.08",
+    "piston_std": "164.92"
+   }
+  },
+  {
+   "maker": "KOMATSU",
+   "model": "SA6D108-1",
+   "data": {
+    "crankpin_std": "70",
+    "crankpin_n": "6",
+    "liner_std": "108",
+    "piston_std": "107.83"
+   }
+  },
+  {
+   "maker": "MITSUBISHI",
+   "model": "S6R",
+   "data": {
+    "crankpin_std": "125",
+    "crankpin_limit": "0.11",
+    "main_std": "140",
+    "main_limit": "0.11",
+    "block_bore": "147",
+    "liner_std": "170",
+    "liner_limit": "0.4",
+    "conrod_std": "131",
+    "conrod_limit": "0.1"
+   }
+  },
+  {
+   "maker": "DOOSAN",
+   "model": "2366",
+   "data": {
+    "crankpin_std": "83",
+    "main_std": "96",
+    "block_bore": "96.072",
+    "main_torque": "30kg-m",
+    "conrod_original": "83.032"
+   }
+  },
+  {
+   "maker": "구보다",
+   "model": "ES-25",
+   "data": {
+    "crankpin_std": "47",
+    "crankpin_n": "4",
+    "main_std": "52",
+    "main_n": "4",
+    "conrod_original": "47.3",
+    "conrod_n": "4"
+   }
+  },
+  {
+   "maker": "YANMAR",
+   "model": "6EY22ALW",
+   "data": {
+    "crankpin_std": "180",
+    "crankpin_limit": "0.2",
+    "main_std": "220",
+    "main_limit": "0.27",
+    "liner_std": "220",
+    "liner_limit": "0.4",
+    "conrod_std": "180",
+    "conrod_limit": "0.25",
+    "conrod_n": "6",
+    "cam_std": "155",
+    "cam_limit": "0.2",
+    "cam_n": "7",
+    "ring1_std": "s",
+    "ring1_limit": "0.35",
+    "ring2_std": "5",
+    "ring2_limit": "0.28",
+    "ring3_std": "9",
+    "ring3_limit": "0.3"
+   }
+  },
+  {
+   "maker": "YANMAR",
+   "model": "M220",
+   "data": {}
+  },
+  {
+   "maker": "GUASCOR",
+   "model": "SF240",
+   "data": {
+    "crankpin_std": "114.99",
+    "crankpin_limit": "0.09",
+    "main_std": "134.96",
+    "main_limit": "0.12",
+    "liner_std": "152",
+    "liner_limit": "0.4",
+    "conrod_original": "Clearance 0.077 ~ 0.144"
+   }
+  },
+  {
+   "maker": "MITSUBISHI",
+   "model": "S12A2",
+   "data": {
+    "crankpin_std": "104",
+    "crankpin_limit": "0.14",
+    "main_std": "130",
+    "main_limit": "0.16",
+    "block_bore": "137",
+    "liner_std": "150",
+    "liner_limit": "0.14",
+    "piston_std": "150",
+    "piston_limit": "149.68",
+    "conrod_std": "110",
+    "conrod_limit": "±0.05",
+    "cam_std": "(#1)64 / 68",
+    "cam_limit": "0.13"
+   }
+  },
+  {
+   "maker": "DOOSAN",
+   "model": "196",
+   "data": {
+    "crankpin_std": "82.99",
+    "crankpin_limit": "0.05",
+    "main_std": "95.99",
+    "block_bore": "96.06 ~ 96.10",
+    "liner_std": "111.02",
+    "conrod_original": "83.02",
+    "conrod_limit": "0.2"
+   }
+  },
+  {
+   "maker": "YANMAR",
+   "model": "S165",
+   "data": {
+    "crankpin_std": "115",
+    "crankpin_limit": "0.1",
+    "main_std": "135",
+    "main_limit": "0.1",
+    "block_bore": "135",
+    "liner_std": "165",
+    "liner_limit": "0.5",
+    "conrod_std": "115",
+    "conrod_limit": "0.18",
+    "cam_std": "80",
+    "cam_limit": "0.13"
+   }
+  },
+  {
+   "maker": "MTU",
+   "model": "6R099",
+   "data": {
+    "crankpin_std": "60.01",
+    "crankpin_limit": "0.02",
+    "main_std": "88.01",
+    "main_limit": "0.02",
+    "block_bore": "88.09",
+    "liner_std": "97.5",
+    "liner_limit": "0.05",
+    "piston_std": "97.5",
+    "conrod_original": "65",
+    "conrod_limit": "0.07",
+    "pin": "35.99",
+    "bush": "36"
+   }
+  },
+  {
+   "maker": "DAEWOO",
+   "model": "1146",
+   "data": {
+    "crankpin_std": "70.99",
+    "main_std": "83.99",
+    "conrod_std": "70.97"
+   }
+  },
+  {
+   "maker": "DOOSAN",
+   "model": "4V 158",
+   "data": {
+    "crankpin_std": "89.98",
+    "crankpin_limit": "0.05",
+    "main_std": "103.98",
+    "main_limit": "0.05",
+    "block_bore": "103.98",
+    "liner_std": "127.9",
+    "liner_limit": "0.15",
+    "conrod_original": "90.06"
+   }
+  },
+  {
+   "maker": "MITSUBISHI",
+   "model": "s12N",
+   "data": {
+    "crankpin_std": "118",
+    "crankpin_limit": "0.05",
+    "main_std": "140",
+    "main_limit": "0.11",
+    "block_bore": "147",
+    "liner_std": "160",
+    "liner_limit": "0.4",
+    "conrod_std": "124"
+   }
+  },
+  {
+   "maker": "HYUNDAI",
+   "model": "D4AF",
+   "data": {
+    "crankpin_std": "46.01",
+    "crankpin_limit": "0.02",
+    "main_std": "53.99",
+    "main_limit": "0.02",
+    "block_bore": "0.024~0.042",
+    "conrod_original": "49",
+    "conrod_limit": "0.025~0.043"
+   }
+  },
+  {
+   "maker": "MITSUBISHI",
+   "model": "S6A2",
+   "data": {
+    "crankpin_std": "104",
+    "crankpin_limit": "0.16",
+    "crankpin_n": "6",
+    "main_std": "130",
+    "main_limit": "0.16",
+    "main_n": "7",
+    "endplay": "58",
+    "block_bore": "137(0.045)",
+    "main_torque": "435",
+    "liner_std": "150",
+    "liner_limit": "0.14",
+    "piston_std": "150",
+    "piston_limit": "149.68",
+    "conrod_original": "소단부(58, 58.07)",
+    "conrod_std": "110",
+    "conrod_limit": "0.047",
+    "pin": "58(58.97)",
+    "bush": "58(0.2)",
+    "cam_std": "65",
+    "cam_limit": "0.13 / 0.09",
+    "ring1_std": "4.43",
+    "ring1_limit": "0.2",
+    "ring2_std": "2.95",
+    "ring2_limit": "0.15",
+    "ring3_std": "6",
+    "ring3_limit": "0.15"
+   }
+  },
+  {
+   "maker": "VOLVO",
+   "model": "D16",
+   "data": {
+    "crankpin_std": "112",
+    "crankpin_limit": "C 0.10",
+    "crankpin_n": "6",
+    "main_std": "118",
+    "main_limit": "C0.07~0.14",
+    "main_n": "7",
+    "liner_std": "144",
+    "conrod_std": "116.8",
+    "conrod_limit": "C0.1",
+    "conrod_n": "6"
+   }
+  },
+  {
+   "maker": "CATERPILLAR",
+   "model": "3508B",
+   "data": {
+    "crankpin_std": "135",
+    "crankpin_limit": "0.05",
+    "main_std": "160",
+    "main_limit": "0.05",
+    "block_bore": "169.74",
+    "liner_std": "170.02",
+    "conrod_original": "135.13",
+    "conrod_limit": "0.1-0.2"
+   }
+  },
+  {
+   "maker": "VOLVO",
+   "model": "D7",
+   "data": {
+    "crankpin_std": "68",
+    "crankpin_limit": "0.01",
+    "main_std": "85",
+    "main_limit": "0.01",
+    "endplay": "30",
+    "liner_std": "108",
+    "liner_limit": "0.1",
+    "conrod_original": "72.5"
+   }
+  },
+  {
+   "maker": "GUASCOR",
+   "model": "F360",
+   "data": {
+    "crankpin_std": "115.03",
+    "crankpin_limit": "0.13",
+    "main_std": "160",
+    "main_limit": "159.84",
+    "endplay": "0.34~0.586",
+    "liner_std": "152",
+    "liner_limit": "0.4",
+    "conrod_original": "Clearance 0.030 ~ 0.087"
+   }
+  },
+  {
+   "maker": "YANMAR",
+   "model": "6CHL",
+   "data": {
+    "crankpin_std": "64.95",
+    "crankpin_limit": "0.13",
+    "main_std": "79.94",
+    "main_limit": "0.13",
+    "block_bore": "80",
+    "liner_std": "105.01",
+    "liner_limit": "105.2",
+    "piston_std": "104.9",
+    "piston_limit": "104.75",
+    "conrod_std": "65",
+    "conrod_limit": "0.13",
+    "pin": "35.99",
+    "bush": "36",
+    "ring1_std": "3.07",
+    "ring1_limit": "0.2",
+    "ring2_std": "2.52",
+    "ring2_limit": "0.15",
+    "ring3_std": "2.52",
+    "ring3_limit": "0.15",
+    "oil_std": "5.02",
+    "oil_limit": "0.15"
+   }
+  },
+  {
+   "maker": "CATERPILLAR",
+   "model": "C9",
+   "data": {
+    "crankpin_std": "80",
+    "crankpin_n": "6",
+    "main_std": "104",
+    "main_n": "7",
+    "block_bore": "112",
+    "block_n": "7",
+    "liner_std": "112.02",
+    "liner_limit": "0.08",
+    "conrod_original": "80"
+   }
+  },
+  {
+   "maker": "VOLVO",
+   "model": "D5",
+   "data": {
+    "crankpin_std": "68",
+    "crankpin_limit": "0.01",
+    "crankpin_n": "4",
+    "main_std": "85",
+    "main_limit": "0.02",
+    "main_n": "5",
+    "liner_std": "108",
+    "liner_limit": "0.1",
+    "conrod_original": "72.5"
+   }
+  },
+  {
+   "maker": "CUMMINS",
+   "model": "QSK19",
+   "data": {
+    "crankpin_std": "101.6",
+    "crankpin_limit": "0.0255",
+    "crankpin_n": "6",
+    "main_std": "139.7",
+    "main_limit": "0.025",
+    "main_n": "7",
+    "block_bore": "148.45",
+    "block_n": "7"
+   }
+  },
+  {
+   "maker": "CUMMINS",
+   "model": "QSK60",
+   "data": {
+    "crankpin_std": "120.65",
+    "crankpin_limit": "0.08",
+    "crankpin_n": "8",
+    "main_std": "184.15",
+    "main_limit": "0.05",
+    "main_n": "9",
+    "conrod_original": "127.032",
+    "conrod_limit": "0.04",
+    "conrod_n": "16"
+   }
+  },
+  {
+   "maker": "MITSUBISHI",
+   "model": "S16N-MPTA",
+   "data": {
+    "crankpin_std": "118",
+    "crankpin_limit": "0.1",
+    "main_std": "140",
+    "main_limit": "0.17"
+   }
+  },
+  {
+   "maker": "CATERPILLAR",
+   "model": "C13",
+   "data": {
+    "crankpin_std": "89",
+    "crankpin_limit": "0.02",
+    "crankpin_n": "6",
+    "main_std": "108",
+    "main_limit": "0.02",
+    "main_n": "7",
+    "block_bore": "116",
+    "block_n": "7",
+    "main_torque": "111±4lb",
+    "liner_std": "130.025",
+    "liner_limit": "0.025"
+   }
+  }
+ ]
+}

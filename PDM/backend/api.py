@@ -11,7 +11,7 @@ import eel
 from PDM.backend.guard import guarded
 from PDM.backend import adapters
 from PDM.backend.naming import default_title
-from PDM.backend import measurement, photo_api, settings_api  # noqa: F401  (photo/settings_api: @eel.expose 등록)
+from PDM.backend import measurement, photo_api, settings_api, standards, standards_api  # noqa: F401  (photo/settings/standards_api: @eel.expose 등록)
 from PDM.backend.pdm_db import ConflictError
 from PDM.backend.runtime import fail as _fail, get_db
 from PDM.backend.service_report import build_header, normalize_header as normalize_service_report_header
@@ -156,9 +156,19 @@ def pdm_measurement_templates() -> Dict[str, Any]:
 
 @eel.expose
 @guarded('guest')
-def pdm_new_measurement_form(form_id: str, label: str = '') -> Dict[str, Any]:
-    """선택한 양식 한 장의 빈 입력 구조. 기본 규격/기준값이 채워져 있고 label 은 장 구분(선택)."""
+def pdm_new_measurement_form(form_id: str, label: str = '', engine: str = '') -> Dict[str, Any]:
+    """선택한 양식 한 장의 빈 입력 구조. 기본 규격/기준값이 채워져 있고 label 은 장 구분(선택).
+    engine(작업현황 엔진명)이 있고 계측 표준값이 있으면 규격/기준값을 표준값으로 채우며, matched/notes 로 결과를 알린다."""
     try:
-        return {'success': True, 'form': measurement.default_instance(form_id, (label or '')[:measurement.MAX_LABEL_LEN])}
+        form = measurement.default_instance(form_id, (label or '')[:measurement.MAX_LABEL_LEN])
+        try:
+            found = standards_api.standard_patch(form_id, engine)
+        except Exception:       # 표준값 쪽 문제(DB 잠김/번들 파일 손상 등)가 양식 추가를 막지 않게 — 빈 양식으로 계속
+            logger.exception('pdm_new_measurement_form: standards')
+            found = None
+        if not found or not found['patch']:
+            return {'success': True, 'form': form, 'matched': None, 'notes': []}
+        return {'success': True, 'form': standards.apply_patch(form, found['patch']),
+                'matched': found['matched'], 'notes': found['patch']['notes']}
     except ValueError as e:
         return _fail(str(e))

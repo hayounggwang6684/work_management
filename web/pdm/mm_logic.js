@@ -8,22 +8,26 @@ const MmLogic = (() => {
         return Number.isFinite(n) ? n : null;
     }
 
-    // 표 행 순서: [F TB, F PS, A TB, A PS]. 반환: [[F 열별 값], [A 열별 값]] (문자열, 계산 불가는 '')
-    // 실제 치수 = 기준 ∓ C/100  (외경: 기준 − C/100, 안지름: 기준 + C/100)
-    // 클리어런스 = 안지름 − 외경 을 TB/PS 방향별로 구해 그 중 큰 값 (가정 — 규칙이 다르면 이 함수만 고치면 된다)
-    // ids: 외경/안지름 표의 id (양식 정의의 role 이 outer/inner 인 표). 내장 양식은 outDia/innerDia.
-    function calcClearance(tables, unitBase, ids = { outer: 'outDia', inner: 'innerDia' }) {
+    // 표 행 순서: [F TB, F PS, A TB, A PS]. 실제 치수 = 기준 ∓ C/100  (외경: 기준 − C/100, 안지름: 기준 + C/100)
+    // 클리어런스 = 안지름 − 외경.
+    //   perRow=false(기본): 반환 [[F 열별 값], [A 열별 값]] — TB/PS 방향별로 구해 그 중 큰 값 (가정 — 규칙이 다르면 이 함수만 고치면 된다)
+    //   perRow=true      : 클리어런스 표가 외경/안지름 표와 같은 행 구성(F/A × TB/PS)일 때 — 행마다 그대로 계산
+    // 문자열(계산 불가는 ''). ids: 외경/안지름 표의 id (양식 정의의 role 이 outer/inner 인 표). 내장 양식은 outDia/innerDia.
+    function calcClearance(tables, unitBase, ids = { outer: 'outDia', inner: 'innerDia' }, perRow = false) {
         const out = tables[ids.outer], inner = tables[ids.inner];
         const outBase = parseNum(unitBase[ids.outer]), innerBase = parseNum(unitBase[ids.inner]);
         const cols = out[0].length;
-        const result = [Array(cols).fill(''), Array(cols).fill('')];
-        if (outBase === null || innerBase === null) return result;
+        const one = (r, c) => {
+            const o = parseNum(out[r][c]), i = parseNum(inner[r][c]);
+            return o === null || i === null ? null : (innerBase + i / 100) - (outBase - o / 100);
+        };
+        const blank = () => Array(cols).fill('');
+        if (outBase === null || innerBase === null) return perRow ? out.map(blank) : [blank(), blank()];
+        if (perRow) return out.map((_, r) => Array.from({ length: cols }, (_, c) => { const v = one(r, c); return v === null ? '' : v.toFixed(2); }));
+        const result = [blank(), blank()];
         [[0, 1], [2, 3]].forEach((rows, g) => {
             for (let c = 0; c < cols; c++) {
-                const values = rows.flatMap(r => {
-                    const o = parseNum(out[r][c]), i = parseNum(inner[r][c]);
-                    return o === null || i === null ? [] : [(innerBase + i / 100) - (outBase - o / 100)];
-                });
+                const values = rows.map(r => one(r, c)).filter(v => v !== null);
                 if (values.length) result[g][c] = Math.max(...values).toFixed(2);
             }
         });

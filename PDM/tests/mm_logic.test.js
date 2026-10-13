@@ -113,3 +113,21 @@ test('droppedBy: 장 수를 줄일 때 사라질 장 (뒤쪽부터)', () => {
     assert.deepEqual(L.droppedBy(forms, 'crankpin', 1).map(f => f.label), ['b', 'c']);
     assert.deepEqual(L.droppedBy(forms, 'crankpin', 3), []);
 });
+
+test('calcClearance perRow: 클리어런스 표가 4행(F/A × TB/PS)이면 행마다 계산한다', () => {
+    const out = blank(4, 3), inner = blank(4, 3);
+    out[0][0] = '2'; inner[0][0] = '5';          // F TB: (90.00+0.05) − (89.91−0.02) = 0.16
+    out[3][2] = '1'; inner[3][2] = '10';         // A PS: (90.00+0.10) − (89.91−0.01) = 0.20
+    out[1][1] = '4';                             // 안지름이 비어 있으면 그 칸만 빈칸
+    const r = L.calcClearance({ outDia: out, innerDia: inner }, { outDia: '89.91', innerDia: '90.00' }, undefined, true);
+    assert.equal(r.length, 4);
+    assert.equal(r[0][0], '0.16');
+    assert.equal(r[3][2], '0.20');
+    assert.equal(r[1][1], '');
+});
+
+test('calcClearance perRow: 기준값이 없으면 4행 모두 빈칸', () => {
+    const out = blank(4, 3), inner = blank(4, 3);
+    out[0][0] = '2'; inner[0][0] = '5';
+    assert.deepEqual(L.calcClearance({ outDia: out, innerDia: inner }, { outDia: '', innerDia: '90' }, undefined, true), blank(4, 3));
+});

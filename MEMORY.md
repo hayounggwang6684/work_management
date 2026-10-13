@@ -2,12 +2,20 @@
 
 ## Features Added
 
-### 2026-10: PDM — 공사현황 탭 + 서비스레포트/계측지 (미배포, 브랜치 `feature/pdm`)
+### 2026-10: PDM — 공사현황 탭 + 서비스레포트/계측지 (v3.0.0 배포, 이후 v3.0.1 수정)
 
 `PDM/` 폴더에서 독립 개발 → 본체에 연결. 상세 구조/체크리스트는 `PDM/INTEGRATION.md`.
 
 - **계측지는 양식마다 `안 함/1장/2장…` 선택** (PORT/STBD 고정 구분 없음). 같은 표지에 1호기·2호기처럼 같은 양식을 여러 장 넣고,
   장마다 구분 라벨(예: PORT, 1호기)을 쓴다 → 표지 목차 `(라벨)`, MAKER/TYPE 에 반영. 예전 문서의 `side` 는 `label` 로 읽는다.
+- **계측 양식 6종**: 크랭크핀·메인저널·콘로드(기존) + 실린더 라이너&피스톤(SJ-102)·피스톤 핀&부시(SJ-103)·캠샤프트(SJ-106, 신양식 엑셀 기준).
+  양식 정의는 `measurement_forms.json`, 배치(mm)는 `mm_print.js` 의 `GEO[양식 id]`. 표 `split`(위/아래 라벨 분리), 양식 `specStyle:'stacked'`(STANDARD/LIMIT 두 줄), 규격 0행(피스톤 핀) 지원.
+  클리어런스 표가 4행(F/A × TB/PS)이면 `calcClearance(..., perRow=true)` 로 행마다 계산.
+  ※ 104/105/108 신양식 엑셀은 클리어런스 표가 4행·메인저널 11열로 바뀌었으나 **기존 3종은 아직 옛 구조** (저장된 문서 이전 문제로 보류).
+- **계측 표준값(엔진별)**: `PDM/backend/standards.py` + `standards_api.py` + `standards_manager.js`(화면 `📐 계측 표준값`). 원본 `계측 STANDARD.xlsx` 의 표준 시트를
+  `templates/engine_standards.json` 으로 번들 → **최초 1회만** `pdm_engine_standards` 에 시드(이후 수정/삭제는 DB 기준, 번들을 다시 덮어쓰지 않음). 값은 현장 표기 그대로 문자열.
+  엔진명 매칭: 글자/숫자 토큰 연속 일치, 숫자만 있는 모델은 제조사도 일치해야 함, 동률이면 고르지 않음. 양식을 추가할 때 `pdm_new_measurement_form(form_id, label, engine)` 이 규격/Unit 기준값을 채우고,
+  칸(12자)·숫자 조건에 안 맞는 값은 `notes` 로 안내만 한다. 변경·엑셀 붙여넣기 가져오기는 admin.
 - **서비스레포트 사진**: `Photos` 옆에서 한 페이지 6장(세로 2×3) / 4장(가로 2×2) 선택(`header.photosPerPage`), 제목을 비운 사진 페이지는 제목 띠를 그리지 않는다.
 - **진입점**: 메뉴 `공사현황`(기간별 주문 목록). 행 우클릭 → `서비스레포트 ▸ / 계측지 ▸`(새 문서 + 작성된 파일), 더블클릭 → 서비스레포트.
 - **본체 접점은 `PDM/backend/adapters.py` 훅 4개** (현재 사용자, 권한 판정, 작업현황 DB, pdm.db 경로).
@@ -19,6 +27,13 @@
   (`showView` 가 버튼 className 을 통째로 덮어쓰므로 **버튼 개별 클래스로 넣으면 첫 클릭 뒤 사라진다**)
 
 ## Bug Fixes Applied
+
+### 2026-10-13 (v3.0.1): 공사현황 목록이 네트워크 공유 DB 경로에서 안 열림
+
+- 원인: `PDM/backend/adapters.py` 가 작업현황 DB 를 `file:경로?mode=ro` URI 로 열었는데, 경로가 UNC(`\서버\폴더`)이거나 `#` 를 포함하면 열리지 않음
+  (`invalid uri authority` / `unable to open database file`). 개발 PC 의 로컬 경로에서는 재현되지 않았다.
+- 수정: 일반 경로로 연결 + `PRAGMA query_only = ON`. 회귀 테스트 `test_work_db_opens_when_path_has_uri_special_chars`.
+- 교훈: DB 경로는 로컬이 아니라 공유 폴더일 수 있다 — 경로를 URI 로 조립하지 말 것.
 
 ### 2026-09-02: 게스트 휴가자 현황 + 읽기전용 누락
 

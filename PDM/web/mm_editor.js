@@ -18,6 +18,15 @@ const MmEditor = (() => {
     const MAX_UI_PAGES = 4;       // 선택 목록에 보여 주는 장 수 상한 (서버 상한은 measurement.MAX_PER_FORM)
     const LABEL_SUGGESTIONS = ['PORT', 'STBD', '1호기', '2호기'];
     let radioSeq = 0;             // 장마다 BEFORE/AFTER 라디오 그룹 이름이 겹치지 않게
+    const standardNotes = new WeakMap();      // 장(inst) → 표준값 적용 결과 안내 (화면을 다시 그려도 유지)
+
+    // 서버 응답(matched/notes) → 안내 문구
+    const standardMessage = (matched, notes, engine) => {
+        if (!engine) return '엔진 정보(MAKER/TYPE)가 없어 표준값을 넣지 못했습니다.';
+        if (!matched) return `"${engine}" 에 맞는 계측 표준값이 없습니다 (📐 계측 표준값에서 등록할 수 있습니다).`;
+        return `표준값 적용: ${matched}` + (notes.length ? ` · 칸에 못 넣은 값 → ${notes.join(' / ')}` : '');
+    };
+    const STANDARD_FIELDS = ['original', 'std', 'limit', 'torque'];
 
     // ── 입력 격자 ────────────────────────────────────────────────────────────
     // grid 모델(2차원 문자열 배열)을 input 격자로. Enter/↑↓ 이동, 엑셀 붙여넣기 지원. get/set 으로 모델과 연결.
@@ -69,7 +78,7 @@ const MmEditor = (() => {
 
     function journalBody(form, inst) {
         const parts = [];
-        parts.push(h('div', { class: 'grid grid-cols-[auto_1fr_1fr] items-center gap-x-3 gap-y-1 w-96 text-sm' },
+        if (form.spec.length) parts.push(h('div', { class: 'grid grid-cols-[auto_1fr_1fr] items-center gap-x-3 gap-y-1 w-96 text-sm' },
             h('span', {}), h('span', { class: 'text-xs text-slate-500 text-center' }, 'STANDARD'), h('span', { class: 'text-xs text-slate-500 text-center' }, 'LIMIT'),
             ...form.spec.flatMap(sp => [h('span', { class: 'text-xs' }, lines(sp.label)),
                 field('', inst.spec[sp.id].standard, v => { inst.spec[sp.id].standard = v; }),
@@ -79,7 +88,7 @@ const MmEditor = (() => {
             const grid = inputGrid({
                 get: () => inst.tables[table.id], set: g => { inst.tables[table.id] = g; },
                 rowHeads: r => (rows[r].length === 2
-                    ? [...(rows[r][1] === 'TB' ? [Object.assign(labelCell(rows[r][0]), { rowSpan: 2 })] : []), labelCell(rows[r][1])]
+                    ? [...(table.split ? [labelCell(rows[r][0])] : rows[r][1] === 'TB' ? [Object.assign(labelCell(rows[r][0]), { rowSpan: 2 })] : []), labelCell(rows[r][1])]
                     : [labelCell(rows[r][0])]),
                 colHeads: Array.from({ length: table.cols }, (_, i) => String(i + 1)), cornerLabel: lines(table.colLabel),
             });
@@ -93,7 +102,7 @@ const MmEditor = (() => {
                     ? '(안지름 기준 + C/100) − (외경 기준 − C/100) 를 TB/PS 방향별로 구해 큰 값을 채웁니다. 외경·안지름 기준값이 모두 있어야 계산됩니다.'
                     : '이 양식에는 외경/안지름 표가 없어 자동 계산할 수 없습니다.',
                 onclick: () => {
-                    const calc = MmLogic.calcClearance(inst.tables, inst.unitBase, ids);
+                    const calc = MmLogic.calcClearance(inst.tables, inst.unitBase, ids, table.rows.length === 4);   // 4행(F/A × TB/PS)이면 행마다 계산
                     inst.tables[table.id] = calc.map(row => Array.from({ length: table.cols }, (_, c) => row[c] ?? ''));
                     grid.sync();
                 },
@@ -128,14 +137,20 @@ const MmEditor = (() => {
     }
 
     // nth = 같은 양식 안에서의 몇 번째 장 (0부터)
-    function formCard(form, inst, index, nth) {
+    function formCard(form, inst, index, nth, onApplyStandard) {
         const label = h('input', {
             class: INPUT + ' !w-44 !text-left', value: inst.label || '', maxlength: 20, list: 'pdmLabelSuggest',
             placeholder: '장 구분 (예: PORT, 1호기)', title: '표지 목차와 MAKER/TYPE 에 표시됩니다',
         });
         label.addEventListener('input', () => { inst.label = label.value.trim(); });
         return h('section', { class: 'bg-white rounded-lg shadow p-4 space-y-3', 'data-form': `${inst.formId}:${nth}` },
-            h('div', { class: 'flex items-center gap-3' }, h('h3', { class: 'font-bold' }, `${index + 1}. ${form.indexTitle}`), label),
+            h('div', { class: 'flex items-center gap-3' }, h('h3', { class: 'font-bold' }, `${index + 1}. ${form.indexTitle}`), label,
+                ...(form.custom ? [] : [h('button', {
+                    class: 'px-2 py-0.5 text-xs rounded bg-sky-100 hover:bg-sky-200 border border-sky-300',
+                    title: '엔진 모델에 맞는 표준값(규격 STANDARD/LIMIT, Unit 기준값 등)을 다시 넣습니다. 입력한 측정값은 그대로 둡니다.',
+                    onclick: () => onApplyStandard(inst),
+                }, '표준값 적용')])),
+            ...(standardNotes.get(inst) ? [h('p', { class: 'text-xs text-sky-700 bg-sky-50 rounded px-2 py-1' }, standardNotes.get(inst))] : []),
             commonRow(inst),
             ...(form.layout === 'conrodGrid' ? conrodBody(form, inst) : journalBody(form, inst)));
     }
@@ -154,9 +169,25 @@ const MmEditor = (() => {
             header.forms = MmLogic.sortForms(header.forms, templates);
             const seen = {};
             formsEl.replaceChildren(...(header.forms.length
-                ? header.forms.map((inst, i) => formCard(byId[inst.formId], inst, i, (seen[inst.formId] = (seen[inst.formId] ?? -1) + 1)))
+                ? header.forms.map((inst, i) => formCard(byId[inst.formId], inst, i, (seen[inst.formId] = (seen[inst.formId] ?? -1) + 1), applyStandard))
                 : [h('p', { class: 'text-sm text-slate-500 text-center py-8' }, '위에서 계측할 항목의 장 수를 선택하세요.')]));
         };
+
+        const engineOf = () => (header.makerType || header.coverEngine || '').trim();
+
+        // 이미 있는 장에 표준값을 다시 넣는다 (규격/기준값/콘로드 값만 — 측정값은 그대로)
+        async function applyStandard(inst) {
+            const engine = engineOf();
+            const r = await eel.pdm_apply_standard(inst.formId, engine)();
+            if (!r.success) { standardNotes.set(inst, r.message); renderForms(); return; }
+            if (r.patch) {
+                for (const [sid, vals] of Object.entries(r.patch.spec)) Object.assign(inst.spec[sid], vals);
+                Object.assign(inst.unitBase, r.patch.unitBase);
+                for (const f of STANDARD_FIELDS) if (f in r.patch) inst[f] = r.patch[f];
+            }
+            standardNotes.set(inst, standardMessage(r.matched, r.patch ? r.patch.notes : [], engine));
+            renderForms();
+        }
 
         // 양식 하나의 장 수를 바꾼다. 늘릴 때는 서버에서 기본 입력 구조를 받아 오고,
         // 줄일 때 값이 들어 있는 장이 사라지면 확인한다 (취소하면 선택을 되돌림).
@@ -170,8 +201,9 @@ const MmEditor = (() => {
             }
             const fresh = [];
             for (let i = have; i < count; i++) {
-                const r = await eel.pdm_new_measurement_form(form.id)();
+                const r = await eel.pdm_new_measurement_form(form.id, '', engineOf())();
                 if (!r.success) { select.value = String(have); alert(r.message); return; }
+                if (engineOf()) standardNotes.set(r.form, standardMessage(r.matched, r.notes, engineOf()));      // 엔진 정보가 없으면 조용히 빈 양식
                 fresh.push(r.form);
             }
             header.forms = MmLogic.withPageCount(header.forms, form.id, count, i => fresh[i - have]);
