@@ -196,3 +196,79 @@ def test_standalone_contract_number_is_case_insensitive_against_work_orders(work
     pdm_api.pdm_create_standalone_order('sh-2026-057-t', 'a', 'b', 'c')    # 작업현황에는 대문자 SH-2026-057-T 가 있다 → 등록되더라도 목록에 두 번 나오지 않는다
     rows = pdm_api.pdm_list_projects('2020-01-01', '2030-12-31', '')['projects']
     assert [p['contractNumber'].upper() for p in rows].count('SH-2026-057-T') == 1
+
+
+# ── 판매용 주문 수정 / 삭제 ──────────────────────────────────────────────────
+
+def test_update_standalone_order_moves_documents_and_syncs_header_values(work_db):
+    pdm_api.pdm_create_standalone_order('S-OLD', '대양상선', '대양호', 'CAT 3512')
+    sr = pdm_api.pdm_create_document('service_report', 'S-OLD')['document']
+    r = pdm_api.pdm_update_standalone_order('S-OLD', 'S-NEW', '대양해운', '대양1호', 'CAT 3516')
+    assert r['success'] and r['order']['contractNumber'] == 'S-NEW'
+    docs = pdm_api.pdm_list_documents('S-NEW')['documents']
+    assert len(docs) == 2 and pdm_api.pdm_list_documents('S-OLD')['documents'] == []
+    moved = pdm_api.pdm_get_document(sr['id'])['document']
+    assert (moved['contractNumber'], moved['shipName']) == ('S-NEW', '대양1호')
+    hd = moved['header']
+    assert (hd['orderNo'], hd['customer'], hd['vesselName'], hd['model']) == ('S-NEW', '대양해운', '대양1호', 'CAT 3516')
+
+
+def test_update_keeps_values_the_user_edited_in_the_document(work_db):
+    pdm_api.pdm_create_standalone_order('S-1', '업체', '선박', 'ENG')
+    doc = pdm_api.pdm_create_document('service_report', 'S-1')['document']
+    header = {**doc['header'], 'vesselName': '직접 고친 선박명'}
+    assert pdm_api.pdm_save_document(doc['id'], doc['updatedAt'], doc['title'], header)['success']
+    pdm_api.pdm_update_standalone_order('S-1', 'S-1', '업체', '새 선박', 'ENG')
+    assert pdm_api.pdm_get_document(doc['id'])['document']['header']['vesselName'] == '직접 고친 선박명'
+
+
+def test_update_standalone_order_rejects_bad_targets(work_db):
+    pdm_api.pdm_create_standalone_order('S-1', 'a', 'b', 'c')
+    pdm_api.pdm_create_standalone_order('S-2', 'a', 'b', 'c')
+    assert pdm_api.pdm_update_standalone_order('S-1', 'S-2', 'a', 'b', 'c')['success'] is False             # 다른 판매 주문과 중복
+    assert pdm_api.pdm_update_standalone_order('S-1', 'SH-2026-057-T', 'a', 'b', 'c')['success'] is False    # 작업현황 번호
+    assert pdm_api.pdm_update_standalone_order('S-1', '', 'a', 'b', 'c')['success'] is False
+    assert pdm_api.pdm_update_standalone_order('SH-2026-057-T', 'X', 'a', 'b', 'c')['success'] is False     # 공사 주문은 수정 불가
+    assert pdm_api.pdm_update_standalone_order('NOPE', 'X', 'a', 'b', 'c')['success'] is False
+
+
+def test_delete_standalone_order_removes_documents_and_photos(work_db):
+    pdm_api.pdm_create_standalone_order('S-DEL', 'a', 'b', 'c')
+    doc = pdm_api.pdm_list_documents('S-DEL')['documents'][0]
+    with runtime.get_db().connect() as conn:
+        conn.execute('INSERT INTO pdm_photos (doc_id, slot_index, image_blob) VALUES (?,?,?)', (doc['id'], 0, b'x'))
+    pdm_api.pdm_create_document('measurement', 'S-DEL')
+    r = pdm_api.pdm_delete_standalone_order('S-DEL')
+    assert r['success'] and r['deletedDocuments'] == 2
+    assert runtime.get_db().get_standalone_order('S-DEL') is None and pdm_api.pdm_list_documents('S-DEL')['documents'] == []
+    with runtime.get_db().connect() as conn:
+        assert conn.execute('SELECT COUNT(*) FROM pdm_photos').fetchone()[0] == 0
+    assert pdm_api.pdm_create_standalone_order('S-DEL', 'a', 'b', 'c')['success'] is True                  # 번호를 다시 쓸 수 있다
+
+
+def test_work_orders_cannot_be_deleted_and_other_orders_documents_survive(work_db):
+    pdm_api.pdm_create_standalone_order('S-A', 'a', 'b', 'c')
+    pdm_api.pdm_create_standalone_order('S-B', 'a', 'b', 'c')
+    work_doc = pdm_api.pdm_create_document('service_report', 'SH-2026-057-T')['document']
+    assert pdm_api.pdm_delete_standalone_order('SH-2026-057-T')['success'] is False
+    assert pdm_api.pdm_delete_standalone_order('S-A')['success'] is True
+    assert pdm_api.pdm_get_document(work_doc['id'])['success'] and len(pdm_api.pdm_list_documents('S-B')['documents']) == 1
+
+
+def test_delete_and_rename_also_handle_documents_stored_with_a_different_case(work_db):
+    pdm_api.pdm_create_standalone_order('S-Case', 'a', 'b', 'c')
+    doc = pdm_api.pdm_list_documents('S-Case')['documents'][0]
+    with runtime.get_db().connect() as conn:
+        conn.execute("UPDATE pdm_documents SET contract_number = 's-case' WHERE id = ?", (doc['id'],))
+    assert pdm_api.pdm_update_standalone_order('S-Case', 'S-Case2', 'a', 'b', 'c')['success']
+    assert pdm_api.pdm_get_document(doc['id'])['document']['contractNumber'] == 'S-Case2'
+    assert pdm_api.pdm_delete_standalone_order('S-Case2')['deletedDocuments'] == 1
+
+
+def test_standalone_delete_is_refused_once_the_number_exists_in_the_work_db(work_db):
+    pdm_api.pdm_create_standalone_order('S-WORK', 'a', 'b', 'c')
+    conn = sqlite3.connect(adapters._work_db_path())
+    conn.execute("INSERT INTO work_records (date, record_number, contract_number, company, ship_name) VALUES ('2026-06-01', 1, 'S-WORK', 'x', 'y')")
+    conn.commit(); conn.close()
+    assert pdm_api.pdm_delete_standalone_order('S-WORK')['success'] is False
+    assert len(pdm_api.pdm_list_documents('S-WORK')['documents']) == 1

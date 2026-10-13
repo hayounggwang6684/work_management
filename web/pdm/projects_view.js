@@ -16,7 +16,7 @@ const ProjectsView = (() => {
     const load = () => { try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null'); } catch (_) { return null; } };
     const save = state => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (_) { /* 저장 불가 환경 */ } };
 
-    // options: {onMenu(x, y, contractNumber), onOpen(contractNumber, x, y), onNew()}
+    // options: {onMenu(x, y, contractNumber, project), onOpen(contractNumber, x, y), onNew()}
     function create({ onMenu, onOpen, onNew }) {
         const state = { ...ProjectsLogic.presetRange('thisMonth'), query: '', onlyUnwritten: false, sortKey: 'lastDate', sortDir: 'desc', ...(load() || {}) };
         let projects = [];
@@ -54,7 +54,7 @@ const ProjectsView = (() => {
                 h('td', { class: 'px-2 text-right text-slate-600' }, String(p.daysInRange)),
                 h('td', { class: 'px-2 text-center' }, badge(p.docs.serviceReport)), h('td', { class: 'px-2 text-center' }, badge(p.docs.measurement)),
                 h('td', { class: 'px-2 text-center' }, badge(p.docs.photoAlbum)));
-            tr.addEventListener('contextmenu', e => { e.preventDefault(); onMenu(e.clientX, e.clientY, p.contractNumber); });
+            tr.addEventListener('contextmenu', e => { e.preventDefault(); onMenu(e.clientX, e.clientY, p.contractNumber, p); });
             tr.addEventListener('dblclick', e => onOpen(p.contractNumber, e.clientX, e.clientY));
             return tr;
         }

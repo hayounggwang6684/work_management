@@ -26,7 +26,8 @@ const PDM = (() => {
 
     // ★ 우클릭 메뉴: PDM.showOrderMenu(x, y, 계약번호)
     // 서비스레포트 ▸ / 계측지 ▸ / 부품사진첩 ▸  각각 [＋ 새 문서 / 작성된 파일들…]
-    async function showOrderMenu(x, y, contractNumber) {
+    // order: 목록 행(판매용이면 order.standalone — 수정/삭제 메뉴가 추가된다)
+    async function showOrderMenu(x, y, contractNumber, order = null) {
         if (!contractNumber) return;
         const r = await eel.pdm_list_documents(contractNumber)();
         if (r.authError) { alert(r.message); return; }
@@ -46,7 +47,9 @@ const PDM = (() => {
                 ],
             };
         };
-        showContextMenu(x, y, [group('service_report'), group('measurement'), group('photo_album')]);
+        showContextMenu(x, y, [group('service_report'), group('measurement'), group('photo_album'),
+            ...(order && order.standalone ? [{ separator: true }, { label: '판매 주문 수정…', onClick: () => editStandaloneOrder(order) },
+                { label: '판매 주문 삭제…', onClick: () => deleteStandaloneOrder(order, docs.length) }] : [])]);
     }
 
     // 더블클릭: 작성된 서비스레포트가 있으면 가장 최근 것을 열고, 없으면 메뉴를 띄운다 (실수로 빈 문서가 생기지 않게).
@@ -67,6 +70,23 @@ const PDM = (() => {
     function openEditor(doc) {
         atHome = false;
         EDITORS[doc.docType]().render(container, doc.id, showHome);
+    }
+
+    // 판매용 주문 수정 (계약번호를 바꾸면 문서도 따라 옮겨진다) / 삭제 (문서·사진 포함, 되돌릴 수 없음)
+    function editStandaloneOrder(order) {
+        OrderDialog.open(async v => {
+            const r = await eel.pdm_update_standalone_order(order.contractNumber, v.contractNumber, v.company, v.shipName, v.engineModel)();
+            if (r.success) showHome();
+            return r;
+        }, { contractNumber: order.contractNumber, company: order.company, shipName: order.shipName, engineModel: order.engineModel });
+    }
+
+    async function deleteStandaloneOrder(order, docCount) {
+        const detail = docCount ? `이 주문의 문서 ${docCount}건(사진 포함)이 함께 삭제되며 되돌릴 수 없습니다.` : '이 주문에는 작성된 문서가 없습니다.';
+        if (await showChoice('판매 주문 삭제', `${order.contractNumber} (${order.shipName}) 판매 주문을 삭제할까요? ${detail}`,
+            [{ label: '삭제', value: true, primary: true }, { label: '취소', value: false }]) !== true) return;
+        const r = await eel.pdm_delete_standalone_order(order.contractNumber)();
+        if (r.success) showHome(); else alert(r.message);
     }
 
     // 신규: 판매용 주문(작업현황에 공사가 없는 건)을 등록하고 표지 포함 부품사진첩을 연다

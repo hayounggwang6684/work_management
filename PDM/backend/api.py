@@ -117,21 +117,27 @@ def pdm_create_document(doc_type: str, contract_number: str) -> Dict[str, Any]:
 _CONTRACT_BAD = re.compile(r'[\x00-\x1f]')
 
 
+def _order_fields(contract_number: str, company: str, ship_name: str, engine_model: str) -> tuple:
+    """판매용 주문 입력 검증/정리 → (계약번호, 업체, 선박, 엔진). 잘못되면 ValueError(사용자용 메시지)."""
+    cn, ship = (contract_number or '').strip(), (ship_name or '').strip()
+    if not cn or _CONTRACT_BAD.search(cn) or len(cn) > 40:
+        raise ValueError('계약번호를 입력하세요 (40자 이내).')
+    if not ship:
+        raise ValueError('선박명을 입력하세요.')
+    return cn, (company or '').strip()[:100], ship[:100], (engine_model or '').strip()[:100]
+
+
 @eel.expose
 @guarded('write')
 def pdm_create_standalone_order(contract_number: str, company: str, ship_name: str, engine_model: str) -> Dict[str, Any]:
     """판매용 주문(작업현황에 공사가 없는 건)을 등록하고 표지 포함 부품사진첩을 만들어 돌려준다."""
     try:
-        cn, ship = (contract_number or '').strip(), (ship_name or '').strip()
-        if not cn or _CONTRACT_BAD.search(cn) or len(cn) > 40:
-            return _fail('계약번호를 입력하세요 (40자 이내).')
-        if not ship:
-            return _fail('선박명을 입력하세요.')
+        cn, company, ship, engine = _order_fields(contract_number, company, ship_name, engine_model)
         if adapters.get_order_info(cn):
             return _fail('작업현황에 이미 있는 계약번호입니다. 레포트관리 목록에서 해당 공사의 우클릭 메뉴를 사용하세요.')
         user = adapters.get_current_user().get('full_name', '')
         try:
-            get_db().create_standalone_order(cn, (company or '').strip()[:100], ship[:100], (engine_model or '').strip()[:100], user)
+            get_db().create_standalone_order(cn, company, ship, engine, user)
         except ValueError:
             # 앞선 시도에서 주문만 등록되고 문서 생성이 실패한 경우(문서가 하나도 없음)에는 같은 주문으로 이어서 만든다
             existing = get_db().get_standalone_order(cn)
@@ -144,6 +150,40 @@ def pdm_create_standalone_order(contract_number: str, company: str, ship_name: s
     except Exception:
         logger.exception('pdm_create_standalone_order')
         return _fail('주문 등록 중 오류가 발생했습니다.')
+
+
+@eel.expose
+@guarded('write')
+def pdm_update_standalone_order(old_contract_number: str, contract_number: str, company: str, ship_name: str, engine_model: str) -> Dict[str, Any]:
+    """판매용 주문 수정 (공사 주문은 수정할 수 없다). 계약번호를 바꾸면 그 주문의 문서도 함께 옮겨진다."""
+    try:
+        cn, company, ship, engine = _order_fields(contract_number, company, ship_name, engine_model)
+        if adapters.get_order_info(cn):
+            return _fail('작업현황에 이미 있는 계약번호입니다.')
+        return {'success': True, 'order': get_db().update_standalone_order((old_contract_number or '').strip(), cn, company, ship, engine)}
+    except KeyError:
+        return _fail('판매용 주문만 수정할 수 있습니다 (찾을 수 없음). 목록을 새로 조회하세요.')
+    except ValueError as e:
+        return _fail(str(e))
+    except Exception:
+        logger.exception('pdm_update_standalone_order')
+        return _fail('주문 수정 중 오류가 발생했습니다.')
+
+
+@eel.expose
+@guarded('write')
+def pdm_delete_standalone_order(contract_number: str) -> Dict[str, Any]:
+    """판매용 주문과 그 주문의 모든 문서(사진 포함)를 삭제한다 (되돌릴 수 없음 — 화면에서 확인을 받는다). 공사 주문은 삭제할 수 없다."""
+    try:
+        cn = (contract_number or '').strip()
+        if adapters.get_order_info(cn):
+            return _fail('작업현황에 있는 계약번호라 삭제할 수 없습니다 (문서가 공사와 연결되어 있습니다).')
+        return {'success': True, 'deletedDocuments': get_db().delete_standalone_order(cn)}
+    except KeyError:
+        return _fail('판매용 주문만 삭제할 수 있습니다 (찾을 수 없음). 목록을 새로 조회하세요.')
+    except Exception:
+        logger.exception('pdm_delete_standalone_order')
+        return _fail('주문 삭제 중 오류가 발생했습니다.')
 
 
 @eel.expose

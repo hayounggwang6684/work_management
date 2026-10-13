@@ -252,6 +252,41 @@ class PdmDb:
             row = conn.execute('SELECT * FROM pdm_orders WHERE contract_number = ?', (contract_number,)).fetchone()
         return _order_info(row) if row else None
 
+    def update_standalone_order(self, old_contract: str, contract_number: str, company: str, ship_name: str, engine_model: str) -> Dict[str, Any]:
+        """판매용 주문 수정 (계약번호 포함). 그 계약번호의 문서도 함께 옮기고, 문서 헤더의 같은 값(계약번호/업체/선박/엔진)도 새 값으로 바꾼다.
+        없는 주문이면 KeyError, 바꿀 계약번호가 이미 있으면 ValueError. 한 트랜잭션."""
+        with self.connect() as conn:
+            old = conn.execute('SELECT * FROM pdm_orders WHERE contract_number = ?', (old_contract,)).fetchone()
+            if old is None:
+                raise KeyError(old_contract)
+            try:
+                conn.execute('UPDATE pdm_orders SET contract_number=?, company=?, ship_name=?, engine_model=? WHERE contract_number=?',
+                             (contract_number, company, ship_name, engine_model, old['contract_number']))
+            except sqlite3.IntegrityError:
+                raise ValueError(f'이미 등록된 계약번호입니다: {contract_number}')
+            swaps = {'orderNo': (old['contract_number'], contract_number), 'workNo': (old['contract_number'], contract_number),
+                     'customer': (old['company'], company), 'owner': (old['company'], company),
+                     'vesselName': (old['ship_name'], ship_name), 'shipName': (old['ship_name'], ship_name), 'coverShip': (old['ship_name'], ship_name),
+                     'model': (old['engine_model'], engine_model), 'makerType': (old['engine_model'], engine_model), 'coverEngine': (old['engine_model'], engine_model)}
+            for doc in conn.execute('SELECT id, header_json FROM pdm_documents WHERE contract_number = ? COLLATE NOCASE', (old['contract_number'],)).fetchall():
+                header = json.loads(doc['header_json'])
+                for key, (before, after) in swaps.items():
+                    if before and header.get(key) == before:
+                        header[key] = after
+                conn.execute('UPDATE pdm_documents SET contract_number=?, ship_name=?, header_json=? WHERE id=?',
+                             (contract_number, ship_name, json.dumps(header, ensure_ascii=False), doc['id']))
+        return self.get_standalone_order(contract_number)
+
+    def delete_standalone_order(self, contract_number: str) -> int:
+        """판매용 주문과 그 계약번호의 모든 문서(사진 포함)를 삭제. 지운 문서 수 반환. 없는 주문이면 KeyError."""
+        with self.connect() as conn:
+            order = conn.execute('SELECT contract_number FROM pdm_orders WHERE contract_number = ?', (contract_number,)).fetchone()
+            if order is None:
+                raise KeyError(contract_number)
+            count = conn.execute('DELETE FROM pdm_documents WHERE contract_number = ? COLLATE NOCASE', (order['contract_number'],)).rowcount     # 사진은 FK 연쇄 삭제
+            conn.execute('DELETE FROM pdm_orders WHERE contract_number = ?', (order['contract_number'],))
+        return count
+
     def list_standalone_orders(self, start: str, end: str, like: str) -> List[Dict[str, Any]]:
         """등록일(로컬 날짜, start~end 포함)이 기간 안이고 계약번호/선박/업체가 like 패턴(SQL ESCAPE 백슬래시)에 맞는 판매용 주문. 최근 등록 순."""
         with self.connect() as conn:
