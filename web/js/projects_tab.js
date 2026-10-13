@@ -1,4 +1,4 @@
-// 공사현황 탭 — PDM(서비스레포트/계측지) 화면을 #projectsView 에 붙인다.
+// 레포트관리 탭 — PDM(서비스레포트/계측지) 화면을 #projectsView 에 붙인다.
 // PDM 스크립트(web/pdm/, 원본은 PDM/web)는 탭을 처음 열 때 한 번만 불러온다 (앱 시작 속도/오류 격리).
 // 의존: pdm/pdm_loader.js (PdmLoader), eel
 
@@ -18,8 +18,8 @@ function openProjectsTab() {
             .then(() => PDM.mount(el))
             .then(() => { _pdmMounted = true; })
             .catch(e => {                     // 실패하면 다음에 탭을 열 때 다시 시도한다
-                console.error('공사현황 로드 실패:', e);
-                el.textContent = '공사현황을 불러오지 못했습니다: ' + (e && e.message ? e.message : e);
+                console.error('레포트관리 로드 실패:', e);
+                el.textContent = '레포트관리을 불러오지 못했습니다: ' + (e && e.message ? e.message : e);
             })
             .finally(() => { _pdmMounting = null; });
     }

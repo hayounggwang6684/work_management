@@ -1,4 +1,4 @@
-// 공사현황 순수 로직 (DOM 없음 — node 로 테스트: node --test PDM/tests/projects_logic.test.js)
+// 레포트관리 순수 로직 (DOM 없음 — node 로 테스트: node --test PDM/tests/projects_logic.test.js)
 const ProjectsLogic = (() => {
     const pad = n => String(n).padStart(2, '0');
     // 로컬 날짜 → YYYY-MM-DD (toISOString 은 UTC 로 바뀌어 하루 어긋날 수 있다)
@@ -18,7 +18,7 @@ const ProjectsLogic = (() => {
     }
 
     // 정렬 키 → 값. 문서 건수는 숫자, 나머지는 문자열.
-    const sortValue = (p, key) => (key === 'serviceReport' ? p.docs.serviceReport : key === 'measurement' ? p.docs.measurement
+    const sortValue = (p, key) => (key === 'serviceReport' ? p.docs.serviceReport : key === 'measurement' ? p.docs.measurement : key === 'photoAlbum' ? p.docs.photoAlbum
         : key === 'daysInRange' ? p.daysInRange : String(p[key] ?? ''));
 
     // 새 배열 반환 (원본 불변). 같은 값이면 계약번호 순으로 안정 정렬.

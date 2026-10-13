@@ -22,6 +22,13 @@ const PrintLogic = (() => {
         return [...pages.keys()].sort((a, b) => a - b).map(page => ({ page, slots: pages.get(page) }));
     }
 
+    // 부품사진첩 표지 INDEX 줄: "1. 쿨러 외 작업 사진 (2매)" — 사진이 있는 페이지마다 한 줄 (제목이 없으면 '작업 사진').
+    // 표지에 들어가는 줄 수는 maxLines 까지이고, 넘치면 마지막 줄을 "… 외 N건" 으로 줄인다.
+    function albumIndexLines(pages, pageTitles, maxLines = 6) {
+        const lines = pages.map((pg, i) => `${i + 1}. ${String((pageTitles || {})[pg.page] || '').trim() || '작업 사진'} (${pg.slots.filter(Boolean).length}매)`);
+        return lines.length > maxLines ? [...lines.slice(0, maxLines - 1), `… 외 ${lines.length - maxLines + 1}건`] : lines;
+    }
+
     const pageLabel = (n, total) => `${n} / ${total}`;
 
     // 사진 페이지 배치 (mm). 키 = 한 장에 들어가는 사진 수.
@@ -47,7 +54,7 @@ const PrintLogic = (() => {
         return { x: g.cols[index % 2], y: g.rows[Math.floor(index / 2)] };
     }
 
-    return { SR_FIRST_PAGE_LINES, SR_NEXT_PAGE_LINES, PHOTOS_PER_PAGE, PHOTO_GEOMETRY, splitSummary, photoPages, pageLabel, slotPosition };
+    return { SR_FIRST_PAGE_LINES, SR_NEXT_PAGE_LINES, PHOTOS_PER_PAGE, PHOTO_GEOMETRY, splitSummary, photoPages, albumIndexLines, pageLabel, slotPosition };
 })();
 
 if (typeof module !== 'undefined') module.exports = PrintLogic;

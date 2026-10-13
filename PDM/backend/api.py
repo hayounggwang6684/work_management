@@ -3,6 +3,7 @@
 작성자(created_by/updated_by)는 항상 adapters.get_current_user() 에서 가져온다 (JS 인자 신뢰 금지).
 """
 import logging
+import re
 from datetime import date
 from typing import Any, Dict
 
@@ -11,7 +12,7 @@ import eel
 from PDM.backend.guard import guarded
 from PDM.backend import adapters
 from PDM.backend.naming import default_title
-from PDM.backend import measurement, photo_api, settings_api, standards, standards_api  # noqa: F401  (photo/settings/standards_api: @eel.expose 등록)
+from PDM.backend import measurement, photo_album, photo_api, settings_api, standards, standards_api  # noqa: F401  (photo/settings/standards_api: @eel.expose 등록)
 from PDM.backend.pdm_db import ConflictError
 from PDM.backend.runtime import fail as _fail, get_db
 from PDM.backend.service_report import build_header, normalize_header as normalize_service_report_header
@@ -31,6 +32,19 @@ def pdm_ping() -> Dict[str, Any]:
     return info
 
 
+def _standalone_rows(start: str, end: str, query: str, known: set) -> list:
+    """판매용 독립 주문을 공사 목록과 같은 모양의 행으로 (작업일 0, 기간 = 등록일). 작업현황에 같은 계약번호가 있으면 공사 쪽이 이긴다."""
+    rows = get_db().list_standalone_orders(start, end, adapters.like_pattern((query or '').strip()))
+    return [{'contractNumber': o['contractNumber'], 'company': o['company'], 'shipName': o['shipName'], 'engineModel': o['engineModel'],
+             'firstDate': o['registeredDate'], 'lastDate': o['registeredDate'], 'daysInRange': 0, 'standalone': True}
+            for o in rows if o['contractNumber'].upper() not in known]
+
+
+def _order_info(contract_number: str) -> Dict[str, Any]:
+    """문서 헤더용 주문 정보: 작업현황(공사) 우선, 없으면 판매용 독립 주문. 없으면 {}."""
+    return adapters.get_order_info(contract_number) or get_db().get_standalone_order((contract_number or '').strip()) or {}
+
+
 @eel.expose
 @guarded('guest')
 def pdm_search_orders(query: str) -> Dict[str, Any]:
@@ -44,19 +58,20 @@ def pdm_search_orders(query: str) -> Dict[str, Any]:
 @eel.expose
 @guarded('guest')
 def pdm_list_projects(start: str, end: str, query: str = '') -> Dict[str, Any]:
-    """공사현황: 기간 안에 작업이 있는 주문 목록 + 주문별 서비스레포트/계측지 건수."""
+    """레포트관리: 기간 안에 작업이 있는 주문 + 같은 기간에 등록한 판매용 주문, 주문별 서비스레포트/계측지/부품사진첩 건수."""
     try:
         projects = adapters.list_projects(start, end, query)
+        projects += _standalone_rows(start, end, query, {p['contractNumber'].upper() for p in projects})
         counts = get_db().document_counts([p['contractNumber'] for p in projects])
         for p in projects:
             c = counts.get(p['contractNumber'], {})
-            p['docs'] = {'serviceReport': c.get('service_report', 0), 'measurement': c.get('measurement', 0)}
+            p['docs'] = {'serviceReport': c.get('service_report', 0), 'measurement': c.get('measurement', 0), 'photoAlbum': c.get('photo_album', 0)}
         return {'success': True, 'projects': projects}
     except ValueError as e:
         return _fail(str(e))
     except Exception as e:
         logger.exception('pdm_list_projects')
-        return _fail('공사현황 조회 중 오류가 발생했습니다.')
+        return _fail('레포트 목록 조회 중 오류가 발생했습니다.')
 
 
 @eel.expose
@@ -72,15 +87,21 @@ def pdm_list_documents(contract_number: str = '', doc_type: str = '') -> Dict[st
 @eel.expose
 @guarded('write')
 def pdm_create_document(doc_type: str, contract_number: str) -> Dict[str, Any]:
-    """작업현황에서 헤더 정보를 읽어 새 문서 생성. 작성자는 로그인 사용자."""
+    """작업현황(없으면 판매용 주문)에서 헤더 정보를 읽어 새 문서 생성. 작성자는 로그인 사용자.
+    부품사진첩은 판매용 주문이면 표지 포함, 공사와 연계된 주문이면 표지 없이 만든다."""
     try:
         user = adapters.get_current_user()
-        info = adapters.get_order_info(contract_number)
+        info = _order_info(contract_number)
         if not info:
-            return _fail('작업현황에서 해당 주문을 찾을 수 없습니다.')
+            return _fail('해당 주문을 찾을 수 없습니다.')
         reporter = user.get('full_name', '')
-        header = (build_header(info, reporter, date.today()) if doc_type == 'service_report'
-                  else measurement.build_header(info, reporter, date.today()))
+        today = date.today()
+        if doc_type == 'service_report':
+            header = build_header(info, reporter, today)
+        elif doc_type == 'photo_album':
+            header = photo_album.build_header(info, today, with_cover=bool(info.get('standalone')))
+        else:
+            header = measurement.build_header(info, reporter, today)
         existing = [d['title'] for d in get_db().list_documents(info['contractNumber'], doc_type)]
         doc_id = get_db().create_document(
             doc_type, info['contractNumber'], info['shipName'],
@@ -91,6 +112,38 @@ def pdm_create_document(doc_type: str, contract_number: str) -> Dict[str, Any]:
     except Exception as e:
         logger.exception('pdm_create_document')
         return _fail('문서 생성 중 오류가 발생했습니다.')
+
+
+_CONTRACT_BAD = re.compile(r'[\x00-\x1f]')
+
+
+@eel.expose
+@guarded('write')
+def pdm_create_standalone_order(contract_number: str, company: str, ship_name: str, engine_model: str) -> Dict[str, Any]:
+    """판매용 주문(작업현황에 공사가 없는 건)을 등록하고 표지 포함 부품사진첩을 만들어 돌려준다."""
+    try:
+        cn, ship = (contract_number or '').strip(), (ship_name or '').strip()
+        if not cn or _CONTRACT_BAD.search(cn) or len(cn) > 40:
+            return _fail('계약번호를 입력하세요 (40자 이내).')
+        if not ship:
+            return _fail('선박명을 입력하세요.')
+        if adapters.get_order_info(cn):
+            return _fail('작업현황에 이미 있는 계약번호입니다. 레포트관리 목록에서 해당 공사의 우클릭 메뉴를 사용하세요.')
+        user = adapters.get_current_user().get('full_name', '')
+        try:
+            get_db().create_standalone_order(cn, (company or '').strip()[:100], ship[:100], (engine_model or '').strip()[:100], user)
+        except ValueError:
+            # 앞선 시도에서 주문만 등록되고 문서 생성이 실패한 경우(문서가 하나도 없음)에는 같은 주문으로 이어서 만든다
+            existing = get_db().get_standalone_order(cn)
+            if not existing or get_db().list_documents(existing['contractNumber']):
+                raise
+            cn = existing['contractNumber']          # 대소문자만 다르게 입력해도 등록된 표기를 쓴다
+        return pdm_create_document('photo_album', cn)
+    except ValueError as e:
+        return _fail(str(e))
+    except Exception:
+        logger.exception('pdm_create_standalone_order')
+        return _fail('주문 등록 중 오류가 발생했습니다.')
 
 
 @eel.expose
@@ -116,8 +169,8 @@ def pdm_save_document(doc_id: int, expected_updated_at: str, title: str, header:
             return _fail('문서 내용 형식이 올바르지 않습니다.')
         title = (title or '').strip()[:MAX_TITLE_LEN] or current['title']
         # 공유 DB 비대화/오염을 막기 위해 서버가 종류별로 검증·정리한다 (양식/구분 확인, 행·열 수 보정, 길이 제한)
-        header = (measurement.normalize_header(header) if current['docType'] == 'measurement'
-                  else normalize_service_report_header(header))
+        normalizers = {'measurement': measurement.normalize_header, 'photo_album': photo_album.normalize_header}
+        header = normalizers.get(current['docType'], normalize_service_report_header)(header)
         new_ts = get_db().update_document(doc_id, expected_updated_at, title, header, user.get('full_name', ''))
         get_db().record_summary_history(header.get('model', ''), header.get('summary', []))
         return {'success': True, 'updatedAt': new_ts}

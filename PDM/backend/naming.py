@@ -2,7 +2,7 @@
 import re
 from typing import Any, Dict, Iterable
 
-TYPE_LABEL = {'service_report': '서비스레포트', 'measurement': '계측지'}
+TYPE_LABEL = {'service_report': '서비스레포트', 'measurement': '계측지', 'photo_album': '부품사진첩'}
 _FORBIDDEN = re.compile(r'[\\/:*?"<>|]')
 _FALLBACK = '문서'
 

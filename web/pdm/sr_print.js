@@ -113,5 +113,5 @@ const SrPrint = (() => {
     }
 
     PrintView.register('service_report', build);
-    return { build };
+    return { build, photoPage };
 })();

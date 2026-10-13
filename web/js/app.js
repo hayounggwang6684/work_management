@@ -115,7 +115,7 @@ function showView(view) {
     } else if (view === 'projects') {
         if (btnProjects) btnProjects.className = 'px-4 py-2 rounded-lg bg-blue-600 text-white';
         if (projectsView) projectsView.classList.remove('hidden');
-        openProjectsTab();   // js/projects_tab.js — PDM 공사현황
+        openProjectsTab();   // js/projects_tab.js — PDM 레포트관리
     } else if (view === 'employee') {
         if (btnEmployee) btnEmployee.className = 'px-4 py-2 rounded-lg bg-blue-600 text-white';
         if (employeeView) employeeView.classList.remove('hidden');

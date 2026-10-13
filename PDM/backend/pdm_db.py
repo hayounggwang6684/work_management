@@ -61,6 +61,14 @@ CREATE TABLE IF NOT EXISTS pdm_form_templates (
     updated_by TEXT NOT NULL DEFAULT '',
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS pdm_orders (
+    contract_number TEXT PRIMARY KEY COLLATE NOCASE,
+    company TEXT NOT NULL DEFAULT '',
+    ship_name TEXT NOT NULL DEFAULT '',
+    engine_model TEXT NOT NULL DEFAULT '',
+    created_by TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 CREATE TABLE IF NOT EXISTS pdm_summary_history (
     engine_model TEXT NOT NULL,
     text TEXT NOT NULL,
@@ -69,7 +77,7 @@ CREATE TABLE IF NOT EXISTS pdm_summary_history (
 );
 '''
 
-DOC_TYPES = ('service_report', 'measurement')
+DOC_TYPES = ('service_report', 'measurement', 'photo_album')
 _NOW_MS = "strftime('%Y-%m-%d %H:%M:%f','now')"
 
 
@@ -228,6 +236,31 @@ class PdmDb:
             counts.setdefault(r['contract_number'], {t: 0 for t in DOC_TYPES})[r['doc_type']] = r['n']
         return counts
 
+    # ── 판매용 독립 주문 (작업현황에 공사가 없는 건: 부품 판매 등) ──────────────────────
+    def create_standalone_order(self, contract_number: str, company: str, ship_name: str, engine_model: str, user: str) -> None:
+        """이미 있는 계약번호면 ValueError."""
+        with self.connect() as conn:
+            try:
+                conn.execute("INSERT INTO pdm_orders (contract_number, company, ship_name, engine_model, created_by, created_at) "
+                             "VALUES (?,?,?,?,?,datetime('now','localtime'))",
+                             (contract_number, company, ship_name, engine_model, user))
+            except sqlite3.IntegrityError:
+                raise ValueError(f'이미 등록된 계약번호입니다: {contract_number}')
+
+    def get_standalone_order(self, contract_number: str) -> Optional[Dict[str, Any]]:
+        with self.connect() as conn:
+            row = conn.execute('SELECT * FROM pdm_orders WHERE contract_number = ?', (contract_number,)).fetchone()
+        return _order_info(row) if row else None
+
+    def list_standalone_orders(self, start: str, end: str, like: str) -> List[Dict[str, Any]]:
+        """등록일(로컬 날짜, start~end 포함)이 기간 안이고 계약번호/선박/업체가 like 패턴(SQL ESCAPE 백슬래시)에 맞는 판매용 주문. 최근 등록 순."""
+        with self.connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM pdm_orders WHERE date(created_at) BETWEEN ? AND ? "
+                "AND (contract_number LIKE ? ESCAPE '\\' OR ship_name LIKE ? ESCAPE '\\' OR company LIKE ? ESCAPE '\\') "
+                "ORDER BY created_at DESC, contract_number", (start, end, like, like, like)).fetchall()
+        return [_order_info(r) for r in rows]
+
     def delete_document(self, doc_id: int) -> None:
         with self.connect() as conn:
             conn.execute('DELETE FROM pdm_documents WHERE id = ?', (doc_id,))
@@ -239,6 +272,13 @@ def _next_ts(conn: sqlite3.Connection, previous: str) -> str:
     if ts <= previous:
         ts = conn.execute("SELECT strftime('%Y-%m-%d %H:%M:%f', ?, '+0.001 seconds')", (previous,)).fetchone()[0]
     return ts
+
+
+def _order_info(row: sqlite3.Row) -> Dict[str, Any]:
+    """판매용 주문 → 작업현황 주문 정보와 같은 모양 (작업 기간/장소는 없음). registeredDate 는 로컬 등록일."""
+    return {'contractNumber': row['contract_number'], 'company': row['company'], 'shipName': row['ship_name'],
+            'engineModel': row['engine_model'], 'location': '', 'startDate': '', 'endDate': '',
+            'registeredDate': row['created_at'][:10], 'standalone': True}
 
 
 def _doc_row(row: sqlite3.Row) -> Dict[str, Any]:

@@ -94,8 +94,8 @@ def test_document_counts_group_by_contract_and_type(tmp_path):
     db.create_document('measurement', 'A', '', 'm', {}, 'u')
     db.create_document('measurement', 'B', '', 'm', {}, 'u')
     counts = db.document_counts(['A', 'B', 'C'])
-    assert counts['A'] == {'service_report': 2, 'measurement': 1}
-    assert counts['B'] == {'service_report': 0, 'measurement': 1}
+    assert counts['A'] == {'service_report': 2, 'measurement': 1, 'photo_album': 0}
+    assert counts['B'] == {'service_report': 0, 'measurement': 1, 'photo_album': 0}
     assert 'C' not in counts and db.document_counts([]) == {}
 
 
@@ -105,8 +105,8 @@ def test_api_merges_projects_with_document_counts(work_db):
     runtime.get_db().create_document('service_report', 'SH-2026-057-T', 'GL2030', 't', {}, 'u')
     r = pdm_api.pdm_list_projects('2026-06-01', '2026-06-30', '')
     assert r['success'] and [p['contractNumber'] for p in r['projects']] == ['SH-2026-057-T', 'SH-2026-100-T']
-    assert r['projects'][0]['docs'] == {'serviceReport': 1, 'measurement': 0}
-    assert r['projects'][1]['docs'] == {'serviceReport': 0, 'measurement': 0}
+    assert r['projects'][0]['docs'] == {'serviceReport': 1, 'measurement': 0, 'photoAlbum': 0}
+    assert r['projects'][1]['docs'] == {'serviceReport': 0, 'measurement': 0, 'photoAlbum': 0}
 
 
 def test_api_reports_bad_range_as_message(work_db):
@@ -132,3 +132,67 @@ def test_like_escape_matches_real_underscore_and_percent(tmp_path, monkeypatch):
     monkeypatch.setenv('PDM_WORK_DB_PATH', str(path))
     assert contracts(adapters.list_projects('2026-01-01', '2026-12-31', 'A_B')) == ['SH-1']      # _ 는 'AxB' 에 맞지 않는다
     assert contracts(adapters.list_projects('2026-01-01', '2026-12-31', '100%')) == ['SH-1']
+
+
+# ── 판매용 독립 주문 + 부품사진첩 ────────────────────────────────────────────
+
+def test_standalone_order_creates_album_with_cover_and_shows_in_list(work_db):
+    r = pdm_api.pdm_create_standalone_order('SALE-001', '대양상선', '대양호', 'CUMMINS KTA38')
+    assert r['success'] and r['document']['docType'] == 'photo_album'
+    hd = r['document']['header']
+    assert hd['withCover'] is True and (hd['orderNo'], hd['customer'], hd['vesselName'], hd['model']) == ('SALE-001', '대양상선', '대양호', 'CUMMINS KTA38')
+    assert r['document']['title'] == 'SALE-001_대양호_부품사진첩'
+    from datetime import date
+    today = date.today().isoformat()
+    rows = pdm_api.pdm_list_projects(today, today, '')['projects']
+    sale = [p for p in rows if p['contractNumber'] == 'SALE-001'][0]
+    assert sale['standalone'] is True and sale['daysInRange'] == 0 and sale['docs']['photoAlbum'] == 1
+    assert [p['contractNumber'] for p in pdm_api.pdm_list_projects(today, today, '대양')['projects']] == ['SALE-001']
+    assert pdm_api.pdm_list_projects('2020-01-01', '2020-12-31', '')['projects'] == []        # 등록일이 기간 밖이면 안 보임
+
+
+def test_standalone_order_validation_and_duplicates(work_db):
+    assert pdm_api.pdm_create_standalone_order('', 'a', 'b', 'c')['success'] is False
+    assert pdm_api.pdm_create_standalone_order('X' * 41, 'a', 'b', 'c')['success'] is False
+    assert pdm_api.pdm_create_standalone_order('S-1', 'a', '  ', 'c')['success'] is False
+    assert pdm_api.pdm_create_standalone_order('SH-2026-057-T', 'a', 'b', 'c')['success'] is False      # 작업현황에 있는 번호
+    assert pdm_api.pdm_create_standalone_order('S-1', 'a', 'b', 'c')['success'] is True
+    assert pdm_api.pdm_create_standalone_order('S-1', 'a', 'b', 'c')['success'] is False                # 판매 주문끼리 중복
+
+
+def test_documents_of_all_types_can_be_created_for_standalone_orders(work_db):
+    pdm_api.pdm_create_standalone_order('S-2', '업체', '선박', 'CAT 3512')
+    for doc_type in ('service_report', 'measurement', 'photo_album'):
+        r = pdm_api.pdm_create_document(doc_type, 'S-2')
+        assert r['success'], doc_type
+    assert pdm_api.pdm_create_document('photo_album', 'S-2')['document']['header']['withCover'] is True
+
+
+def test_album_for_a_work_order_has_no_cover(work_db):
+    r = pdm_api.pdm_create_document('photo_album', 'SH-2026-057-T')
+    assert r['success'] and r['document']['header']['withCover'] is False and r['document']['header']['customer'] == '세동상운'
+
+
+def test_album_header_is_normalized_on_save(work_db):
+    doc = pdm_api.pdm_create_document('photo_album', 'SH-2026-057-T')['document']
+    dirty = {'orderNo': 'SH', 'customer': 'c' * 300, 'vesselName': 'v', 'model': 'A\nB', 'workDate': '2026.07.01', 'withCover': 'yes',
+             'pageTitles': {'0': '제목', 'x': 'bad'}, 'photosPerPage': 7, 'summary': ['jjj'], 'evil': 1}
+    assert pdm_api.pdm_save_document(doc['id'], doc['updatedAt'], 't', dirty)['success']
+    hd = pdm_api.pdm_get_document(doc['id'])['document']['header']
+    assert len(hd['customer']) == 100 and hd['model'] == 'A\nB' and hd['withCover'] is False      # True 가 아니면 표지 없음
+    assert hd['pageTitles'] == {'0': '제목'} and hd['photosPerPage'] == 6 and 'summary' not in hd and 'evil' not in hd
+
+
+def test_standalone_retry_after_failed_document_creation_reuses_the_order(work_db, monkeypatch):
+    real = pdm_api.pdm_create_document
+    monkeypatch.setattr(pdm_api, 'pdm_create_document', lambda *a: {'success': False, 'message': '일시 오류'})
+    assert pdm_api.pdm_create_standalone_order('S-9', 'a', 'b', 'c')['success'] is False        # 주문만 등록됨
+    monkeypatch.setattr(pdm_api, 'pdm_create_document', real)
+    assert pdm_api.pdm_create_standalone_order('S-9', 'a', 'b', 'c')['success'] is True         # 다시 눌러도 이어서 만들어진다
+    assert pdm_api.pdm_create_standalone_order('s-9', 'a', 'b', 'c')['success'] is False        # 대소문자만 달라도 같은 번호 (문서가 이미 있음)
+
+
+def test_standalone_contract_number_is_case_insensitive_against_work_orders(work_db):
+    pdm_api.pdm_create_standalone_order('sh-2026-057-t', 'a', 'b', 'c')    # 작업현황에는 대문자 SH-2026-057-T 가 있다 → 등록되더라도 목록에 두 번 나오지 않는다
+    rows = pdm_api.pdm_list_projects('2020-01-01', '2030-12-31', '')['projects']
+    assert [p['contractNumber'].upper() for p in rows].count('SH-2026-057-T') == 1

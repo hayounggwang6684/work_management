@@ -39,7 +39,7 @@ project-root/
 │       ├── patch_system.py      # ZIP 패치 적용
 │       ├── telegram_notifier.py # 텔레그램 봇 알림
 │       └── daily_scheduler.py   # 자동 백업 / 일일 요약 스케줄러
-├── PDM/                         # 공사현황·서비스레포트·계측지 (독립 개발 모듈 — PDM/INTEGRATION.md)
+├── PDM/                         # 레포트관리(구 공사현황)·서비스레포트·계측지·부품사진첩 (독립 개발 모듈 — PDM/INTEGRATION.md)
 │   ├── backend/adapters.py      #   본체 접점 훅 (현재 사용자/권한/DB 경로)
 │   └── web/                     #   화면 원본 → scripts/sync_pdm_web.py 로 web/pdm/ 에 복사
 ├── web/

@@ -91,6 +91,9 @@ def _like(text: str) -> str:
     return f'%{escaped}%'
 
 
+like_pattern = _like      # 다른 PDM 모듈이 쓰는 공개 이름
+
+
 def search_orders(query: str, limit: int = 30) -> List[Dict[str, Any]]:
     """계약번호/선박/업체 부분일치로 주문 목록(계약번호 단위) 검색."""
     q = (query or '').strip()

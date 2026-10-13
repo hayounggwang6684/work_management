@@ -60,3 +60,8 @@ test('periodText: 같은 날/같은 해/해가 다를 때', () => {
     assert.equal(L.periodText('2026-05-20', '2026-06-23'), '2026-05-20 ~ 06-23');
     assert.equal(L.periodText('2025-12-30', '2026-01-02'), '2025-12-30 ~ 2026-01-02');
 });
+
+test('sortProjects: 부품사진첩 건수로 정렬', () => {
+    const mk = (cn, n) => ({ contractNumber: cn, docs: { serviceReport: 0, measurement: 0, photoAlbum: n }, daysInRange: 0 });
+    assert.deepEqual(L.sortProjects([mk('A', 1), mk('B', 3), mk('C', 2)], 'photoAlbum', 'desc').map(p => p.contractNumber), ['B', 'C', 'A']);
+});

@@ -4,8 +4,8 @@
 // 이 파일의 ?v= 쿼리는 하위 스크립트에도 붙여 패치 후 캐시를 갱신한다.
 const PDM_SCRIPT_ORDER = [
     'dom.js', 'sr_fields.js', 'print_assets.js', 'print_layout.js', 'print_logic.js', 'print_view.js', 'sr_print.js',
-    'mm_assets.js', 'mm_logic.js', 'mm_print.js', 'projects_logic.js', 'projects_view.js', 'layout_editor.js', 'form_manager.js', 'standards_manager.js',
-    'photo_editor.js', 'photo_grid.js', 'editor_bar.js', 'sr_editor.js', 'mm_editor.js', 'pdm.js',
+    'mm_assets.js', 'mm_logic.js', 'mm_print.js', 'album_print.js', 'projects_logic.js', 'projects_view.js', 'layout_editor.js', 'form_manager.js', 'standards_manager.js',
+    'photo_editor.js', 'photo_grid.js', 'editor_bar.js', 'sr_editor.js', 'mm_editor.js', 'album_editor.js', 'order_dialog.js', 'pdm.js',
 ];
 
 // 로더 팩토리: loadScript(file) → Promise. 순서대로 한 번씩 불러오며,

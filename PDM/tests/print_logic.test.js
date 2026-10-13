@@ -84,3 +84,19 @@ test('photoPages: 4장 기준으로 묶으면 페이지가 더 많아진다', ()
     assert.equal(L.photoPages(photos, 4).length, 2);
     assert.equal(L.photoPages(photos, 4)[1].slots[1].id, 5);
 });
+
+// ── 부품사진첩 표지 INDEX ─────────────────────────────────────────────────────
+
+test('albumIndexLines: 사진이 있는 페이지마다 "번호. 제목 (n매)", 제목이 없으면 작업 사진', () => {
+    const pages = L.photoPages([{ id: 1, slotIndex: 0 }, { id: 2, slotIndex: 1 }, { id: 3, slotIndex: 6 }], 6);
+    assert.deepEqual(L.albumIndexLines(pages, { 0: ' NO.1 G/E 쿨러 외 ' }), ['1. NO.1 G/E 쿨러 외 (2매)', '2. 작업 사진 (1매)']);
+});
+
+test('albumIndexLines: 최대 줄 수를 넘으면 마지막 줄을 "… 외 N건"으로', () => {
+    const pages = L.photoPages(Array.from({ length: 8 }, (_, i) => ({ id: i, slotIndex: i * 6 })), 6);
+    const lines = L.albumIndexLines(pages, {}, 6);
+    assert.equal(lines.length, 6);
+    assert.equal(lines[4], '5. 작업 사진 (1매)');
+    assert.equal(lines[5], '… 외 3건');
+    assert.deepEqual(L.albumIndexLines([], {}), []);
+});

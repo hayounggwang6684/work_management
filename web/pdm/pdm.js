@@ -1,21 +1,21 @@
 // PDM 진입점.
-//   본체: 공사현황 탭을 처음 열 때  await PdmLoader.load(); PDM.mount(containerEl)  /  다시 열 때 PDM.show()
-//   화면: 공사현황(기간별 주문 목록) → 행 우클릭 메뉴 / 더블클릭 → 서비스레포트·계측지 편집기
-// 의존: dom.js(h, DOC_LABEL, showContextMenu), projects_view.js, sr_editor.js, mm_editor.js, layout_editor.js, form_manager.js, standards_manager.js,
+//   본체: 레포트관리 탭을 처음 열 때  await PdmLoader.load(); PDM.mount(containerEl)  /  다시 열 때 PDM.show()
+//   화면: 레포트관리(조회 버튼으로 기간별 주문 목록, 신규 = 판매용 주문) → 행 우클릭 메뉴 / 더블클릭 → 서비스레포트·계측지·부품사진첩 편집기
+// 의존: dom.js(h, DOC_LABEL, showContextMenu), projects_view.js, order_dialog.js, sr_editor.js, mm_editor.js, album_editor.js, layout_editor.js, form_manager.js, standards_manager.js,
 //       print_layout.js(PdmLayout), print_view.js(PrintView), eel
 const PDM = (() => {
     let container;
-    let atHome = false;      // 지금 화면이 공사현황(홈)인가 — 탭을 다시 열 때 목록 갱신 여부 판단
+    let atHome = false;      // 지금 화면이 레포트관리(홈)인가 — 탭을 다시 열 때 목록 갱신 여부 판단
 
     async function showHome() {
         atHome = true;
         const info = await eel.pdm_ping()();
         if (info.authError) { container.replaceChildren(h('p', { class: 'text-slate-500 p-4' }, info.message)); return; }
-        const projects = ProjectsView.create({ onMenu: showOrderMenu, onOpen: openDefault });
+        const projects = ProjectsView.create({ onMenu: showOrderMenu, onOpen: openDefault, onNew: newStandaloneOrder });
         container.replaceChildren(
             h('div', { class: 'bg-white rounded-lg shadow p-4 mx-auto max-w-7xl space-y-3' },
                 h('div', { class: 'flex items-baseline justify-between' },
-                    h('h1', { class: 'text-xl font-bold' }, '공사현황'),
+                    h('h1', { class: 'text-xl font-bold' }, '레포트관리'),
                     h('div', { class: 'flex items-center gap-3 text-sm' },
                         h('span', { class: 'text-slate-500' }, '작성자: ' + (info.user || '-')),
                         h('button', { class: 'px-3 py-1 rounded bg-slate-100 hover:bg-slate-200', onclick: () => { atHome = false; LayoutEditor.render(container, showHome, info.canManage); } }, '⚙ 출력 양식 설정'),
@@ -25,7 +25,7 @@ const PDM = (() => {
     }
 
     // ★ 우클릭 메뉴: PDM.showOrderMenu(x, y, 계약번호)
-    // 서비스레포트 ▸ [＋ 새 문서 / 작성된 파일들…], 계측지 ▸ [＋ 새 문서 / 작성된 파일들…]
+    // 서비스레포트 ▸ / 계측지 ▸ / 부품사진첩 ▸  각각 [＋ 새 문서 / 작성된 파일들…]
     async function showOrderMenu(x, y, contractNumber) {
         if (!contractNumber) return;
         const r = await eel.pdm_list_documents(contractNumber)();
@@ -46,7 +46,7 @@ const PDM = (() => {
                 ],
             };
         };
-        showContextMenu(x, y, [group('service_report'), group('measurement')]);
+        showContextMenu(x, y, [group('service_report'), group('measurement'), group('photo_album')]);
     }
 
     // 더블클릭: 작성된 서비스레포트가 있으면 가장 최근 것을 열고, 없으면 메뉴를 띄운다 (실수로 빈 문서가 생기지 않게).
@@ -62,9 +62,20 @@ const PDM = (() => {
         else alert(r.message);
     }
 
+    const EDITORS = { service_report: () => SrEditor, measurement: () => MmEditor, photo_album: () => AlbumEditor };
+
     function openEditor(doc) {
         atHome = false;
-        (doc.docType === 'service_report' ? SrEditor : MmEditor).render(container, doc.id, showHome);
+        EDITORS[doc.docType]().render(container, doc.id, showHome);
+    }
+
+    // 신규: 판매용 주문(작업현황에 공사가 없는 건)을 등록하고 표지 포함 부품사진첩을 연다
+    function newStandaloneOrder() {
+        OrderDialog.open(async v => {
+            const r = await eel.pdm_create_standalone_order(v.contractNumber, v.company, v.shipName, v.engineModel)();
+            if (r.success) { ProjectsView.markQueried(); openEditor(r.document); }
+            return r;
+        });
     }
 
     async function mount(el) {

@@ -10,7 +10,7 @@ function h(tag, attrs, ...children) {
     return el;
 }
 
-const DOC_LABEL = { service_report: '서비스레포트', measurement: '계측지' };
+const DOC_LABEL = { service_report: '서비스레포트', measurement: '계측지', photo_album: '부품사진첩' };
 
 // 우클릭 메뉴 — items: [{label, disabled, title, onClick, children, separator}].
 // children 이 있으면 마우스를 올릴 때 옆에 하위 메뉴. 한 번에 하나만 표시, 바깥 클릭/Esc 로 닫힘.

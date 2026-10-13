@@ -208,26 +208,34 @@ const MmPrint = (() => {
     }
 
     // ── 표지 (INDEX) ──────────────────────────────────────────────────────────
-    function coverPage(header, indexLines, layout) {
+    const center = (top, size, txt, extra = '') => abs(`left:0;right:0;top:${top}mm;text-align:center;font-size:${size}pt;font-weight:bold;font-family:${SERIF};white-space:nowrap;${extra}`, txt);
+    const coverImg = (key, x, y, w, hgt) => h('img', { src: PDM_MM_ASSETS[key], style: `position:absolute;${mmStyle(x, y, w, hgt)}` });
+
+    // 표지 공통 틀: 위/아래 검정 띠 + 회사 로고·이름·주소·인증 마크. 계측지 표지와 부품사진첩 표지가 함께 쓴다.
+    function coverFrame(layout) {
         const bar = y => abs(`${mmStyle(21.4, y, 167.2, 2.2)}background:#000`);
-        const rule = (x0, x1, y) => abs(`left:${x0}mm;top:${y}mm;width:${x1 - x0}mm;border-top:.75pt solid #000`);
-        const center = (top, size, txt, extra = '') => abs(`left:0;right:0;top:${top}mm;text-align:center;font-size:${size}pt;font-weight:bold;font-family:${SERIF};white-space:nowrap;${extra}`, txt);
-        const img = (key, x, y, w, hgt) => h('img', { src: PDM_MM_ASSETS[key], style: `position:absolute;${mmStyle(x, y, w, hgt)}` });
-        return h('section', { class: 'pdm-page' },
+        return [
             bar(19.1), bar(281.5),
+            coverImg('cover_logo', 20.5, 241.7, 24.4, 18.6),
+            center(241.2, 18, 'SUNJIN  JONG HAP  CO.,  LTD.'),
+            center(249.2, 14.1, layout.address.replace(/,\s*$/, '') + ','),
+            abs(`left:64.6mm;top:256mm;font-size:14.1pt;font-weight:bold;font-family:${SERIF};white-space:nowrap`, 'Republic of Korea'),
+            abs(`left:62mm;top:263mm;font-size:12pt;font-weight:bold;font-family:${SERIF};white-space:pre`, `Tel. ${layout.tel.replace(/\s/g, '-')}     Fax. ${layout.fax.replace(/\s/g, '-')}`),
+            coverImg('cover_cert', 161.9, 241.6, 26.6, 19.2),
+        ];
+    }
+
+    function coverPage(header, indexLines, layout) {
+        const rule = (x0, x1, y) => abs(`left:${x0}mm;top:${y}mm;width:${x1 - x0}mm;border-top:.75pt solid #000`);
+        return h('section', { class: 'pdm-page' },
+            ...coverFrame(layout),
             center(45, 28, 'DETAIL REPORT OF', 'line-height:13mm'), center(59.5, 28, 'ENGINE MAINTENANCE', 'line-height:13mm'),
             rule(51.2, 159.7, 57.2), rule(51.2, 159.7, 58.3), rule(37.3, 165.5, 71.6), rule(37.3, 165.5, 72.6),
             abs(`${mmStyle(45.3, 91.4, 119.5, 28.8)}background:#DAEEF3`),
             center(93.5, 18, header.coverEngine, 'line-height:9mm'),
             center(106.5, 26, header.coverShip ? `" ${header.coverShip} "` : '', `font-family:'Batang','바탕',${SERIF};line-height:13mm`),
             abs(`left:46mm;top:146.5mm;font-size:14.1pt;font-weight:bold;font-family:${SERIF}`, 'INDEX'),
-            ...indexLines.map((line, i) => abs(`left:46mm;top:${163 + i * 7.97}mm;font-size:12pt;font-weight:bold;font-family:${SERIF};white-space:nowrap`, line)),
-            img('cover_logo', 20.5, 241.7, 24.4, 18.6),
-            center(241.2, 18, 'SUNJIN  JONG HAP  CO.,  LTD.'),
-            center(249.2, 14.1, layout.address.replace(/,\s*$/, '') + ','),
-            abs(`left:64.6mm;top:256mm;font-size:14.1pt;font-weight:bold;font-family:${SERIF};white-space:nowrap`, 'Republic of Korea'),
-            abs(`left:62mm;top:263mm;font-size:12pt;font-weight:bold;font-family:${SERIF};white-space:pre`, `Tel. ${layout.tel.replace(/\s/g, '-')}     Fax. ${layout.fax.replace(/\s/g, '-')}`),
-            img('cover_cert', 161.9, 241.6, 26.6, 19.2));
+            ...indexLines.map((line, i) => abs(`left:46mm;top:${163 + i * 7.97}mm;font-size:12pt;font-weight:bold;font-family:${SERIF};white-space:nowrap`, line)));
     }
 
     async function build({ doc, layout }) {
@@ -246,5 +254,5 @@ const MmPrint = (() => {
     const previewPage = (form, inst) => (form.layout === 'conrodGrid' ? conrodPage : journalPage)(form, inst, SAMPLE_HEADER);
 
     PrintView.register('measurement', build);
-    return { build, previewPage, GEO };
+    return { build, previewPage, GEO, coverFrame, center, abs, mmStyle, SERIF };
 })();
