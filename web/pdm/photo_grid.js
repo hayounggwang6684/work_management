@@ -2,7 +2,9 @@
 // 입력: ① 파일 드래그앤드롭 ② 우클릭 메뉴 [입력] ③ 빈칸 더블클릭 → 모두 파일 선택/드롭 후 같은 경로로 저장.
 // 우클릭 메뉴: 입력 / 수정 / 제거 / 새 항목. 사진 더블클릭 = 수정(photo_editor.js).
 // 칸에 맞추는 방식(cover/contain)은 출력과 같은 PDM_LAYOUT.photoFit 을 따른다 (화면 = 인쇄 결과).
-// 의존: dom.js(h, showContextMenu, showChoice, blobToDataURL), photo_editor.js, print_layout.js(PDM_LAYOUT), eel
+// 소제목 구간: 제목이 입력된 페이지는 새 항목(구간)의 시작이다. 한 구간에 사진을 더 넣거나 중간에 끼우거나 빼도 뒤 구간의 사진은 밀리지 않고,
+//   구간이 가득 차면 그 구간 끝에 페이지가 하나 추가되며 뒤 구간이 한 페이지씩 뒤로 간다 (서버 pdm_insert_photo_page — 사진과 저장된 페이지 제목이 함께 밀림).
+// 의존: dom.js(h, showContextMenu, showChoice, blobToDataURL), photo_editor.js, print_layout.js(PDM_LAYOUT), print_logic.js(PrintLogic), eel
 const PhotoGrid = (() => {
     const UPLOAD_EDGE = 1600;   // 전송 전 긴 변 축소 (서버도 동일 상한으로 다시 처리)
 
@@ -57,6 +59,23 @@ const PhotoGrid = (() => {
         }
 
         const lastSlot = () => Math.max(-1, ...bySlot.keys());
+        // 이 칸이 속한 구간의 끝 칸 번호 (다음 구간 첫 칸). 마지막 구간이면 null = 끝까지
+        const sectionEnd = slot => {
+            const end = PrintLogic.sectionOf(pageTitles, Math.floor(slot / perPage)).endPage;
+            return end === null ? null : end * perPage;
+        };
+        // 구간 끝(endSlot) 앞에 빈 페이지를 끼워 그 구간을 한 페이지 늘린다. 뒤 구간은 한 페이지씩 밀리고 저장된 제목도 같이 밀린다.
+        async function extendSection(endSlot) {
+            const before = endSlot / perPage;
+            const r = await eel.pdm_insert_photo_page(docId, before, perPage)();
+            if (!r.success) { say('⚠ ' + r.message); return false; }
+            const shifted = PrintLogic.shiftTitles(pageTitles, before);
+            for (const k of Object.keys(pageTitles)) delete pageTitles[k];
+            Object.assign(pageTitles, shifted);
+            touched(r);
+            await reload();
+            return true;
+        }
         const nextEmpty = from => { let i = from; while (bySlot.has(i)) i++; return i; };
 
         async function addFiles(startSlot, files) {
@@ -69,6 +88,11 @@ const PhotoGrid = (() => {
                 let slot = startSlot;
                 for (const file of images) {
                     slot = nextEmpty(slot);
+                    const end = sectionEnd(startSlot);
+                    if (end !== null && slot >= end) {                    // 이 구간이 가득 참 → 구간 끝에 페이지를 추가 (뒤 구간으로 넘어가지 않는다)
+                        if (!await extendSection(end)) { last = '페이지를 추가하지 못했습니다'; break; }
+                        slot = end;
+                    }
                     say(`입력 중… ${ok + 1}/${images.length}`);
                     const r = await eel.pdm_add_photo(docId, slot, await toUploadData(file))();
                     if (r.success) { ok++; bySlot.set(slot, r.photo); thumbs.set(r.photo.id, r.photo.thumb); touched(r); }
@@ -86,14 +110,15 @@ const PhotoGrid = (() => {
         }
 
         async function removeAt(slot) {
-            const hasLater = lastSlot() > slot;
+            const end = sectionEnd(slot);                                  // 당기기는 같은 구간 안에서만
+            const hasLater = [...bySlot.keys()].some(s => s > slot && (end === null || s < end));
             const choice = await showChoice('사진 제거',
                 hasLater ? '뒤에 있는 사진을 앞으로 당길까요, 빈칸으로 둘까요?' : '이 사진을 제거할까요?',
                 hasLater
                     ? [{ label: '뒤 사진 당기기', value: 'pull', primary: true }, { label: '빈칸 유지', value: 'keep' }, { label: '취소', value: null }]
                     : [{ label: '제거', value: 'keep', primary: true }, { label: '취소', value: null }]);
             if (!choice) return;
-            const r = await eel.pdm_remove_photo(docId, slot, choice === 'pull')();
+            const r = await eel.pdm_remove_photo(docId, slot, choice === 'pull', end)();
             if (!r.success) { say('⚠ ' + r.message); return; }
             touched(r);
             await reload();
@@ -101,7 +126,12 @@ const PhotoGrid = (() => {
         }
 
         async function insertBlank(slot) {
-            const r = await eel.pdm_insert_blank_slot(docId, slot)();
+            let end = sectionEnd(slot);                                    // 밀기는 같은 구간 안에서만
+            if (end !== null && bySlot.has(end - 1)) {                     // 구간 마지막 칸까지 차 있으면 먼저 페이지를 추가
+                if (!await extendSection(end)) return;
+                end += perPage;
+            }
+            const r = await eel.pdm_insert_blank_slot(docId, slot, end)();
             if (!r.success) { say('⚠ ' + r.message); return; }
             touched(r);
             await reload();
