@@ -78,7 +78,9 @@ def _open_readonly() -> Optional[sqlite3.Connection]:
     path = _work_db_path()
     if not path.exists():
         return None
-    conn = sqlite3.connect(f'file:{path.as_posix()}?mode=ro', uri=True, timeout=10)
+    # URI(mode=ro) 는 쓰지 않는다: 경로에 '#' 가 있거나 네트워크 공유(UNC) 경로이면 열리지 않는다. query_only 로 쓰기만 막는다.
+    conn = sqlite3.connect(str(path), timeout=10)
+    conn.execute('PRAGMA query_only = ON')
     conn.row_factory = sqlite3.Row
     return conn
 

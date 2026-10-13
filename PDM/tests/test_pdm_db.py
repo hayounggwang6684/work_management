@@ -94,6 +94,16 @@ def test_work_db_is_read_only(work_db):
     conn.close()
 
 
+def test_work_db_opens_when_path_has_uri_special_chars(work_db, tmp_path, monkeypatch):
+    """경로에 '#' 가 있어도(URI 로 열면 실패) 공사현황 목록이 조회된다."""
+    odd = tmp_path / 'a#b'
+    odd.mkdir()
+    moved = odd / 'work.db'
+    work_db.replace(moved)
+    monkeypatch.setenv('PDM_WORK_DB_PATH', str(moved))
+    assert len(adapters.list_projects('2026-01-01', '2026-12-31')) == 2
+
+
 def test_update_is_atomic_when_another_save_lands_between_check_and_update(db, monkeypatch):
     """확인(SELECT)과 갱신(UPDATE) 사이에 다른 저장이 끼어들면 덮어쓰지 않고 충돌로 처리한다."""
     doc_id = db.create_document('service_report', 'SH-1', '', 't', {}, 'u')
