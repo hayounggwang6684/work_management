@@ -6,7 +6,7 @@ from typing import Any, Dict
 import eel
 
 from PDM.backend.guard import guarded
-from PDM.backend import excel_export, layout, measurement
+from PDM.backend import adapters, excel_export, layout, measurement
 from PDM.backend.naming import sanitize_filename
 from PDM.backend.runtime import fail, get_db, get_photos
 
@@ -18,7 +18,7 @@ MAX_XLSX_BYTES = 80 * 1024 * 1024        # 이보다 크면 전송하지 않는�
 @guarded('guest')
 def pdm_export_excel(doc_id: int) -> Dict[str, Any]:
     try:
-        doc = get_db().get_document(doc_id)
+        doc = get_db().get_document(doc_id, adapters.get_current_user().get('full_name', ''))
         if doc is None:
             return fail('문서를 찾을 수 없습니다.')
         photos = get_photos().list_photos(doc_id) if doc['docType'] != 'measurement' else []

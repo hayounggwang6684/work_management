@@ -91,6 +91,17 @@ class PdmDb:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.connect() as conn:
             conn.executescript(SCHEMA)
+            self._migrate(conn)
+
+    @staticmethod
+    def _migrate(conn: sqlite3.Connection) -> None:
+        """기존 pdm.db 에 없는 열을 추가한다. is_private: 1 이면 작성자(created_by)에게만 보이는 임시 문서 (기존 문서는 0 = 공개)."""
+        columns = {r['name'] for r in conn.execute('PRAGMA table_info(pdm_documents)')}
+        if 'is_private' not in columns:
+            try:
+                conn.execute('ALTER TABLE pdm_documents ADD COLUMN is_private INTEGER NOT NULL DEFAULT 0')
+            except sqlite3.OperationalError:       # 다른 PC 가 동시에 먼저 추가한 경우
+                pass
 
     @contextmanager
     def connect(self) -> Iterator[sqlite3.Connection]:
@@ -107,25 +118,36 @@ class PdmDb:
             conn.close()
 
     def create_document(self, doc_type: str, contract_number: str, ship_name: str,
-                        title: str, header: Dict[str, Any], user: str) -> int:
+                        title: str, header: Dict[str, Any], user: str, private: bool = False) -> int:
         if doc_type not in DOC_TYPES:
             raise ValueError(f'알 수 없는 문서 종류: {doc_type}')
         with self.connect() as conn:
             cur = conn.execute(
                 'INSERT INTO pdm_documents (doc_type, contract_number, ship_name, title, '
-                'header_json, created_by, updated_by, created_at, updated_at) '
-                f'VALUES (?,?,?,?,?,?,?,{_NOW_MS},{_NOW_MS})',
+                'header_json, created_by, updated_by, is_private, created_at, updated_at) '
+                f'VALUES (?,?,?,?,?,?,?,?,{_NOW_MS},{_NOW_MS})',
                 (doc_type, contract_number, ship_name, title,
-                 json.dumps(header, ensure_ascii=False), user, user))
+                 json.dumps(header, ensure_ascii=False), user, user, 1 if private else 0))
             return int(cur.lastrowid)
 
-    def get_document(self, doc_id: int) -> Optional[Dict[str, Any]]:
+    def get_document(self, doc_id: int, viewer: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """viewer(사용자 이름)를 주면 그 사람에게 보이는 문서만 (남의 임시 문서는 None). None 이면 거르지 않는다 (내부용)."""
         with self.connect() as conn:
             row = conn.execute('SELECT * FROM pdm_documents WHERE id = ?', (doc_id,)).fetchone()
-        return _doc_row(row) if row else None
+        if row is None or (viewer is not None and row['is_private'] and row['created_by'] != viewer):
+            return None
+        return _doc_row(row)
 
-    def list_documents(self, contract_number: str = '', doc_type: str = '') -> List[Dict[str, Any]]:
+    def document_of_photo(self, photo_id: int) -> Optional[int]:
+        with self.connect() as conn:
+            row = conn.execute('SELECT doc_id FROM pdm_photos WHERE id = ?', (photo_id,)).fetchone()
+        return row['doc_id'] if row else None
+
+    def list_documents(self, contract_number: str = '', doc_type: str = '', viewer: Optional[str] = None) -> List[Dict[str, Any]]:
         sql, params = 'SELECT * FROM pdm_documents WHERE 1=1', []
+        if viewer is not None:
+            sql += ' AND (is_private = 0 OR created_by = ?)'
+            params.append(viewer)
         if contract_number:
             sql += ' AND contract_number = ?'
             params.append(contract_number)
@@ -137,8 +159,8 @@ class PdmDb:
         return [_doc_row(r) for r in rows]
 
     def update_document(self, doc_id: int, expected_updated_at: str, title: str,
-                        header: Dict[str, Any], user: str) -> str:
-        """낙관적 잠금: expected_updated_at 이 현재 값과 다르면 ConflictError. 새 updated_at 반환."""
+                        header: Dict[str, Any], user: str, publish: bool = False) -> str:
+        """낙관적 잠금: expected_updated_at 이 현재 값과 다르면 ConflictError. 새 updated_at 반환. publish 면 임시(작성자 전용) → 공개."""
         with self.connect() as conn:
             row = conn.execute('SELECT updated_at FROM pdm_documents WHERE id = ?', (doc_id,)).fetchone()
             if row is None:
@@ -148,8 +170,9 @@ class PdmDb:
             new_ts = _next_ts(conn, row['updated_at'])
             # 확인과 갱신 사이에 다른 저장이 끼어들어도 덮어쓰지 않도록 조건부 UPDATE 로 한 번 더 막는다 (원자적)
             changed = conn.execute(
-                'UPDATE pdm_documents SET title=?, header_json=?, updated_by=?, updated_at=? WHERE id=? AND updated_at=?',
-                (title, json.dumps(header, ensure_ascii=False), user, new_ts, doc_id, expected_updated_at)).rowcount
+                'UPDATE pdm_documents SET title=?, header_json=?, updated_by=?, updated_at=?, is_private=CASE WHEN ? THEN 0 ELSE is_private END '
+                'WHERE id=? AND updated_at=?',
+                (title, json.dumps(header, ensure_ascii=False), user, new_ts, 1 if publish else 0, doc_id, expected_updated_at)).rowcount
             if not changed:
                 raise ConflictError('다른 사용자가 먼저 저장했습니다.')
         return new_ts
@@ -222,15 +245,16 @@ class PdmDb:
                 'ORDER BY use_count DESC, text LIMIT ?', ((engine_model or '').strip(), limit)).fetchall()
         return [r['text'] for r in rows]
 
-    def document_counts(self, contract_numbers: List[str]) -> Dict[str, Dict[str, int]]:
+    def document_counts(self, contract_numbers: List[str], viewer: Optional[str] = None) -> Dict[str, Dict[str, int]]:
         """계약번호별 문서 건수 {계약번호: {'service_report': n, 'measurement': m}} — 문서가 하나도 없는 계약번호는 빠진다."""
         if not contract_numbers:
             return {}
         marks = ','.join('?' * len(contract_numbers))
+        visible, extra = ('', []) if viewer is None else (' AND (is_private = 0 OR created_by = ?)', [viewer])
         with self.connect() as conn:
             rows = conn.execute(
                 f'SELECT contract_number, doc_type, COUNT(*) AS n FROM pdm_documents '
-                f'WHERE contract_number IN ({marks}) GROUP BY contract_number, doc_type', list(contract_numbers)).fetchall()
+                f'WHERE contract_number IN ({marks}){visible} GROUP BY contract_number, doc_type', [*contract_numbers, *extra]).fetchall()
         counts: Dict[str, Dict[str, int]] = {}
         for r in rows:
             counts.setdefault(r['contract_number'], {t: 0 for t in DOC_TYPES})[r['doc_type']] = r['n']
@@ -320,6 +344,6 @@ def _doc_row(row: sqlite3.Row) -> Dict[str, Any]:
     return {
         'id': row['id'], 'docType': row['doc_type'], 'contractNumber': row['contract_number'],
         'shipName': row['ship_name'], 'title': row['title'], 'header': json.loads(row['header_json']),
-        'status': row['status'], 'createdBy': row['created_by'], 'updatedBy': row['updated_by'],
+        'status': row['status'], 'isPrivate': bool(row['is_private']), 'createdBy': row['created_by'], 'updatedBy': row['updated_by'],
         'createdAt': row['created_at'], 'updatedAt': row['updated_at'],
     }

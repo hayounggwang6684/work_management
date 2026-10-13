@@ -32,6 +32,11 @@ def pdm_ping() -> Dict[str, Any]:
     return info
 
 
+def _viewer() -> str:
+    """문서 공개 범위 판정에 쓰는 현재 사용자 (임시 문서는 created_by 가 이 이름인 사람에게만 보인다)."""
+    return adapters.get_current_user().get('full_name', '')
+
+
 def _standalone_rows(start: str, end: str, query: str, known: set) -> list:
     """판매용 독립 주문을 공사 목록과 같은 모양의 행으로 (작업일 0, 기간 = 등록일). 작업현황에 같은 계약번호가 있으면 공사 쪽이 이긴다."""
     rows = get_db().list_standalone_orders(start, end, adapters.like_pattern((query or '').strip()))
@@ -62,7 +67,7 @@ def pdm_list_projects(start: str, end: str, query: str = '') -> Dict[str, Any]:
     try:
         projects = adapters.list_projects(start, end, query)
         projects += _standalone_rows(start, end, query, {p['contractNumber'].upper() for p in projects})
-        counts = get_db().document_counts([p['contractNumber'] for p in projects])
+        counts = get_db().document_counts([p['contractNumber'] for p in projects], _viewer())
         for p in projects:
             c = counts.get(p['contractNumber'], {})
             p['docs'] = {'serviceReport': c.get('service_report', 0), 'measurement': c.get('measurement', 0), 'photoAlbum': c.get('photo_album', 0)}
@@ -78,7 +83,7 @@ def pdm_list_projects(start: str, end: str, query: str = '') -> Dict[str, Any]:
 @guarded('guest')
 def pdm_list_documents(contract_number: str = '', doc_type: str = '') -> Dict[str, Any]:
     try:
-        return {'success': True, 'documents': get_db().list_documents(contract_number, doc_type)}
+        return {'success': True, 'documents': get_db().list_documents(contract_number, doc_type, _viewer())}
     except Exception as e:
         logger.exception('pdm_list_documents')
         return _fail('문서 목록 중 오류가 발생했습니다.')
@@ -105,8 +110,8 @@ def pdm_create_document(doc_type: str, contract_number: str) -> Dict[str, Any]:
         existing = [d['title'] for d in get_db().list_documents(info['contractNumber'], doc_type)]
         doc_id = get_db().create_document(
             doc_type, info['contractNumber'], info['shipName'],
-            default_title(doc_type, info, existing), header, reporter)
-        return {'success': True, 'document': get_db().get_document(doc_id)}
+            default_title(doc_type, info, existing), header, reporter, private=True)      # 새 문서는 작성자 전용 임시로 시작 — [저장]으로 공개
+        return {'success': True, 'document': get_db().get_document(doc_id, _viewer())}
     except ValueError as e:
         return _fail(str(e))
     except Exception as e:
@@ -190,7 +195,7 @@ def pdm_delete_standalone_order(contract_number: str) -> Dict[str, Any]:
 @guarded('guest')
 def pdm_get_document(doc_id: int) -> Dict[str, Any]:
     try:
-        doc = get_db().get_document(doc_id)
+        doc = get_db().get_document(doc_id, _viewer())
         return {'success': True, 'document': doc} if doc else _fail('문서를 찾을 수 없습니다.')
     except Exception as e:
         logger.exception('pdm_get_document')
@@ -199,10 +204,11 @@ def pdm_get_document(doc_id: int) -> Dict[str, Any]:
 
 @eel.expose
 @guarded('write')
-def pdm_save_document(doc_id: int, expected_updated_at: str, title: str, header: Dict[str, Any]) -> Dict[str, Any]:
+def pdm_save_document(doc_id: int, expected_updated_at: str, title: str, header: Dict[str, Any], as_draft: bool = False) -> Dict[str, Any]:
+    """저장. 임시(작성자 전용) 문서는 [저장]하면 공개되고, as_draft=True([임시 저장])면 계속 작성자 전용으로 둔다. 공개된 문서에는 as_draft 가 영향이 없다."""
     try:
         user = adapters.get_current_user()
-        current = get_db().get_document(doc_id)
+        current = get_db().get_document(doc_id, _viewer())
         if current is None:
             return _fail('문서를 찾을 수 없습니다.')
         if not isinstance(header, dict):
@@ -211,9 +217,9 @@ def pdm_save_document(doc_id: int, expected_updated_at: str, title: str, header:
         # 공유 DB 비대화/오염을 막기 위해 서버가 종류별로 검증·정리한다 (양식/구분 확인, 행·열 수 보정, 길이 제한)
         normalizers = {'measurement': measurement.normalize_header, 'photo_album': photo_album.normalize_header}
         header = normalizers.get(current['docType'], normalize_service_report_header)(header)
-        new_ts = get_db().update_document(doc_id, expected_updated_at, title, header, user.get('full_name', ''))
+        new_ts = get_db().update_document(doc_id, expected_updated_at, title, header, user.get('full_name', ''), publish=not as_draft)
         get_db().record_summary_history(header.get('model', ''), header.get('summary', []))
-        return {'success': True, 'updatedAt': new_ts}
+        return {'success': True, 'updatedAt': new_ts, 'isPrivate': bool(current['isPrivate'] and as_draft)}
     except ConflictError as e:
         return _fail(str(e), conflict=True)
     except ValueError as e:

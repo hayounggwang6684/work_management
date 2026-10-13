@@ -16,6 +16,9 @@
   `templates/engine_standards.json` 으로 번들 → **최초 1회만** `pdm_engine_standards` 에 시드(이후 수정/삭제는 DB 기준, 번들을 다시 덮어쓰지 않음). 값은 현장 표기 그대로 문자열.
   엔진명 매칭: 글자/숫자 토큰 연속 일치, 숫자만 있는 모델은 제조사도 일치해야 함, 동률이면 고르지 않음. 양식을 추가할 때 `pdm_new_measurement_form(form_id, label, engine)` 이 규격/Unit 기준값을 채우고,
   칸(12자)·숫자 조건에 안 맞는 값은 `notes` 로 안내만 한다. 변경·엑셀 붙여넣기 가져오기는 admin.
+- **작성자 전용 임시 문서**: 새 문서는 `pdm_documents.is_private=1` 로 시작 → 작성자(`created_by` = 로그인 사용자 이름)에게만 목록/열기/사진/엑셀이 보인다(`get_document/list_documents/document_counts(viewer)`, 사진 API 는 `_visible_doc`).
+  편집기 상단 `임시 저장`(계속 작성자 전용, `pdm_save_document(as_draft=True)`) / `저장 (공개)`(다른 사용자에게도 공개 — 이후엔 `저장`만). 인쇄/엑셀은 지금 상태 그대로 저장 후 실행.
+  기존 문서는 마이그레이션(`ALTER TABLE … is_private DEFAULT 0`)으로 공개 유지. **구버전(3.0.3 이하) 앱은 이 열을 모르므로 임시 문서가 보이니 모든 PC 를 업데이트할 것.** 보안 경계가 아니라 업무 편의(내부 앱) 수준.
 - **엑셀 내보내기**: 편집기 상단 `엑셀` 버튼(저장 후 내보냄) → `PDM/backend/excel_export.py`(openpyxl, 순수 함수) + `export_api.pdm_export_excel`(guest, base64 로 돌려주고 화면이 Blob 다운로드).
   계측지=표지+양식별 시트(측정값은 숫자 셀), 서비스레포트=헤더/Summary/Remark 시트+사진 시트, 부품사진첩=(표지)+사진 시트. 인쇄 모양 재현이 아니라 엑셀에서 쓰기 좋은 형태.
   Excel 은 겹치는 병합 범위를 손상으로 보므로 `test_no_sheet_has_overlapping_merged_ranges…` 가 검사. 사진은 4:3 으로 잘라/여백 맞춰 720×540 JPEG 로 삽입.

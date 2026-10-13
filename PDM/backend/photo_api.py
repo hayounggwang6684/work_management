@@ -1,8 +1,9 @@
 """PDM 사진 Eel API (dict 반환). 변경 계열은 문서 최종 수정 정보를 갱신하고 updatedAt 을 돌려준다."""
 import base64
+import functools
 import logging
 import sqlite3
-from typing import Any, Dict, List
+from typing import Any, Callable, Dict, List
 
 import eel
 
@@ -15,6 +16,20 @@ from PDM.backend.runtime import fail, get_db, get_photos
 logger = logging.getLogger(__name__)
 
 
+def _viewer() -> str:
+    return adapters.get_current_user().get('full_name', '')
+
+
+def _visible_doc(func: Callable) -> Callable:
+    """첫 인자 doc_id 의 문서가 현재 사용자에게 보이는 경우에만 실행 (남의 임시 문서의 사진은 다루지 못한다)."""
+    @functools.wraps(func)
+    def wrapper(doc_id: int, *args: Any, **kwargs: Any) -> Any:
+        if get_db().get_document(doc_id, _viewer()) is None:
+            return fail('문서를 찾을 수 없습니다.')
+        return func(doc_id, *args, **kwargs)
+    return wrapper
+
+
 def _data_uri(blob: bytes) -> str:
     return 'data:image/jpeg;base64,' + base64.b64encode(blob).decode('ascii')
 
@@ -25,6 +40,7 @@ def _touch(doc_id: int) -> str:
 
 @eel.expose
 @guarded('guest')
+@_visible_doc
 def pdm_list_photos(doc_id: int, known_ids: List[int] = None) -> Dict[str, Any]:
     """사진 목록. 썸네일은 클라이언트가 이미 가진 id(known_ids)는 생략해 전송량을 줄인다."""
     try:
@@ -42,6 +58,7 @@ def pdm_list_photos(doc_id: int, known_ids: List[int] = None) -> Dict[str, Any]:
 
 @eel.expose
 @guarded('write')
+@_visible_doc
 def pdm_add_photo(doc_id: int, slot_index: int, data: str) -> Dict[str, Any]:
     """slot_index 칸에 사진 입력 (base64/data URI). 이미 사진이 있는 칸은 거부."""
     try:
@@ -66,6 +83,9 @@ def pdm_add_photo(doc_id: int, slot_index: int, data: str) -> Dict[str, Any]:
 def pdm_get_photo(photo_id: int, max_edge: int = 0) -> Dict[str, Any]:
     """저장된 이미지 (편집용: 전체 크기 / 인쇄용: max_edge 로 긴 변 제한)."""
     try:
+        owner = get_db().document_of_photo(photo_id)
+        if owner is None or get_db().get_document(owner, _viewer()) is None:
+            return fail('사진을 찾을 수 없습니다.')
         return {'success': True, 'image': _data_uri(resize_jpeg(get_photos().get_image(photo_id), int(max_edge or 0)))}
     except KeyError:
         return fail('사진을 찾을 수 없습니다.')
@@ -76,6 +96,7 @@ def pdm_get_photo(photo_id: int, max_edge: int = 0) -> Dict[str, Any]:
 
 @eel.expose
 @guarded('write')
+@_visible_doc
 def pdm_update_photo(doc_id: int, photo_id: int, data: str) -> Dict[str, Any]:
     """편집(크기 조정/그리기)한 이미지로 교체. 최초 편집 시 원본을 보존한다."""
     try:
@@ -92,6 +113,7 @@ def pdm_update_photo(doc_id: int, photo_id: int, data: str) -> Dict[str, Any]:
 
 @eel.expose
 @guarded('write')
+@_visible_doc
 def pdm_restore_photo_original(doc_id: int, photo_id: int) -> Dict[str, Any]:
     """편집 전 원본으로 되돌리기."""
     try:
@@ -110,6 +132,7 @@ def pdm_restore_photo_original(doc_id: int, photo_id: int) -> Dict[str, Any]:
 
 @eel.expose
 @guarded('write')
+@_visible_doc
 def pdm_set_photo_caption(doc_id: int, photo_id: int, caption: str) -> Dict[str, Any]:
     try:
         if not get_photos().set_caption(doc_id, photo_id, (caption or '')[:200]):
@@ -122,6 +145,7 @@ def pdm_set_photo_caption(doc_id: int, photo_id: int, caption: str) -> Dict[str,
 
 @eel.expose
 @guarded('write')
+@_visible_doc
 def pdm_remove_photo(doc_id: int, slot_index: int, pull: bool) -> Dict[str, Any]:
     """사진 제거. pull=True: 뒤 사진을 당김 / False: 빈칸 유지."""
     try:
@@ -135,6 +159,7 @@ def pdm_remove_photo(doc_id: int, slot_index: int, pull: bool) -> Dict[str, Any]
 
 @eel.expose
 @guarded('write')
+@_visible_doc
 def pdm_insert_blank_slot(doc_id: int, slot_index: int) -> Dict[str, Any]:
     """새 항목: slot_index 에 빈칸을 끼우고 뒤 사진을 한 칸씩 민다."""
     try:

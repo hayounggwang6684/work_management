@@ -40,7 +40,7 @@ const PDM = (() => {
                     { label: '＋ 새 문서', onClick: () => createAndOpen(type, contractNumber) },
                     ...(mine.length ? [{ separator: true }] : []),
                     ...mine.map(d => ({
-                        label: d.title || '(이름 없음)',
+                        label: (d.title || '(이름 없음)') + (d.isPrivate ? '  🔒 임시' : ''),
                         title: `${d.updatedBy} · ${d.updatedAt.slice(0, 16)}`,
                         onClick: () => openEditor(d),
                     })),

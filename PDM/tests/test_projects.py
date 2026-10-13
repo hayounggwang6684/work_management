@@ -272,3 +272,87 @@ def test_standalone_delete_is_refused_once_the_number_exists_in_the_work_db(work
     conn.commit(); conn.close()
     assert pdm_api.pdm_delete_standalone_order('S-WORK')['success'] is False
     assert len(pdm_api.pdm_list_documents('S-WORK')['documents']) == 1
+
+
+# ── 작성자 전용 임시 문서 ────────────────────────────────────────────────────
+
+def as_user(monkeypatch, name):
+    monkeypatch.setattr(adapters, 'get_current_user', lambda: {'full_name': name})
+
+
+def test_new_documents_start_private_and_only_the_author_sees_them(work_db, monkeypatch):
+    as_user(monkeypatch, '김작성')
+    doc = pdm_api.pdm_create_document('service_report', 'SH-2026-057-T')['document']
+    assert doc['isPrivate'] is True
+    assert [d['id'] for d in pdm_api.pdm_list_documents('SH-2026-057-T')['documents']] == [doc['id']]
+    as_user(monkeypatch, '박다른')
+    assert pdm_api.pdm_list_documents('SH-2026-057-T')['documents'] == []
+    assert pdm_api.pdm_get_document(doc['id'])['success'] is False
+    assert pdm_api.pdm_save_document(doc['id'], doc['updatedAt'], 'x', doc['header'])['success'] is False
+    counts = pdm_api.pdm_list_projects('2026-06-01', '2026-06-30', '')['projects'][0]['docs']
+    assert counts['serviceReport'] == 0                                  # 남의 임시 문서는 건수에도 안 잡힌다
+
+
+def test_draft_save_keeps_it_private_and_normal_save_publishes(work_db, monkeypatch):
+    as_user(monkeypatch, '김작성')
+    doc = pdm_api.pdm_create_document('photo_album', 'SH-2026-057-T')['document']
+    r = pdm_api.pdm_save_document(doc['id'], doc['updatedAt'], doc['title'], doc['header'], as_draft=True)
+    assert r['success'] and r['isPrivate'] is True
+    as_user(monkeypatch, '박다른')
+    assert pdm_api.pdm_get_document(doc['id'])['success'] is False
+    as_user(monkeypatch, '김작성')
+    r2 = pdm_api.pdm_save_document(doc['id'], r['updatedAt'], doc['title'], doc['header'])
+    assert r2['success'] and r2['isPrivate'] is False
+    as_user(monkeypatch, '박다른')
+    assert pdm_api.pdm_get_document(doc['id'])['document']['isPrivate'] is False
+    assert pdm_api.pdm_list_projects('2026-06-01', '2026-06-30', '')['projects'][0]['docs']['photoAlbum'] == 1
+
+
+def test_draft_save_of_a_public_document_does_not_hide_it(work_db, monkeypatch):
+    as_user(monkeypatch, '김작성')
+    doc = pdm_api.pdm_create_document('measurement', 'SH-2026-057-T')['document']
+    ts = pdm_api.pdm_save_document(doc['id'], doc['updatedAt'], doc['title'], doc['header'])['updatedAt']       # 공개
+    assert pdm_api.pdm_save_document(doc['id'], ts, doc['title'], doc['header'], as_draft=True)['isPrivate'] is False
+    as_user(monkeypatch, '박다른')
+    assert pdm_api.pdm_get_document(doc['id'])['success'] is True
+
+
+def test_other_users_cannot_reach_the_photos_of_a_private_document(work_db, monkeypatch):
+    import base64, io
+    from PIL import Image
+    buf = io.BytesIO(); Image.new('RGB', (40, 30), 'red').save(buf, 'JPEG')
+    data = 'data:image/jpeg;base64,' + base64.b64encode(buf.getvalue()).decode()
+    as_user(monkeypatch, '김작성')
+    doc = pdm_api.pdm_create_document('service_report', 'SH-2026-057-T')['document']
+    from PDM.backend import photo_api
+    photo = photo_api.pdm_add_photo(doc['id'], 0, data)
+    assert photo['success'] and photo_api.pdm_get_photo(photo['photo']['id'])['success']
+    as_user(monkeypatch, '박다른')
+    assert photo_api.pdm_list_photos(doc['id'])['success'] is False
+    assert photo_api.pdm_add_photo(doc['id'], 1, data)['success'] is False
+    assert photo_api.pdm_get_photo(photo['photo']['id'])['success'] is False
+    assert photo_api.pdm_set_photo_caption(doc['id'], photo['photo']['id'], 'x')['success'] is False
+    assert photo_api.pdm_remove_photo(doc['id'], 0, False)['success'] is False
+
+
+def test_excel_export_is_also_hidden_from_other_users(work_db, monkeypatch):
+    from PDM.backend import export_api
+    as_user(monkeypatch, '김작성')
+    doc = pdm_api.pdm_create_document('measurement', 'SH-2026-057-T')['document']
+    assert export_api.pdm_export_excel(doc['id'])['success'] is True
+    as_user(monkeypatch, '박다른')
+    assert export_api.pdm_export_excel(doc['id'])['success'] is False
+
+
+def test_existing_database_gets_the_column_and_old_documents_stay_public(tmp_path):
+    import sqlite3
+    path = tmp_path / 'old.db'
+    conn = sqlite3.connect(path)
+    conn.executescript("CREATE TABLE pdm_documents (id INTEGER PRIMARY KEY AUTOINCREMENT, doc_type TEXT NOT NULL, contract_number TEXT NOT NULL DEFAULT '', "
+                       "ship_name TEXT NOT NULL DEFAULT '', title TEXT NOT NULL DEFAULT '', header_json TEXT NOT NULL DEFAULT '{}', status TEXT NOT NULL DEFAULT 'draft', "
+                       "created_by TEXT NOT NULL DEFAULT '', updated_by TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, "
+                       "updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP); INSERT INTO pdm_documents (doc_type, created_by) VALUES ('service_report', '옛작성자');")
+    conn.commit(); conn.close()
+    db = PdmDb(path)
+    PdmDb(path)                                                                      # 두 번 열어도 안전
+    assert db.get_document(1, '아무나')['isPrivate'] is False
