@@ -183,6 +183,8 @@ def pdm_delete_standalone_order(contract_number: str) -> Dict[str, Any]:
         cn = (contract_number or '').strip()
         if adapters.get_order_info(cn):
             return _fail('작업현황에 있는 계약번호라 삭제할 수 없습니다 (문서가 공사와 연결되어 있습니다).')
+        if len(get_db().list_documents(cn)) != len(get_db().list_documents(cn, viewer=_viewer())):
+            return _fail('다른 사용자의 임시 문서가 있어 삭제할 수 없습니다. 그 사용자가 저장(공개)하거나 먼저 정리해야 합니다.')
         return {'success': True, 'deletedDocuments': get_db().delete_standalone_order(cn)}
     except KeyError:
         return _fail('판매용 주문만 삭제할 수 있습니다 (찾을 수 없음). 목록을 새로 조회하세요.')

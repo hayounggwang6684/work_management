@@ -215,3 +215,16 @@ def test_text_starting_with_equals_sign_stays_text_not_a_formula():
     for ws in wb.worksheets:
         assert not [c.coordinate for row in ws.iter_rows() for c in row if c.data_type == 'f'], ws.title
     assert '=1+1' in texts(wb['Service report']) and '=2+2' in texts(wb['사진 1'])
+
+
+def test_python_style_numbers_stay_text_and_sheet_names_avoid_excel_reserved_forms():
+    for odd in ('nan', 'inf', '-infinity', '1_0', '1e5'):
+        assert X.number_or_text(odd) == odd
+    used = set()
+    assert X.sheet_name("'A'", used) == 'A' and X.sheet_name('History', used) != 'History'
+
+
+def test_measurement_export_skips_forms_that_no_longer_exist():
+    doc = measurement_doc()
+    doc['header']['forms'].append({'formId': 'custom_gone', 'label': '', 'phase': '', 'gaugeNo': '', 'spec': {}, 'unitBase': {}, 'tables': {}, 'remarks': ''})
+    assert len(load(X.build_workbook(doc, [], None, TEMPLATES, LAYOUT)).sheetnames) == 5

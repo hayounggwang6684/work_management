@@ -356,3 +356,12 @@ def test_existing_database_gets_the_column_and_old_documents_stay_public(tmp_pat
     db = PdmDb(path)
     PdmDb(path)                                                                      # 두 번 열어도 안전
     assert db.get_document(1, '아무나')['isPrivate'] is False
+
+
+def test_standalone_delete_is_refused_when_another_users_private_documents_exist(work_db, monkeypatch):
+    as_user(monkeypatch, '김작성')
+    pdm_api.pdm_create_standalone_order('S-PRIV', 'a', 'b', 'c')
+    as_user(monkeypatch, '박다른')
+    assert pdm_api.pdm_delete_standalone_order('S-PRIV')['success'] is False
+    as_user(monkeypatch, '김작성')
+    assert pdm_api.pdm_delete_standalone_order('S-PRIV')['success'] is True

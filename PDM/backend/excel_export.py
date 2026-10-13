@@ -34,6 +34,7 @@ PHOTO_DISPLAY = (360, 270)       # 시트에 보이는 사진 크기(px, 4:3)
 PHOTO_STORE = (720, 540)         # 파일에 넣는 크기 (표시의 2배 — 확대해도 선명하고 용량은 작게)
 _INVALID_SHEET = re.compile(r'[\\/*?:\[\]]')
 _INT = re.compile(r'^-?\d+$')
+_DECIMAL = re.compile(r'^-?\d+(\.\d+)?$')
 
 
 def number_or_text(value: Any) -> Any:
@@ -42,15 +43,16 @@ def number_or_text(value: Any) -> Any:
     if not text:
         return None
     probe = text.replace(',', '.')
-    try:
-        return int(probe) if _INT.match(probe) else float(probe)
-    except ValueError:
-        return text
+    if _INT.match(probe):
+        return int(probe)
+    return float(probe) if _DECIMAL.match(probe) else text      # nan/inf/1_0 같은 파이썬식 숫자는 글자로 둔다 (엑셀 파일이 깨진다)
 
 
 def sheet_name(name: str, used: set) -> str:
     """엑셀 시트 이름 규칙(31자, \\ / * ? : [ ] 불가, 중복 불가)에 맞춘다."""
-    base = (_INVALID_SHEET.sub('', name).strip() or '시트')[:31]
+    base = (_INVALID_SHEET.sub('', name).strip().strip("'").strip() or '시트')[:31]
+    if base.lower() == 'history':
+        base = '시트 History'                                     # 엑셀 예약 이름
     out, n = base, 2
     while out.lower() in used:
         suffix = f' ({n})'
@@ -265,7 +267,7 @@ def _journal_sheet(ws: Worksheet, form: Dict[str, Any], header: Dict[str, Any], 
         _cell(ws, f'C{row}', 'LIMIT', bold=True, border=True, fill=HEAD_FILL)
         for sp in form['spec']:
             row += 1
-            vals = inst['spec'][sp['id']]
+            vals = {'standard': '', 'limit': '', **(inst.get('spec') or {}).get(sp['id'], {})}      # 양식이 바뀌어 없는 항목은 빈칸
             _cell(ws, f'A{row}', sp['label'].replace('\n', ' '), border=True, size=9)
             _cell(ws, f'B{row}', number_or_text(vals['standard']), border=True)
             _cell(ws, f'C{row}', number_or_text(vals['limit']), border=True)
@@ -280,7 +282,7 @@ def _journal_sheet(ws: Worksheet, form: Dict[str, Any], header: Dict[str, Any], 
         _merge(ws, f'A{row}:B{row}', f"Position / {table['colLabel'].replace(chr(10), ' ')}", bold=True, border=True, fill=HEAD_FILL, size=8)
         for i in range(table['cols']):
             _cell(ws, f'{get_column_letter(3 + i)}{row}', i + 1, bold=True, border=True, fill=HEAD_FILL)
-        data = inst['tables'][table['id']]
+        data = (inst.get('tables') or {}).get(table['id']) or []
         two = len(table['rows'][0]) == 2
         for ri, labels in enumerate(table['rows']):
             row += 1
@@ -289,7 +291,7 @@ def _journal_sheet(ws: Worksheet, form: Dict[str, Any], header: Dict[str, Any], 
                 _cell(ws, f'B{row}', labels[1], border=True)
             else:
                 _merge(ws, f'A{row}:B{row}', labels[0], bold=True, border=True)
-            for ci, value in enumerate(data[ri]):
+            for ci, value in enumerate(data[ri] if ri < len(data) else []):
                 _cell(ws, f'{get_column_letter(3 + ci)}{row}', number_or_text(value), border=True)
         if two and not table.get('split'):                                # F / A 같은 그룹 라벨은 TB·PS 두 줄에 걸친다
             start = row - len(table['rows']) + 1
@@ -330,6 +332,7 @@ def _conrod_sheet(ws: Worksheet, form: Dict[str, Any], header: Dict[str, Any], i
 def _measurement(wb: Workbook, used: set, doc: Dict[str, Any], templates: List[Dict[str, Any]], layout: Dict[str, Any]) -> None:
     hd = doc['header']
     by_id = {t['id']: t for t in templates}
+    hd = {**hd, 'forms': [f for f in hd.get('forms', []) if f.get('formId') in by_id]}      # 삭제된 사용자 정의 양식은 건너뜀
     def title_of(i: int, inst: Dict[str, Any]) -> str:
         suffix = f"({inst['label']})" if inst.get('label') else ''
         return f"{i}. {by_id[inst['formId']]['indexTitle']}{suffix}"
