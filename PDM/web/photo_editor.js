@@ -1,7 +1,8 @@
-// 사진 편집기 — 자르기 + 크기 조정 + 그리기(기본 빨강). 전체 화면 모달.
+// 사진 편집기 — 회전(90°) + 자르기 + 크기 조정 + 그리기(기본 빨강). 전체 화면 모달.
 // 모든 편집은 "작업 목록(ops)"에 쌓이고 되돌리기(Ctrl+Z)로 하나씩 취소된다.
 //   · 획(stroke): 원본 이미지 기준 0~1 좌표로 보관 → 자르기/크기를 바꿔도 그림 위치가 유지된다.
 //   · 자르기(crop): 원본 기준 사각형. 마지막 crop 이 현재 보이는 영역이며, 이 안에서 다시 자를 수도 있다.
+//   · 회전(rotate): 작업 좌표는 늘 '회전 전' 원본 기준이고, 화면에 그릴 때만 돌려서 보여 준다 (포인터는 되돌려 계산) — 자르기/그림 위치가 회전과 상관없이 유지된다.
 // 저장하면 현재 보이는 영역이 합쳐진 이미지로 교체되고, 최초 편집 시 서버가 원본을 보존한다 ([원본 복원] 가능).
 // 의존: dom.js(h, showChoice, blobToDataURL), eel
 const PhotoEditor = (() => {
@@ -17,6 +18,12 @@ const PhotoEditor = (() => {
 
     // ── 순수 함수 ────────────────────────────────────────────────────────────
     const currentCrop = ops => [...ops].reverse().find(o => o.type === 'crop')?.rect || FULL;
+
+    // 회전: ops 의 {type:'rotate', d:+1(오른쪽 90°) | -1(왼쪽 90°)} 합계 → 0..3 (시계 방향 90° 횟수)
+    const rotation = ops => ((ops.reduce((n, o) => n + (o.type === 'rotate' ? o.d : 0), 0) % 4) + 4) % 4;
+    // 회전 전 화면 좌표(0~1) → 회전 후 화면 좌표 / 그 반대 (포인터 입력을 회전 전 좌표로 되돌릴 때)
+    const rotatePoint = (rot, [x, y]) => [[x, y], [1 - y, x], [1 - x, 1 - y], [y, 1 - x]][rot];
+    const unrotatePoint = (rot, [u, v]) => [[u, v], [v, 1 - u], [1 - u, 1 - v], [1 - v, u]][rot];
 
     // 보이는 영역(crop) 기준 0~1 좌표 ↔ 원본 기준 0~1 좌표
     const viewToAbs = (crop, p) => [crop.x + p[0] * crop.w, crop.y + p[1] * crop.h];
@@ -124,14 +131,25 @@ const PhotoEditor = (() => {
             return [Math.max(1, Math.round(NW * c.w * k)), Math.max(1, Math.round(NH * c.h * k))];
         };
 
+        // 그림/자르기는 회전 전 그림(work)에 그리고, 화면(canvas)에는 그것을 돌려서 보여 준다 — 저장 이미지도 이 canvas 라 회전이 반영된다.
+        const work = document.createElement('canvas');
+        const wctx = work.getContext('2d');
         const redraw = () => {
             const c = crop();
             const [W, H] = dims();
-            canvas.width = W; canvas.height = H;
-            ctx.drawImage(img, c.x * NW, c.y * NH, c.w * NW, c.h * NH, 0, 0, W, H);
-            for (const o of state.ops) if (o.type !== 'crop') drawStroke(ctx, o, c, W, H);
-            if (state.preview) drawCropPreview(ctx, state.preview.a, state.preview.b, W, H);
-            sizeInfo.textContent = `${W} × ${H}px`;
+            work.width = W; work.height = H;
+            wctx.drawImage(img, c.x * NW, c.y * NH, c.w * NW, c.h * NH, 0, 0, W, H);
+            for (const o of state.ops) if (o.type !== 'crop' && o.type !== 'rotate') drawStroke(wctx, o, c, W, H);
+            if (state.preview) drawCropPreview(wctx, state.preview.a, state.preview.b, W, H);
+            const rot = rotation(state.ops);
+            canvas.width = rot % 2 ? H : W; canvas.height = rot % 2 ? W : H;
+            ctx.save();
+            if (rot === 1) { ctx.translate(canvas.width, 0); ctx.rotate(Math.PI / 2); }
+            else if (rot === 2) { ctx.translate(canvas.width, canvas.height); ctx.rotate(Math.PI); }
+            else if (rot === 3) { ctx.translate(0, canvas.height); ctx.rotate(-Math.PI / 2); }
+            ctx.drawImage(work, 0, 0);
+            ctx.restore();
+            sizeInfo.textContent = `${canvas.width} × ${canvas.height}px`;
         };
 
         // 보이는 영역이 바뀌면 크기 선택지를 새 영역 기준으로 다시 만든다 (원본 = 자른 영역의 원래 크기)
@@ -152,15 +170,16 @@ const PhotoEditor = (() => {
         // 포인터 → 보이는 영역 기준 0~1
         const viewPoint = e => {
             const rc = canvas.getBoundingClientRect();
-            return [Math.min(1, Math.max(0, (e.clientX - rc.left) / rc.width)),
-                    Math.min(1, Math.max(0, (e.clientY - rc.top) / rc.height))];
+            return unrotatePoint(rotation(state.ops), [Math.min(1, Math.max(0, (e.clientX - rc.left) / rc.width)),
+                                                       Math.min(1, Math.max(0, (e.clientY - rc.top) / rc.height))]);
         };
 
         // 비율 고정이면 끄는 끝점을 보정한다 (보이는 영역의 픽셀 비율 기준)
         const constrainCrop = (a, v) => {
             if (!state.cropAspect) return v;
             const c = crop();
-            return lockAspect(a, v, state.cropAspect, (NW * c.w) / (NH * c.h));
+            const aspect = rotation(state.ops) % 2 ? 1 / state.cropAspect : state.cropAspect;      // 사진칸 비율은 돌린 뒤 모양 기준
+            return lockAspect(a, v, aspect, (NW * c.w) / (NH * c.h));
         };
 
         let active = null;      // 진행 중인 획 (ops 에 이미 들어 있음)
@@ -221,6 +240,7 @@ const PhotoEditor = (() => {
 
         const undo = () => { state.ops.pop(); changed(); };
         const close = () => { overlay.remove(); document.removeEventListener('keydown', onKey); };
+        const rotate = d => { state.ops.push({ type: 'rotate', d }); changed(); };
         const dirty = () => state.ops.length > 0 || state.longEdge !== croppedLong();
         const cancel = async () => {
             if (dirty() && await showChoice('편집 취소', '변경한 내용이 저장되지 않습니다. 닫을까요?',
@@ -257,9 +277,10 @@ const PhotoEditor = (() => {
             h('div', { class: 'flex gap-1' }, toolBtns), color, h('span', { class: 'text-xs' }, '굵기'), width,
             aspectSel, h('span', { class: 'text-xs ml-2' }, '크기'), sizeSel, sizeInfo,
             h('div', { class: 'ml-auto flex flex-wrap gap-2' },
+                btn('↺ 왼쪽 회전', () => rotate(-1)), btn('↻ 오른쪽 회전', () => rotate(1)),
                 btn('되돌리기', undo),
                 btn('자르기 해제', () => { state.ops = state.ops.filter(o => o.type !== 'crop'); changed(); }),
-                btn('그림 지우기', () => { state.ops = state.ops.filter(o => o.type === 'crop'); changed(); }),
+                btn('그림 지우기', () => { state.ops = state.ops.filter(o => o.type === 'crop' || o.type === 'rotate'); changed(); }),
                 ...(photo.edited ? [btn('원본 복원', restore, 'bg-amber-600')] : []),
                 btn('취소', cancel), saveBtn));
         const overlay = h('div', { class: 'fixed inset-0 z-[60] bg-slate-900 flex flex-col' },
@@ -270,7 +291,7 @@ const PhotoEditor = (() => {
         redraw();
     }
 
-    return { open, lockAspect, cropFromDrag, currentCrop };
+    return { open, lockAspect, cropFromDrag, currentCrop, rotation, rotatePoint, unrotatePoint };
 })();
 
 if (typeof module !== 'undefined') module.exports = PhotoEditor;
