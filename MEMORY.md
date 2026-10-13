@@ -20,6 +20,7 @@
   **본체에서는 편집기 바의 `저장`을 숨기고 상단 `💾 저장`(및 Ctrl+S)이 열려 있는 레포트를 저장**(`app.js saveOpenReport` → `PDM.saveCurrent` → `EditorBar.saveActive`, `window.PDM_EMBEDDED`는 projects_tab.js 가 설정). 단독 실행(pdm.html)에서는 바의 `저장`이 그대로 보인다.
   편집기 상단 `임시 저장`(계속 작성자 전용, `pdm_save_document(as_draft=True)`) / `저장 (공개)`(다른 사용자에게도 공개 — 이후엔 `저장`만). 인쇄/엑셀은 지금 상태 그대로 저장 후 실행.
   기존 문서는 마이그레이션(`ALTER TABLE … is_private DEFAULT 0`)으로 공개 유지. **구버전(3.0.3 이하) 앱은 이 열을 모르므로 임시 문서가 보이니 모든 PC 를 업데이트할 것.** 보안 경계가 아니라 업무 편의(내부 앱) 수준.
+- **관리자 설정 접근**: 관리자 로그인은 별도 `adminApp`(관리자 페이지)로 가서 일반 화면(레포트관리 탭)에 못 들어간다 → 관리자 페이지 `레포트 설정` 탭(`showAdminTab('report')` → `openAdminReportTab` → `PDM.mountAdmin`)에서 ⚙ 출력 양식 설정 / 📋 양식 관리 / 📐 계측 표준값을 연다. (일반 화면 홈의 같은 버튼은 그대로, 관리자 아닌 사용자는 보기 전용)
 - **엑셀 내보내기**: 편집기 상단 `엑셀` 버튼(저장 후 내보냄) → `PDM/backend/excel_export.py`(openpyxl, 순수 함수) + `export_api.pdm_export_excel`(guest, base64 로 돌려주고 화면이 Blob 다운로드).
   계측지=표지+양식별 시트(측정값은 숫자 셀), 서비스레포트=헤더/Summary/Remark 시트+사진 시트, 부품사진첩=(표지)+사진 시트. 인쇄 모양 재현이 아니라 엑셀에서 쓰기 좋은 형태.
   Excel 은 겹치는 병합 범위를 손상으로 보므로 `test_no_sheet_has_overlapping_merged_ranges…` 가 검사. 사진은 4:3 으로 잘라/여백 맞춰 720×540 JPEG 로 삽입.

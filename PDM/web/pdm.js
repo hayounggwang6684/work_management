@@ -111,8 +111,27 @@ const PDM = (() => {
     // 탭을 다시 열 때: 목록을 최신(문서 건수 포함)으로 갱신한다. 편집 중이던 화면은 그대로 둔다.
     const show = () => (atHome ? showHome() : undefined);
 
+    // 관리자 설정 허브 (본체 관리자 페이지의 '레포트 설정' 탭): 출력 양식 설정 / 양식 관리 / 계측 표준값. 일반 화면(홈)과 별개로 동작한다.
+    async function mountAdmin(el) {
+        const info = await eel.pdm_ping()();
+        if (info.authError) { el.replaceChildren(h('p', { class: 'text-slate-500 p-4' }, info.message)); return; }
+        const hub = () => {
+            const open = (screen) => () => screen.render(el, hub, info.canManage);
+            const card = (title, text, onclick) => h('button', { class: 'text-left bg-white rounded-lg shadow p-4 hover:bg-sky-50 w-72', onclick },
+                h('div', { class: 'font-bold' }, title), h('div', { class: 'text-xs text-slate-500 mt-1' }, text));
+            el.replaceChildren(h('div', { class: 'bg-white rounded-lg shadow-md p-6 space-y-4' },
+                h('h2', { class: 'text-xl font-bold' }, '레포트 설정'),
+                h('p', { class: 'text-sm text-slate-500' }, '서비스레포트 · 계측지 · 부품사진첩에 공통으로 적용되는 설정입니다 (관리자 전용).'),
+                h('div', { class: 'flex flex-wrap gap-4' },
+                    card('⚙ 출력 양식 설정', '로고, 회사 정보, 직인, 사진 채움 방식', open(LayoutEditor)),
+                    card('📋 양식 관리', '계측 양식 추가/수정/복제, 미리보기', open(FormManager)),
+                    card('📐 계측 표준값', '엔진별 표준값 목록 · 엑셀 가져오기', open(StandardsManager)))));
+        };
+        hub();
+    }
+
     // 본체 상단 💾 저장 버튼: 열려 있는 문서를 저장 → {ok, message}
     const saveCurrent = () => EditorBar.saveActive();
 
-    return { mount, show, showOrderMenu, saveCurrent };
+    return { mount, mountAdmin, show, showOrderMenu, saveCurrent };
 })();

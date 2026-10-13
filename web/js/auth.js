@@ -688,7 +688,7 @@ function applyVendorWorkerSuggestion(payload) {
 window.applyVendorWorkerSuggestion = applyVendorWorkerSuggestion;
 
 function showAdminTab(tab) {
-    const tabs = ['users', 'settings', 'db', 'telegram', 'status', 'activity'];
+    const tabs = ['users', 'settings', 'db', 'telegram', 'status', 'activity', 'report'];
     const activeClass = 'px-6 py-3 font-medium border-b-2 border-blue-600 text-blue-600';
     const inactiveClass = 'px-6 py-3 font-medium text-slate-600 hover:text-slate-800';
 
@@ -705,6 +705,9 @@ function showAdminTab(tab) {
     }
     if (tab === 'activity') {
         loadActivityLogTab();
+    }
+    if (tab === 'report') {
+        openAdminReportTab();     // js/projects_tab.js — PDM 관리자 설정 화면
     }
     if (tab === 'db') {
         showAdminDbSubtab(_adminDbState.subtab || 'excel');

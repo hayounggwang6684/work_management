@@ -6,6 +6,25 @@ window.PDM_EMBEDDED = true;           // 본체에 붙은 상태 — 편집기�
 let _pdmMounted = false;
 let _pdmMounting = null;      // 진행 중인 마운트 — 빠르게 연타해도 한 번만 마운트한다
 
+// 관리자 페이지 '레포트 설정' 탭 — 관리자는 일반 화면(레포트관리 탭)에 들어가지 않으므로 PDM 의 관리자 전용 설정 화면(출력 양식/계측 양식/계측 표준값)을 여기서 연다.
+let _pdmAdminMounting = null;
+
+function openAdminReportTab() {
+    const el = document.getElementById('adminReportTab');
+    if (!el) return Promise.resolve();
+    if (!_pdmAdminMounting) {
+        el.textContent = '불러오는 중…';
+        _pdmAdminMounting = PdmLoader.load()
+            .then(() => PDM.mountAdmin(el))
+            .catch(e => {                     // 실패하면 다음에 탭을 열 때 다시 시도한다
+                console.error('레포트 설정 로드 실패:', e);
+                el.textContent = '레포트 설정을 불러오지 못했습니다: ' + (e && e.message ? e.message : e);
+            })
+            .finally(() => { _pdmAdminMounting = null; });
+    }
+    return _pdmAdminMounting;
+}
+
 function openProjectsTab() {
     const el = document.getElementById('projectsView');
     if (!el) return Promise.resolve();
