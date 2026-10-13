@@ -56,7 +56,8 @@ const SrEditor = (() => {
             const select = h('select', { class: 'ml-3 border border-slate-300 rounded px-2 py-0.5 text-sm bg-white font-normal', title: '한 페이지에 나오는 사진 장수' },
                 h('option', { value: '6', selected: perPage === 6 }, '6장 (세로)'), h('option', { value: '4', selected: perPage === 4 }, '4장 (가로)'));
             select.addEventListener('change', () => { perPage = Number(select.value); mountGrid(grid.getPageTitles()); });
-            photosBox.replaceChildren(h('h3', { class: 'font-bold text-lg mb-1' }, '■ Photos', select), grid.el);
+            const newPage = h('button', { class: 'ml-2 px-2 py-0.5 rounded border border-slate-300 bg-slate-50 hover:bg-slate-100 text-sm font-normal', title: '앞 페이지를 다 채우지 않고 다음 사진 페이지를 시작합니다', onclick: () => grid.addPage() }, '＋ 새 페이지');
+            photosBox.replaceChildren(h('h3', { class: 'font-bold text-lg mb-1' }, '■ Photos', select, newPage), grid.el);
         };
         mountGrid(doc.header.pageTitles);
         const root = h('div', { class: 'bg-white rounded-lg shadow p-6 max-w-3xl mx-auto' },

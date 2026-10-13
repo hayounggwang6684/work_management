@@ -42,6 +42,7 @@ const PhotoGrid = (() => {
         const pagesEl = h('div', { class: 'space-y-6' });
         const root = h('div', {}, h('div', { class: 'mb-2 h-5' }, status), pagesEl);
         let busy = false;
+        let minPages = 1;               // [새 페이지] 로 늘린 페이지 수 (사진이 없어도 보여 준다 — 앞 페이지를 다 채우지 않고 다음 페이지에 넣을 때)
 
         const say = msg => { status.textContent = msg; };
         const touched = r => { if (r.updatedAt && onTouched) onTouched(r.updatedAt); };
@@ -171,8 +172,17 @@ const PhotoGrid = (() => {
         }
 
         function render() {
-            const pages = Math.floor((lastSlot() + 1) / perPage) + 1;   // 마지막 페이지가 가득 차면 새 페이지 하나 더
-            pagesEl.replaceChildren(...Array.from({ length: pages }, (_, p) => pageEl(p)));
+            pagesEl.replaceChildren(...Array.from({ length: pageCount() }, (_, p) => pageEl(p)));
+        }
+
+        // 마지막 페이지가 가득 차면 새 페이지 하나 더, [새 페이지] 로 늘린 만큼은 비어 있어도 유지
+        const pageCount = () => Math.max(Math.floor((lastSlot() + 1) / perPage) + 1, minPages);
+
+        // 지금 마지막 페이지 뒤에 빈 페이지를 하나 더 만든다. 앞 페이지의 남은 칸은 비워 둔 채 다음 페이지부터 사진을 넣을 수 있다.
+        function addPage() {
+            minPages = pageCount() + 1;
+            render();
+            pagesEl.lastElementChild?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         }
 
         reload();
@@ -180,7 +190,7 @@ const PhotoGrid = (() => {
             el: root,
             // 비어 있지 않은 페이지 제목만 (header.pageTitles 로 저장)
             getPageTitles: () => Object.fromEntries(Object.entries(pageTitles).filter(([, v]) => v.trim())),
-            reload,
+            reload, addPage,
         };
     }
 

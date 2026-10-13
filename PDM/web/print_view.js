@@ -28,6 +28,7 @@ const PrintView = (() => {
     * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     @media print {
         body > *:not(#pdmPrint) { display: none !important; }
+        #pdmPrint, #pdmPrint * { visibility: visible !important; }    /* 본체의 인쇄 CSS(body * { visibility: hidden })에 가려 백지로 나오는 것을 막는다 */
         html, body { background: #fff !important; margin: 0 !important; padding: 0 !important; }
         #pdmPrint { position: static; overflow: visible; background: none; }
         #pdmPrint .pp-bar { display: none; }

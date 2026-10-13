@@ -16,6 +16,7 @@
   `templates/engine_standards.json` 으로 번들 → **최초 1회만** `pdm_engine_standards` 에 시드(이후 수정/삭제는 DB 기준, 번들을 다시 덮어쓰지 않음). 값은 현장 표기 그대로 문자열.
   엔진명 매칭: 글자/숫자 토큰 연속 일치, 숫자만 있는 모델은 제조사도 일치해야 함, 동률이면 고르지 않음. 양식을 추가할 때 `pdm_new_measurement_form(form_id, label, engine)` 이 규격/Unit 기준값을 채우고,
   칸(12자)·숫자 조건에 안 맞는 값은 `notes` 로 안내만 한다. 변경·엑셀 붙여넣기 가져오기는 admin.
+- **새 페이지 버튼**: 서비스레포트/부품사진첩 `Photos` 옆 `＋ 새 페이지` — 앞 페이지를 다 채우지 않고 다음 사진 페이지를 시작(`PhotoGrid.addPage`, 슬롯 번호에 빈 구간이 생겨도 출력은 사진 있는 페이지만).
 - **서비스레포트 사진**: `Photos` 옆에서 한 페이지 6장(세로 2×3) / 4장(가로 2×2) 선택(`header.photosPerPage`), 제목을 비운 사진 페이지는 제목 띠를 그리지 않는다.
 - **진입점**: 메뉴 `레포트관리`(구 공사현황). **[조회] 버튼(또는 검색창 Enter)을 눌러야 조회** — 기간 프리셋/날짜/검색어를 바꿔도 자동 조회 안 함(편집 화면에서 돌아오면 같은 조건으로 재조회).
   행 우클릭 → `서비스레포트 ▸ / 계측지 ▸ / 부품사진첩 ▸`(새 문서 + 작성된 파일), 더블클릭 → 서비스레포트.
@@ -34,6 +35,12 @@
   (`showView` 가 버튼 className 을 통째로 덮어쓰므로 **버튼 개별 클래스로 넣으면 첫 클릭 뒤 사라진다**)
 
 ## Bug Fixes Applied
+
+### 2026-10-13: PDM 인쇄가 본체에서 백지로 나옴
+
+- 원인: 본체 `web/index.html` 의 `@media print { body * { visibility: hidden } … }`(연차 보고서용)가 PDM 출력 영역까지 숨김. 단독 실행/헤드리스 PDF 에서는 이 CSS 가 없어 재현되지 않았다.
+- 수정: `print_view.js` 인쇄 CSS 에 `#pdmPrint, #pdmPrint * { visibility: visible !important }`. 회귀 테스트 `PDM/tests/test_print_css.py`.
+- 교훈: 본체 전역 인쇄 CSS 와 충돌할 수 있으니 PDM 출력은 본체 CSS 가 얹힌 상태(`MAIN_CSS` 재현 스크립트)로도 확인할 것.
 
 ### 2026-10-13 (v3.0.1): 공사현황 목록이 네트워크 공유 DB 경로에서 안 열림
 
