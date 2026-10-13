@@ -1792,7 +1792,16 @@ async function forceSaveWorkRecords() {
     }
 }
 
+// 레포트관리 탭에서 열려 있는 서비스레포트/계측지/부품사진첩을 저장한다 (상단 💾 저장 = 이 탭에서는 레포트 저장).
+async function saveOpenReport() {
+    if (typeof PDM === 'undefined') return;
+    const r = await PDM.saveCurrent();
+    showToast(r.message, r.ok ? 'success' : 'warning');
+}
+
 async function saveCurrentWorkRecords() {
+    const projectsView = document.getElementById('projectsView');
+    if (projectsView && !projectsView.classList.contains('hidden')) { await saveOpenReport(); return; }
     const dailyView = document.getElementById('dailyView');
     if (!dailyView || dailyView.classList.contains('hidden')) return;
 
@@ -3462,7 +3471,8 @@ document.addEventListener('keydown', function(e) {
     // ── Ctrl+S: 일일 작업 저장 (입력 필드 포함 어디서든) ──────────
     if (e.ctrlKey && !e.altKey && (e.key === 's' || e.key === 'S')) {
         const dailyView = document.getElementById('dailyView');
-        if (dailyView && !dailyView.classList.contains('hidden')) {
+        const projectsView = document.getElementById('projectsView');
+        if ((dailyView && !dailyView.classList.contains('hidden')) || (projectsView && !projectsView.classList.contains('hidden'))) {
             e.preventDefault();
             if (typeof saveCurrentWorkRecords === 'function') saveCurrentWorkRecords();
         }

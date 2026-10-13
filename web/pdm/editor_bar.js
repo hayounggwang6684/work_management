@@ -1,10 +1,12 @@
 // 편집기 공용 상단 바 — [← 목록] 파일 이름 [임시 저장] [저장] [인쇄 / PDF] [엑셀] 상태 · 최종 수정.
 // 새 문서는 작성자 전용 '임시' 문서로 시작한다: [임시 저장]은 계속 작성자에게만 보이게 저장하고, [저장]하면 다른 사용자에게도 공개된다.
-// 이미 공개된 문서에는 [임시 저장]이 없고 [저장]만 있다. 인쇄/엑셀은 지금 상태(임시면 임시로)를 저장한 뒤 실행한다.
+// 이미 공개된 문서에는 [임시 저장]이 없고 [저장]만 있다.
+// 본체(window.PDM_EMBEDDED)에서는 [저장]을 이 바에 두지 않고 본체 상단의 💾 저장 버튼(과 Ctrl+S)이 열려 있는 문서를 저장한다 — EditorBar.saveActive(). 인쇄/엑셀은 지금 상태(임시면 임시로)를 저장한 뒤 실행한다.
 // 문서(id, updatedAt, title…)는 이 바가 들고 있고, 저장/인쇄는 getHeader() 가 주는 헤더로 한다.
 // 사진처럼 본문 저장과 별개로 서버에 반영되는 변경은 touch(ts) 로 알려 낙관적 잠금 충돌을 막는다.
 // 의존: dom.js(h), print_view.js(PrintView), eel
 const EditorBar = (() => {
+    let active = null;       // 지금 열려 있는 편집기 바 — 본체 상단 저장 버튼이 이 문서를 저장한다
     // options: {doc, onBack, getHeader() → header, maxWidthClass}
     function create({ doc, onBack, getHeader, maxWidthClass = 'max-w-3xl' }) {
         let current = doc;
@@ -59,20 +61,34 @@ const EditorBar = (() => {
             badge.classList.toggle('hidden', !current.isPrivate);
             saveBtn.textContent = current.isPrivate ? '저장 (공개)' : '저장';
             saveBtn.title = current.isPrivate ? '저장하면 다른 사용자에게도 보입니다' : '';
+            saveBtn.classList.toggle('hidden', !!window.PDM_EMBEDDED);       // 본체에서는 상단 💾 저장으로 통합
         };
 
         const el = h('div', { class: `${maxWidthClass} mx-auto mb-3 flex items-center gap-3` },
             h('button', { class: 'px-3 py-1 rounded bg-slate-200', onclick: onBack }, '← 목록'),
             titleInput,
             badge, draftBtn, saveBtn,
+            ...(window.PDM_EMBEDDED ? [h('span', { class: 'text-xs text-slate-500 whitespace-nowrap', title: '본체 상단의 💾 저장 버튼 또는 Ctrl+S' }, '저장: 상단 💾 (Ctrl+S)')] : []),
             h('button', { class: 'px-4 py-1 rounded bg-emerald-600 text-white', onclick: print }, '인쇄 / PDF'),
             h('button', { class: 'px-4 py-1 rounded bg-green-800 text-white', title: '엑셀(.xlsx) 파일로 받기', onclick: toExcel }, '엑셀'),
             status,
             h('span', { class: 'ml-auto text-xs text-slate-400' }, `최종 수정: ${doc.updatedBy || '-'} · ${doc.updatedAt}`));
 
         paintPrivacy();
-        return { el, save, current: () => current, touch: ts => { current = { ...current, updatedAt: ts }; } };
+        const api = { el, save, current: () => current, touch: ts => { current = { ...current, updatedAt: ts }; } };
+        active = api;
+        return api;
     }
 
-    return { create };
+    // 본체 상단 💾 저장 / Ctrl+S: 열려 있는 문서를 저장한다 (임시 문서는 이때 공개된다). 열린 문서가 없으면 안내만.
+    async function saveActive() {
+        if (!active) return { ok: false, message: '저장할 레포트가 열려 있지 않습니다.' };
+        const wasPrivate = !!active.current().isPrivate;
+        const ok = await active.save(false);
+        return ok ? { ok: true, message: wasPrivate ? '저장했습니다 (다른 사용자에게도 공개됨)' : '저장했습니다' } : { ok: false, message: '저장하지 못했습니다. 화면 위쪽 메시지를 확인하세요.' };
+    }
+
+    const clearActive = () => { active = null; };
+
+    return { create, saveActive, clearActive };
 })();

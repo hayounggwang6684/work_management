@@ -9,6 +9,7 @@ const PDM = (() => {
 
     async function showHome() {
         atHome = true;
+        EditorBar.clearActive();
         const info = await eel.pdm_ping()();
         if (info.authError) { container.replaceChildren(h('p', { class: 'text-slate-500 p-4' }, info.message)); return; }
         const projects = ProjectsView.create({ onMenu: showOrderMenu, onOpen: openDefault, onNew: newStandaloneOrder });
@@ -110,5 +111,8 @@ const PDM = (() => {
     // 탭을 다시 열 때: 목록을 최신(문서 건수 포함)으로 갱신한다. 편집 중이던 화면은 그대로 둔다.
     const show = () => (atHome ? showHome() : undefined);
 
-    return { mount, show, showOrderMenu };
+    // 본체 상단 💾 저장 버튼: 열려 있는 문서를 저장 → {ok, message}
+    const saveCurrent = () => EditorBar.saveActive();
+
+    return { mount, show, showOrderMenu, saveCurrent };
 })();
