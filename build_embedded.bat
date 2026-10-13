@@ -133,6 +133,10 @@ REM web 폴더 복사
 xcopy /E /I /Y "web" "%BUILD_DIR%\app\web" >nul
 echo     web\ 복사 완료
 
+REM PDM 폴더 복사 (공사현황/서비스레포트/계측지 — tests 제외). src 와 같은 app 루트에 두어야 import PDM 이 된다
+xcopy /E /I /Y /EXCLUDE:build_pdm_exclude.txt "PDM" "%BUILD_DIR%pp\PDM" >nul
+echo     PDM\ 복사 완료
+
 REM config 폴더 복사 (settings.json 제외 - 개인 토큰/경로 포함되어 배포 금지)
 mkdir "%BUILD_DIR%\app\config" 2>nul
 for %%F in (config\*) do (

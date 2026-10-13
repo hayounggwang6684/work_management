@@ -31,6 +31,7 @@ Source: "build_embedded\python\*"; DestDir: "{app}\python"; Flags: ignoreversion
 ; 앱 소스코드 + 웹 리소스
 Source: "build_embedded\app\src\*"; DestDir: "{app}\app\src"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "build_embedded\app\web\*"; DestDir: "{app}\app\web"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "build_embedded\app\PDM\*"; DestDir: "{app}\app\PDM"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 ; 설정 파일 (최초 설치만 복사, 업데이트 후 사용자 설정 보존)
 ; 운영용 settings.json 은 토큰을 포함할 수 있으므로 설치본에 직접 포함하지 않는다.
@@ -49,6 +50,7 @@ Name: "{app}\logs";          Permissions: users-full
 Name: "{app}\data";          Permissions: users-full
 Name: "{app}\app\src";       Permissions: users-full
 Name: "{app}\app\web";       Permissions: users-full
+Name: "{app}\app\PDM";       Permissions: users-full
 Name: "{app}\app\data";      Permissions: users-full
 Name: "{app}\app\patches";   Permissions: users-full
 Name: "{app}\app\backups";   Permissions: users-full
