@@ -64,6 +64,8 @@ def _cell(ws: Worksheet, ref: str, value: Any = None, *, bold: bool = False, siz
     c = ws[ref]
     if value is not None:
         c.value = value
+        if isinstance(value, str) and value.startswith('='):
+            c.data_type = 's'            # '=' 로 시작하는 입력(캡션/요약 등)을 수식으로 실행하지 않고 글자로 둔다
     c.font = Font(name=FONT, size=size, bold=bold)
     c.alignment = align
     if border:

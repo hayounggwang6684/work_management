@@ -204,3 +204,14 @@ def test_no_sheet_has_overlapping_merged_ranges_which_excel_reports_as_corrupt()
     for data in books:
         for ws in load(data).worksheets:
             assert _overlaps(ws) == [], ws.title
+
+
+def test_text_starting_with_equals_sign_stays_text_not_a_formula():
+    doc = sr_doc()
+    doc['header']['summary'] = ['=1+1', '+SUM(A1)']
+    doc['header']['vesselName'] = '=HYPERLINK("http://x","y")'
+    photos = [{'id': 1, 'slotIndex': 0, 'caption': '=2+2'}]
+    wb = load(X.build_workbook(doc, photos, lambda _: jpeg(), TEMPLATES, LAYOUT))
+    for ws in wb.worksheets:
+        assert not [c.coordinate for row in ws.iter_rows() for c in row if c.data_type == 'f'], ws.title
+    assert '=1+1' in texts(wb['Service report']) and '=2+2' in texts(wb['사진 1'])
