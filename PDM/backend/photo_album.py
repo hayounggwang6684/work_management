@@ -6,7 +6,7 @@
 from datetime import date
 from typing import Any, Dict
 
-from PDM.backend.service_report import MAX_TEXT_LEN, _page_titles, _photos_per_page, _text, expand_engine
+from PDM.backend.header_utils import MAX_TEXT_LEN, expand_engine, page_titles, photos_per_page, text
 
 MAX_ENGINE_LEN = 200            # 표지 엔진 칸은 2줄(줄바꿈 허용)
 MAX_INDEX_LINES = 6             # 표지 INDEX 칸에 들어가는 줄 수
@@ -30,11 +30,11 @@ def build_header(info: Dict[str, Any], today: date, with_cover: bool) -> Dict[st
 
 def normalize_header(header: Dict[str, Any]) -> Dict[str, Any]:
     """저장 전 검증/정리: 알려진 필드만, 길이 제한."""
-    out: Dict[str, Any] = {key: _text(header.get(key), MAX_TEXT_LEN) for key in ('orderNo', 'customer', 'vesselName', 'location', 'workDate')}
-    out['model'] = _text(header.get('model'), MAX_ENGINE_LEN)
+    out: Dict[str, Any] = {key: text(header.get(key), MAX_TEXT_LEN) for key in ('orderNo', 'customer', 'vesselName', 'location', 'workDate')}
+    out['model'] = text(header.get('model'), MAX_ENGINE_LEN)
     out['withCover'] = header.get('withCover') is True
-    out['pageTitles'] = _page_titles(header.get('pageTitles'))
-    out['photosPerPage'] = _photos_per_page(header.get('photosPerPage'))
+    out['pageTitles'] = page_titles(header.get('pageTitles'))
+    out['photosPerPage'] = photos_per_page(header.get('photosPerPage'))
     raw = header.get('indexLines') if isinstance(header.get('indexLines'), list) else []
-    out['indexLines'] = [_text(line, MAX_INDEX_LEN) for line in raw if _text(line, MAX_INDEX_LEN)][:MAX_INDEX_LINES]
+    out['indexLines'] = [text(line, MAX_INDEX_LEN) for line in raw if text(line, MAX_INDEX_LEN)][:MAX_INDEX_LINES]
     return out

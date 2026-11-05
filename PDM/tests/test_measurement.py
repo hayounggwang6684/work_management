@@ -154,3 +154,16 @@ def test_builtin_forms_are_reloaded_when_the_definition_file_changes(tmp_path, m
                                           {'id': 'b', 'label': 'B', 'layout': 'journalGrid', 'spec': [], 'tables': []}]}), encoding='utf-8')
     os.utime(path, ns=(10**18, 10**18 + 1))                                        # 수정 시각이 달라진 것으로
     assert [f['id'] for f in M.load_templates()] == ['a', 'b']
+
+
+def test_normalize_header_loads_the_form_list_only_once(monkeypatch):
+    calls = []
+    real = M._forms_by_id
+    monkeypatch.setattr(M, '_forms_by_id', lambda: calls.append(1) or real())
+    header = M.build_header(INFO, 'u', __import__('datetime').date.today())
+    header['forms'] = [M.default_instance(i) for i in ('crankpin', 'conrod', 'camshaft', 'cylblock')]
+    calls.clear()
+    out = M.normalize_header(header)
+    assert len(out['forms']) == 4 and len(calls) == 1
+    with pytest.raises(ValueError):
+        M.normalize_header({'forms': [{'formId': 'nope'}]})

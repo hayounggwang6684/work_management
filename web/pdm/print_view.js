@@ -70,9 +70,12 @@ const PrintView = (() => {
     // (칸 크기는 그대로라 양식 배치가 흐트러지지 않는다. 그래도 안 들어가면 아래 경고가 뜬다)
     const overflowsBox = el => el.scrollWidth > el.clientWidth + 0.5 || el.scrollHeight > el.clientHeight + 0.5;
     function shrinkToFit(root) {
-        for (const el of root.querySelectorAll('[data-shrink]')) {
-            let size = parseFloat(getComputedStyle(el).fontSize);
-            const original = size;
+        const all = [...root.querySelectorAll('[data-shrink]')];
+        const sizes = all.map(el => parseFloat(getComputedStyle(el).fontSize));              // 읽기만 먼저 — 쓰기와 섞지 않아 reflow 가 한 번으로 모인다
+        const overflowing = all.filter(el => el.scrollWidth > el.clientWidth + 0.5);
+        for (const el of overflowing) {                                                      // 넘치는 칸만 하나씩 줄인다
+            const original = sizes[all.indexOf(el)];
+            let size = original;
             while (el.scrollWidth > el.clientWidth + 0.5 && size > original * 0.6) { size -= 0.5; el.style.fontSize = size + 'px'; }
             if (el.scrollWidth <= el.clientWidth + 0.5) continue;
             el.style.whiteSpace = 'normal';                         // 두 줄

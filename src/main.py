@@ -157,22 +157,11 @@ def _tray_open(icon, item):
     threading.Thread(target=_open_window_from_tray, daemon=True).start()
 
 
-def _confirm_exit() -> bool:
-    """트레이 '종료' 전에 한 번 더 확인 (Windows 메시지 상자). 상자를 띄우지 못하면 종료를 막지 않는다."""
-    try:
-        import ctypes
-        MB_YESNO, MB_ICONQUESTION, MB_TOPMOST, IDYES = 0x4, 0x20, 0x40000, 6
-        return ctypes.windll.user32.MessageBoxW(
-            0, '프로그램을 완전히 종료하시겠습니까?\n\n종료하면 텔레그램 알림, 자동 백업, 클라우드 동기화도 멈춥니다.',
-            '금일작업현황 관리', MB_YESNO | MB_ICONQUESTION | MB_TOPMOST) == IDYES
-    except Exception:
-        return True
-
-
 def _tray_exit(icon, item):
     """트레이 '종료' 메뉴 → (확인 후) 완전 종료"""
     global _tray_icon
-    if not _confirm_exit():
+    from src.utils.exit_confirm import confirm_exit
+    if not confirm_exit():
         return
     if _tray_icon:
         _tray_icon.stop()

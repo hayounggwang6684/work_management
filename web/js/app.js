@@ -169,7 +169,17 @@ function checkUnsavedChanges(scope = 'current', message = '') {
 // ============================================================================
 // 브라우저 기본 확인창(beforeunload)을 쓴다 (문구는 브라우저가 정한다). 의도한 새로고침은 allowPageUnload() 로 확인창을 건너뛴다.
 let _allowUnload = false;
-function allowPageUnload() { _allowUnload = true; }
+let _allowUnloadTimer = null;
+// 의도한 이동/새로고침 직전에 부른다. 이동이 안 일어났을 때를 대비해 3초 뒤 자동으로 다시 켠다.
+function allowPageUnload() {
+    _allowUnload = true;
+    clearTimeout(_allowUnloadTimer);
+    _allowUnloadTimer = setTimeout(() => { _allowUnload = false; }, 3000);
+}
+// F5 / Ctrl+R 은 창을 닫는 것이 아니라 새로고침이므로 종료 확인을 묻지 않는다
+window.addEventListener('keydown', e => {
+    if (e.key === 'F5' || (e.ctrlKey && !e.altKey && (e.key === 'r' || e.key === 'R'))) allowPageUnload();
+}, true);
 window.addEventListener('beforeunload', e => {
     if (_allowUnload) return;
     e.preventDefault();

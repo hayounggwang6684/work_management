@@ -38,9 +38,16 @@ const PrintLogic = (() => {
         return [...pages.keys()].sort((a, b) => a - b).map(page => ({ page, slots: pages.get(page) }));
     }
 
-    // 작업현황에는 엔진 제조사를 줄여 적는다 (CUM', CAT …). 서비스레포트에는 풀네임으로 — service_report.py 의 ENGINE_FULL_NAMES 와 같아야 한다.
-    const ENGINE_FULL_NAMES = { CUM: 'CUMMINS', CAT: 'CATERPILLAR', MHI: 'MITSUBISHI' };
-    const expandEngine = text => String(text ?? '').replace(/\b(CUM|CAT|MHI)\b['’.]?/gi, (_, abbr) => ENGINE_FULL_NAMES[abbr.toUpperCase()]);
+    // 작업현황에는 엔진 제조사를 줄여 적는다 (CUM', CAT …). 서비스레포트/사진첩 출력에는 풀네임으로.
+    // 약어 맵의 단일 원본은 서버의 templates/engine_names.json 이고, 화면은 pdm_get_layout 응답으로 받아 setEngineNames 로 넣는다.
+    let engineNames = {};
+    function setEngineNames(map) { engineNames = Object.fromEntries(Object.entries(map || {}).map(([k, v]) => [k.toUpperCase(), String(v)])); }
+    function expandEngine(text) {
+        const keys = Object.keys(engineNames);
+        if (!keys.length) return String(text ?? '');
+        const pattern = new RegExp('\\b(' + keys.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|') + ")\\b['’.]?", 'gi');
+        return String(text ?? '').replace(pattern, (_, abbr) => engineNames[abbr.toUpperCase()]);
+    }
 
     // ── 소제목 구간(섹션) ──────────────────────────────────────────────────────
     // 제목이 입력된 페이지는 새 항목(구간)의 시작이고, 제목이 없는 페이지는 앞 구간의 이어지는 페이지다 (첫 페이지는 항상 구간 시작).
@@ -55,6 +62,19 @@ const PrintLogic = (() => {
         const lastTitled = Math.max(-1, ...Object.keys(pageTitles || {}).filter(k => /^\d+$/.test(k) && hasTitle(pageTitles, Number(k))).map(Number));
         while (endPage <= lastTitled && !hasTitle(pageTitles, endPage)) endPage++;
         return { startPage, endPage: endPage <= lastTitled ? endPage : null };
+    }
+
+    // 사진 한 장을 넣을 칸 계산 (화면 photo_grid.addFiles 가 쓴다 — DOM/서버 없이 테스트할 수 있게 순수 함수로 분리)
+    //   occupied: 사진이 있는 칸 번호들, fromSlot: 빈 칸을 찾기 시작할 칸, sectionSlot: 사용자가 사진을 넣으려던 칸(어느 챕터인지 판단용)
+    //   반환 {slot, extendAt}: extendAt 이 숫자면 그 칸(= 이 챕터의 끝) 앞에 빈 페이지를 먼저 끼워야 한다 (뒤 챕터가 한 페이지씩 밀림).
+    //   마지막 챕터는 끝이 없어 extendAt 이 null 이다.
+    function planPhotoAdd(occupied, fromSlot, sectionSlot, perPage, pageTitles) {
+        const taken = occupied instanceof Set ? occupied : new Set(occupied);
+        let slot = fromSlot;
+        while (taken.has(slot)) slot++;
+        const endPage = sectionOf(pageTitles, Math.floor(sectionSlot / perPage)).endPage;
+        const end = endPage === null ? null : endPage * perPage;
+        return end !== null && slot >= end ? { slot: end, extendAt: end } : { slot, extendAt: null };
     }
 
     // 사진이 있는 페이지 수(totalPages)까지를 챕터(소제목 구간)로 나눈다 → [{startPage, endPage(미포함)}]. 챕터 복사에서 복사할 범위를 고를 때 쓴다.
@@ -112,7 +132,7 @@ const PrintLogic = (() => {
         return { x: g.cols[index % 2], y: g.rows[Math.floor(index / 2)] };
     }
 
-    return { SR_FIRST_PAGE_LINES, SR_NEXT_PAGE_LINES, PHOTOS_PER_PAGE, PHOTO_GEOMETRY, splitSummary, planServiceReport, REMARK_HEADING_LINES, photoPages, expandEngine, sectionOf, chaptersOf, shiftTitles, albumIndexLines, albumIndexFor, pageLabel, slotPosition };
+    return { SR_FIRST_PAGE_LINES, SR_NEXT_PAGE_LINES, PHOTOS_PER_PAGE, PHOTO_GEOMETRY, splitSummary, planServiceReport, REMARK_HEADING_LINES, photoPages, planPhotoAdd, setEngineNames, expandEngine, sectionOf, chaptersOf, shiftTitles, albumIndexLines, albumIndexFor, pageLabel, slotPosition };
 })();
 
 if (typeof module !== 'undefined') module.exports = PrintLogic;

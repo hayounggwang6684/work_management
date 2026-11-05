@@ -77,7 +77,7 @@ def test_normalize_caps_text_summary_remark_and_page_titles():
         subject='s' * 500, remark='r' * 10000,
         summary=['  1. 항목'] + ['x' * 999] * 100 + ['', '   '],
         pageTitles={'0': 'p' * 500, '1': 'ok', 'abc': 'bad', '999': 'out of range'}))
-    assert len(out['subject']) == 100 and len(out['remark']) == 2000
+    assert len(out['subject']) == 300 and len(out['remark']) == 2000      # 작업명은 300자까지
     assert len(out['summary']) == 60 and out['summary'][0] == '  1. 항목'.rstrip()   # 앞 공백(들여쓰기)은 유지
     assert all(len(line) <= 200 for line in out['summary'])
     assert out['pageTitles'] == {'0': 'p' * 100, '1': 'ok'}
@@ -111,11 +111,19 @@ def test_engine_manufacturer_abbreviations_are_expanded_to_full_names():
     assert hd['model'] == 'CUMMINS 6BT'
 
 
-def test_engine_abbreviation_map_matches_the_javascript_copy():
-    """서비스레포트(Python)와 출력 화면(JS)의 제조사 약어 맵이 어긋나지 않게 — 한쪽만 고치면 이 테스트가 깨진다."""
-    import re
-    from PDM.backend.service_report import ENGINE_FULL_NAMES
-    js = (Path(__file__).resolve().parent.parent / 'web' / 'print_logic.js').read_text(encoding='utf-8')
-    body = re.search(r'ENGINE_FULL_NAMES = \{([^}]*)\}', js).group(1)
-    assert dict(re.findall(r"(\w+): '([^']+)'", body)) == ENGINE_FULL_NAMES
-    assert set(re.search(r'\\b\(([A-Z|]+)\)\\b', js).group(1).split('|')) == set(ENGINE_FULL_NAMES)
+def test_layout_api_serves_the_single_engine_name_map_to_the_print_screen():
+    import sys, types
+    sys.modules.setdefault('eel', types.SimpleNamespace(expose=lambda f: f))
+    from PDM.backend import settings_api
+    from PDM.backend.header_utils import engine_names
+    assert engine_names() == {'CUM': 'CUMMINS', 'CAT': 'CATERPILLAR', 'MHI': 'MITSUBISHI'}
+    r = settings_api.pdm_get_layout()
+    assert r['success'] and r['engineNames'] == engine_names()
+
+
+def test_long_header_fields_are_not_cut_at_100_characters():
+    from PDM.backend.service_report import normalize_header
+    long_subject = 'Main engine major overhaul ' * 10                      # 270자
+    out = normalize_header({'subject': long_subject, 'location': 'L' * 400, 'model': 'M' * 400})
+    assert out['subject'] == long_subject.strip() and len(out['location']) == 300
+    assert len(out['model']) == 100                                         # 그 밖의 칸은 기존 상한 유지

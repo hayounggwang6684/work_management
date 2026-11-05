@@ -16,7 +16,7 @@ from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 from PIL import Image, ImageOps
 
-from PDM.backend.service_report import expand_engine
+from PDM.backend.header_utils import expand_engine
 
 FONT = 'Malgun Gothic'
 THIN = Side(style='thin', color='000000')

@@ -9,6 +9,7 @@ import eel
 
 from PDM.backend.guard import guarded
 from PDM.backend import adapters, form_defs, layout, measurement
+from PDM.backend.header_utils import engine_names
 from PDM.backend.photo_service import PhotoError
 from PDM.backend.runtime import fail, get_db
 
@@ -23,7 +24,7 @@ def _user_name() -> str:
 @guarded('guest')
 def pdm_get_layout() -> Dict[str, Any]:
     try:
-        return {'success': True, 'layout': layout.effective(get_db().get_layout())}
+        return {'success': True, 'layout': layout.effective(get_db().get_layout()), 'engineNames': engine_names()}
     except Exception as e:
         logger.exception('pdm_get_layout')
         return fail('출력 양식 조회 중 오류가 발생했습니다.')

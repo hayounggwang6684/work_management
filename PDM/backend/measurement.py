@@ -112,10 +112,13 @@ def _grid(value: Any, rows: int, cols: int) -> List[List[str]]:
     return out
 
 
-def _normalize_instance(raw: Dict[str, Any]) -> Dict[str, Any]:
-    form = _form(_text(raw.get('formId'), MAX_TEXT_LEN))
+def _normalize_instance(raw: Dict[str, Any], forms: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+    form_id = _text(raw.get('formId'), MAX_TEXT_LEN)
+    if form_id not in forms:
+        raise ValueError(f'알 수 없는 계측 양식: {form_id}')
+    form = forms[form_id]
     label = _text(raw.get('label', raw.get('side')), MAX_LABEL_LEN)        # 예전 문서의 side(PORT/STBD)는 라벨로 읽는다
-    default = default_instance(form['id'], label)
+    default = _blank_instance(form, label)
     out = {'formId': form['id'], 'label': label,
            'phase': raw.get('phase') if raw.get('phase') in PHASES else '',
            'gaugeNo': _text(raw.get('gaugeNo'), MAX_TEXT_LEN)}
@@ -141,10 +144,11 @@ def normalize_header(header: Dict[str, Any]) -> Dict[str, Any]:
     """저장 전 검증/정리. 알 수 없는 양식은 ValueError. 같은 양식은 장마다 따로(최대 MAX_PER_FORM 장)."""
     out = {k: _text(header.get(k), MAX_TEXT_LEN) for k in COMMON_TEXT_KEYS}
     forms, per_form = [], {}
+    by_id = _forms_by_id()                          # 양식 목록(파일 확인 + 사용자 정의 양식 DB 조회)은 저장 한 번에 한 번만
     for raw in header.get('forms') or []:
         if not isinstance(raw, dict):
             raise ValueError('계측 항목 형식이 올바르지 않습니다.')
-        inst = _normalize_instance(raw)
+        inst = _normalize_instance(raw, by_id)
         per_form[inst['formId']] = per_form.get(inst['formId'], 0) + 1
         if per_form[inst['formId']] > MAX_PER_FORM:
             raise ValueError(f"같은 양식은 최대 {MAX_PER_FORM}장까지 넣을 수 있습니다: {inst['formId']}")

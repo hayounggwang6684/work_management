@@ -5,7 +5,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional
 
-from PDM.backend.service_report import expand_engine
+from PDM.backend.header_utils import expand_engine
 
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS pdm_documents (

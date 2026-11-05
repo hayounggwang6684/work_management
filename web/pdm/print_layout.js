@@ -25,6 +25,7 @@ const PdmLayout = (() => {
         const r = await eel.pdm_get_layout()();
         if (!r.success) return null;
         Object.assign(PDM_LAYOUT, toEffective(r.layout));
+        PrintLogic.setEngineNames(r.engineNames);        // 엔진 제조사 약어 맵 (서버 단일 원본)
         return r.layout;
     }
 

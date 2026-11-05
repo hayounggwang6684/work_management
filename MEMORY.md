@@ -59,6 +59,14 @@
 - 트레이 `종료` 메뉴는 Windows 메시지 상자(`main.py _confirm_exit`, 예/아니오)로 확인. 상자를 띄우지 못하면 종료를 막지 않는다. `main.py` 변경이라 앱 재시작 후 적용.
 - 확인창 문구는 브라우저가 정해서 바꿀 수 없다 (Chrome 은 사용자가 화면을 한 번이라도 조작한 뒤에만 띄움).
 
+### 코드 리뷰 개선 반영 (v3.0.8 이후)
+- **제조사 약어 맵 단일 원본**: `PDM/backend/templates/engine_names.json` → `header_utils.engine_names()`; 화면은 `pdm_get_layout` 응답의 `engineNames` 를 `PrintLogic.setEngineNames` 로 받아 `expandEngine` 에 사용 (맵을 받기 전에는 확장 안 함). 제조사 추가는 JSON 한 곳만.
+- **`PDM/backend/header_utils.py`**: 헤더 정규화 공용 도구(`text/page_titles/photos_per_page/expand_engine`) — 서비스레포트·부품사진첩·DB 가 서로의 비공개 함수에 기대지 않는다.
+- **서비스레포트 긴 칸**: 작업명/장소/업체/선박/요청자/기간은 300자까지 저장(기존 100자에서 조용히 잘리던 것), 출력은 칸에 맞춰 글자 축소.
+- **`shrinkToFit`**: 읽기를 먼저 몰아서 하고 넘치는 칸만 고친다. **`measurement.normalize_header`**: 양식 목록을 저장 한 번에 한 번만 구한다.
+- **종료 확인**: F5/Ctrl+R 은 의도한 새로고침으로 보고 확인창 건너뜀(`allowPageUnload` 는 3초 뒤 자동 해제). 트레이 확인은 `src/utils/exit_confirm.py`(+`tests/test_exit_confirm.py`).
+- **사진 넣을 칸 계산**: `PrintLogic.planPhotoAdd` 순수 함수로 분리해 테스트(구간 가득 참 → 페이지 끼우기 / 마지막 구간은 계속).
+
 ## Bug Fixes Applied
 
 ### 2026-10-13: PDM 인쇄가 본체에서 백지로 나옴

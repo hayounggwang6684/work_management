@@ -1,17 +1,8 @@
 """서비스레포트 헤더 구성 (순수 함수 — 작업현황 정보 + 작성자 → 헤더 dict)."""
-import re
 from datetime import date
 from typing import Any, Dict, List
 
-# 작업현황에는 엔진 제조사를 줄여 적는다 (CUM', CAT …). 서비스레포트에는 풀네임으로 — web/print_logic.js 의 ENGINE_FULL_NAMES 와 같아야 한다.
-ENGINE_FULL_NAMES = {'CUM': 'CUMMINS', 'CAT': 'CATERPILLAR', 'MHI': 'MITSUBISHI'}
-_ENGINE_ABBR = re.compile(r"\b(CUM|CAT|MHI)\b['’.]?", re.IGNORECASE)
-
-
-def expand_engine(text: str) -> str:
-    """엔진 문자열의 제조사 약어를 풀네임으로 (예: "CUM' KTA19" → "CUMMINS KTA19"). 이미 풀네임이면 그대로."""
-    return _ENGINE_ABBR.sub(lambda m: ENGINE_FULL_NAMES[m.group(1).upper()], text or '')
-
+from PDM.backend.header_utils import MAX_TEXT_LEN, expand_engine, page_titles, photos_per_page, text  # noqa: F401  (expand_engine: 기존 import 경로 유지)
 
 def _dotted(iso: str) -> str:
     return iso.replace('-', '.')
@@ -52,16 +43,12 @@ def build_header(info: Dict[str, Any], reported_by: str, today: date) -> Dict[st
 # ── 저장 전 정규화 (서버 검증) ───────────────────────────────────────────────
 TEXT_KEYS = ('vesselName', 'imoNo', 'engineType', 'serialNo', 'model', 'date', 'orderNo', 'reportedBy',
              'customer', 'requestedBy', 'location', 'period', 'subject')
-MAX_TEXT_LEN = 100
+# 길게 쓰는 항목(작업명/장소/업체/선박 등)은 100자에서 잘리지 않게 한다 — 출력은 칸에 맞춰 글자를 줄여 준다
+LONG_TEXT_KEYS = ('vesselName', 'customer', 'requestedBy', 'location', 'period', 'subject')
+MAX_LONG_TEXT_LEN = 300
 MAX_SUMMARY_LINES = 60
 MAX_SUMMARY_LINE_LEN = 200
 MAX_REMARK_LEN = 2000
-MAX_PAGE_TITLES = 100            # 사진 페이지 번호 0 ~ 99
-PHOTOS_PER_PAGE_CHOICES = (6, 4)  # 6장 = 세로 2x3, 4장 = 가로 2x2
-
-
-def _text(value: Any, limit: int) -> str:
-    return ('' if value is None else str(value)).strip()[:limit]
 
 
 def _summary(raw: Any) -> List[str]:
@@ -72,29 +59,11 @@ def _summary(raw: Any) -> List[str]:
     return [line for line in lines if line.strip()][:MAX_SUMMARY_LINES]
 
 
-def _page_titles(raw: Any) -> Dict[str, str]:
-    if not isinstance(raw, dict):
-        return {}
-    out = {}
-    for key, value in raw.items():
-        if str(key).isdigit() and int(key) < MAX_PAGE_TITLES and _text(value, MAX_TEXT_LEN):
-            out[str(int(key))] = _text(value, MAX_TEXT_LEN)
-    return out
-
-
-def _photos_per_page(raw: Any) -> int:
-    try:
-        value = int(raw)
-    except (TypeError, ValueError):
-        return PHOTOS_PER_PAGE_CHOICES[0]
-    return value if value in PHOTOS_PER_PAGE_CHOICES else PHOTOS_PER_PAGE_CHOICES[0]
-
-
 def normalize_header(header: Dict[str, Any]) -> Dict[str, Any]:
     """저장 전 검증/정리: 알려진 필드만 남기고 길이/줄 수를 제한한다 (공유 DB 비대화·오염 방지)."""
-    out: Dict[str, Any] = {key: _text(header.get(key), MAX_TEXT_LEN) for key in TEXT_KEYS}
+    out: Dict[str, Any] = {key: text(header.get(key), MAX_LONG_TEXT_LEN if key in LONG_TEXT_KEYS else MAX_TEXT_LEN) for key in TEXT_KEYS}
     out['summary'] = _summary(header.get('summary'))
-    out['remark'] = _text(header.get('remark'), MAX_REMARK_LEN)
-    out['pageTitles'] = _page_titles(header.get('pageTitles'))
-    out['photosPerPage'] = _photos_per_page(header.get('photosPerPage'))
+    out['remark'] = text(header.get('remark'), MAX_REMARK_LEN)
+    out['pageTitles'] = page_titles(header.get('pageTitles'))
+    out['photosPerPage'] = photos_per_page(header.get('photosPerPage'))
     return out

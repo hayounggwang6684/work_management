@@ -77,7 +77,6 @@ const PhotoGrid = (() => {
             await reload();
             return true;
         }
-        const nextEmpty = from => { let i = from; while (bySlot.has(i)) i++; return i; };
 
         async function addFiles(startSlot, files) {
             const images = [...files].filter(f => f.type.startsWith('image/'));
@@ -88,11 +87,10 @@ const PhotoGrid = (() => {
             try {
                 let slot = startSlot;
                 for (const file of images) {
-                    slot = nextEmpty(slot);
-                    const end = sectionEnd(startSlot);
-                    if (end !== null && slot >= end) {                    // 이 구간이 가득 참 → 구간 끝에 페이지를 추가 (뒤 구간으로 넘어가지 않는다)
-                        if (!await extendSection(end)) { last = '페이지를 추가하지 못했습니다'; break; }
-                        slot = end;
+                    const plan = PrintLogic.planPhotoAdd(new Set(bySlot.keys()), slot, startSlot, perPage, pageTitles);
+                    slot = plan.slot;
+                    if (plan.extendAt !== null) {                         // 이 구간이 가득 참 → 구간 끝에 페이지를 추가 (뒤 구간으로 넘어가지 않는다)
+                        if (!await extendSection(plan.extendAt)) { last = '페이지를 추가하지 못했습니다'; break; }
                     }
                     say(`입력 중… ${ok + 1}/${images.length}`);
                     const r = await eel.pdm_add_photo(docId, slot, await toUploadData(file))();

@@ -135,6 +135,8 @@ test('shiftTitles: 지정 페이지 이상의 제목만 한 페이지씩 뒤로,
     assert.deepEqual(titles, { 0: '1호기', 2: '2호기', 3: '3호기' });
 });
 
+L.setEngineNames({ CUM: 'CUMMINS', CAT: 'CATERPILLAR', MHI: 'MITSUBISHI' });      // 실제로는 서버(engine_names.json)에서 받는다
+
 test('expandEngine: 제조사 약어를 풀네임으로 (CUM\' CUM. CAT), 이미 풀네임/다른 글자는 그대로', () => {
     assert.equal(L.expandEngine("CUM' KTA19"), 'CUMMINS KTA19');
     assert.equal(L.expandEngine('M/E CUM. KTA38'), 'M/E CUMMINS KTA38');
@@ -186,4 +188,39 @@ test('albumIndexFor: 직접 쓴 INDEX 줄이 있으면 그대로(최대 줄 수�
     assert.deepEqual(L.albumIndexFor({ pageTitles: { 0: 'A' }, indexLines: [' 직접1 ', '', '직접2'] }, pages), ['직접1', '직접2']);
     assert.equal(L.albumIndexFor({ indexLines: ['1', '2', '3', '4', '5', '6', '7'] }, pages).length, 6);
     assert.deepEqual(L.albumIndexFor({ pageTitles: { 0: 'A' }, indexLines: ['  '] }, pages), ['1. A (2매)']);                // 공백뿐이면 자동
+});
+
+test('expandEngine: 맵을 받기 전에는 그대로, 새 맵(점이 든 약어 포함)도 반영', () => {
+    L.setEngineNames({});
+    assert.equal(L.expandEngine("CUM' KTA19"), "CUM' KTA19");
+    L.setEngineNames({ 'D.D': 'DETROIT DIESEL' });
+    assert.equal(L.expandEngine('D.D 8V-71'), 'DETROIT DIESEL 8V-71');
+    L.setEngineNames({ CUM: 'CUMMINS', CAT: 'CATERPILLAR', MHI: 'MITSUBISHI' });
+});
+
+// ── 사진 넣을 칸 계산 (구간이 뒤 구간을 밀어내지 않게) ─────────────────────────────
+
+test('planPhotoAdd: 구간 안에 빈 칸이 있으면 그 칸, 이미 찬 칸은 건너뜀', () => {
+    const titles = { 0: '1호기', 2: '2호기' };               // 구간 1 = 슬롯 0~11 (페이지 0~1), 구간 2 = 슬롯 12~
+    assert.deepEqual(L.planPhotoAdd([0, 1, 2], 0, 0, 6, titles), { slot: 3, extendAt: null });
+    assert.deepEqual(L.planPhotoAdd([0, 1, 2], 1, 1, 6, titles), { slot: 3, extendAt: null });
+    assert.deepEqual(L.planPhotoAdd([0, 2], 0, 0, 6, titles), { slot: 1, extendAt: null });          // 중간 빈칸 먼저
+});
+
+test('planPhotoAdd: 구간이 가득 차면 구간 끝 앞에 페이지를 끼운다 (뒤 구간 칸을 쓰지 않음)', () => {
+    const titles = { 0: '1호기', 1: '2호기' };               // 구간 1 = 슬롯 0~5 (페이지 0 하나)
+    const full = [0, 1, 2, 3, 4, 5, 6, 7];                    // 구간 1 가득 + 구간 2(6, 7) 사진
+    assert.deepEqual(L.planPhotoAdd(full, 0, 0, 6, titles), { slot: 6, extendAt: 6 });
+    assert.deepEqual(L.planPhotoAdd(full, 3, 3, 4 + 2, titles), { slot: 6, extendAt: 6 });           // 중간 칸에 드롭해도 같은 구간
+});
+
+test('planPhotoAdd: 마지막 구간은 끝이 없어 페이지를 끼우지 않고 계속 이어짐', () => {
+    const titles = { 0: '1호기', 1: '2호기' };
+    assert.deepEqual(L.planPhotoAdd([6, 7, 8, 9, 10, 11], 6, 6, 6, titles), { slot: 12, extendAt: null });
+    assert.deepEqual(L.planPhotoAdd([0, 1, 2], 0, 0, 6, {}), { slot: 3, extendAt: null });           // 제목이 없으면 전체가 한 구간
+});
+
+test('planPhotoAdd: 가로 4장 페이지 기준과 Set 입력', () => {
+    const titles = { 0: 'A', 1: 'B' };
+    assert.deepEqual(L.planPhotoAdd(new Set([0, 1, 2, 3, 4]), 0, 0, 4, titles), { slot: 4, extendAt: 4 });
 });
