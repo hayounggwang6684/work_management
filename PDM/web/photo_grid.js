@@ -266,6 +266,8 @@ const PhotoGrid = (() => {
             // 비어 있지 않은 페이지 제목만 (header.pageTitles 로 저장)
             getPageTitles: () => Object.fromEntries(Object.entries(pageTitles).filter(([, v]) => v.trim())),
             reload, addPage, copyChapter,
+            // 지금 사진/챕터 제목으로 만든 표지 INDEX 줄 (부품사진첩 편집기의 [챕터 제목으로 채우기])
+            indexSuggestion: () => PrintLogic.albumIndexLines(PrintLogic.photoPages([...bySlot.values()], perPage), pageTitles),
         };
     }
 

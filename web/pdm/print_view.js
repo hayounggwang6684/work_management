@@ -82,9 +82,10 @@ const PrintView = (() => {
         }
     }
 
+    // 경고 대상 [data-shrink]: 한 줄 칸은 가로만, 두 줄로 줄인 칸(whiteSpace normal)은 세로도 본다
     const overflowing = pagesEl => [...pagesEl.querySelectorAll('[data-fit]')]
         .filter(el => el.scrollHeight > el.clientHeight + 1).map(el => el.dataset.fit)
-        .concat([...pagesEl.querySelectorAll('[data-shrink]')].filter(el => el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1).map(() => '글자가 너무 길어 일부가 잘림'));
+        .concat([...pagesEl.querySelectorAll('[data-shrink]')].filter(el => el.scrollWidth > el.clientWidth + 1 || (el.style.whiteSpace === 'normal' && el.scrollHeight > el.clientHeight + 1)).map(() => '글자가 너무 길어 일부가 잘림'));
 
     function printNow(title) {
         const prev = document.title;

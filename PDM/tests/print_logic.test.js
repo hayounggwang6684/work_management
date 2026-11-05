@@ -179,3 +179,11 @@ test('chaptersOf: 제목이 있는 페이지마다 새 챕터, 첫 페이지는 
     assert.deepEqual(L.chaptersOf({ 1: 'B', 5: 'X' }, 3), [{ startPage: 0, endPage: 1 }, { startPage: 1, endPage: 3 }]);      // 사진 있는 페이지 범위를 넘는 제목은 무시
     assert.deepEqual(L.chaptersOf({}, 0), []);
 });
+
+test('albumIndexFor: 직접 쓴 INDEX 줄이 있으면 그대로(최대 줄 수까지), 없으면 챕터 제목으로 자동', () => {
+    const pages = L.photoPages([{ id: 1, slotIndex: 0 }, { id: 2, slotIndex: 6 }], 6);
+    assert.deepEqual(L.albumIndexFor({ pageTitles: { 0: 'A', 1: 'B' } }, pages), ['1. A (1매)', '2. B (1매)']);
+    assert.deepEqual(L.albumIndexFor({ pageTitles: { 0: 'A' }, indexLines: [' 직접1 ', '', '직접2'] }, pages), ['직접1', '직접2']);
+    assert.equal(L.albumIndexFor({ indexLines: ['1', '2', '3', '4', '5', '6', '7'] }, pages).length, 6);
+    assert.deepEqual(L.albumIndexFor({ pageTitles: { 0: 'A' }, indexLines: ['  '] }, pages), ['1. A (2매)']);                // 공백뿐이면 자동
+});

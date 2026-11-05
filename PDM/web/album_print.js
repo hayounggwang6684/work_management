@@ -29,7 +29,7 @@ const AlbumPrint = (() => {
         const pages = PrintLogic.photoPages(photos, perPage);
         const photoPages = pages.map(pg => SrPrint.photoPage(doc, layout, imageOf, pg, perPage));
         return doc.header.withCover
-            ? [coverPage(doc, layout, PrintLogic.albumIndexLines(pages, doc.header.pageTitles)), ...photoPages]
+            ? [coverPage(doc, layout, PrintLogic.albumIndexFor(doc.header, pages)), ...photoPages]
             : photoPages;
     }
 

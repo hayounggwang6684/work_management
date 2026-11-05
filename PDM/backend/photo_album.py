@@ -9,6 +9,8 @@ from typing import Any, Dict
 from PDM.backend.service_report import MAX_TEXT_LEN, _page_titles, _photos_per_page, _text
 
 MAX_ENGINE_LEN = 200            # 표지 엔진 칸은 2줄(줄바꿈 허용)
+MAX_INDEX_LINES = 6             # 표지 INDEX 칸에 들어가는 줄 수
+MAX_INDEX_LEN = 100
 
 
 def build_header(info: Dict[str, Any], today: date, with_cover: bool) -> Dict[str, Any]:
@@ -22,6 +24,7 @@ def build_header(info: Dict[str, Any], today: date, with_cover: bool) -> Dict[st
         'withCover': with_cover,
         'pageTitles': {},
         'photosPerPage': 6,
+        'indexLines': [],             # 표지 INDEX 를 직접 쓴 줄들. 비어 있으면 챕터 제목으로 자동 생성
     }
 
 
@@ -32,4 +35,6 @@ def normalize_header(header: Dict[str, Any]) -> Dict[str, Any]:
     out['withCover'] = header.get('withCover') is True
     out['pageTitles'] = _page_titles(header.get('pageTitles'))
     out['photosPerPage'] = _photos_per_page(header.get('photosPerPage'))
+    raw = header.get('indexLines') if isinstance(header.get('indexLines'), list) else []
+    out['indexLines'] = [_text(line, MAX_INDEX_LEN) for line in raw if _text(line, MAX_INDEX_LEN)][:MAX_INDEX_LINES]
     return out

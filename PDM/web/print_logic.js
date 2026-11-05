@@ -81,6 +81,12 @@ const PrintLogic = (() => {
         return lines.length > maxLines ? [...lines.slice(0, maxLines - 1), `… 외 ${lines.length - maxLines + 1}건`] : lines;
     }
 
+    // 표지 INDEX: 직접 쓴 줄(header.indexLines)이 있으면 그대로, 없으면 챕터 제목으로 자동 생성
+    function albumIndexFor(header, pages, maxLines = 6) {
+        const typed = (header.indexLines || []).map(l => String(l).trim()).filter(Boolean);
+        return typed.length ? typed.slice(0, maxLines) : albumIndexLines(pages, header.pageTitles, maxLines);
+    }
+
     const pageLabel = (n, total) => `${n} / ${total}`;
 
     // 사진 페이지 배치 (mm). 키 = 한 장에 들어가는 사진 수.
@@ -106,7 +112,7 @@ const PrintLogic = (() => {
         return { x: g.cols[index % 2], y: g.rows[Math.floor(index / 2)] };
     }
 
-    return { SR_FIRST_PAGE_LINES, SR_NEXT_PAGE_LINES, PHOTOS_PER_PAGE, PHOTO_GEOMETRY, splitSummary, planServiceReport, REMARK_HEADING_LINES, photoPages, expandEngine, sectionOf, chaptersOf, shiftTitles, albumIndexLines, pageLabel, slotPosition };
+    return { SR_FIRST_PAGE_LINES, SR_NEXT_PAGE_LINES, PHOTOS_PER_PAGE, PHOTO_GEOMETRY, splitSummary, planServiceReport, REMARK_HEADING_LINES, photoPages, expandEngine, sectionOf, chaptersOf, shiftTitles, albumIndexLines, albumIndexFor, pageLabel, slotPosition };
 })();
 
 if (typeof module !== 'undefined') module.exports = PrintLogic;

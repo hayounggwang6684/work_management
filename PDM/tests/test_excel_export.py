@@ -240,3 +240,14 @@ def test_cylinder_block_sheet_merges_three_row_groups():
     merged = [r.coord for r in ws.merged_cells.ranges if r.min_col == 1 and r.max_col == 1 and r.max_row - r.min_row == 2]
     assert len(merged) == 2 and 'D1' in texts(ws) and 'D3' in texts(ws)             # F, A 두 그룹이 각각 3줄에 걸친다
     assert _overlaps(ws) == []
+
+
+def test_album_cover_uses_typed_index_lines_else_chapter_titles_grouped_by_chapter():
+    photos, image_of = photos_and_images(8)                                           # 8장 = 페이지 0(6장) + 페이지 1(2장)
+    doc = album_doc(True)
+    doc['header']['pageTitles'] = {'0': '1호기'}
+    auto = texts(load(X.build_workbook(doc, photos, image_of, TEMPLATES, LAYOUT))['표지'])
+    assert '1. 1호기 (8매)' in auto                                                      # 제목 없는 둘째 페이지는 같은 챕터로 합산
+    doc['header']['indexLines'] = ['1. 직접 쓴 항목', '2. 두 번째']
+    typed = texts(load(X.build_workbook(doc, photos, image_of, TEMPLATES, LAYOUT))['표지'])
+    assert '1. 직접 쓴 항목' in typed and '2. 두 번째' in typed and '1. 1호기 (8매)' not in typed

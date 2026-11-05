@@ -212,15 +212,31 @@ def _cover_sheet(wb: Workbook, used: set, name: str, title: str, ship: str, engi
         row += 1
 
 
+def album_index_lines(header: Dict[str, Any], pages: List[Dict[str, Any]], max_lines: int = 6) -> List[str]:
+    """표지 INDEX: 직접 쓴 줄(header.indexLines)이 있으면 그대로, 없으면 챕터(제목이 있는 페이지부터 한 구간)별로 "1. 제목 (n매)".
+    web/print_logic.js 의 albumIndexFor 와 같은 규칙."""
+    typed = [str(line).strip() for line in (header.get('indexLines') or []) if str(line).strip()]
+    if typed:
+        return typed[:max_lines]
+    titles = header.get('pageTitles') or {}
+    sections: List[List[Any]] = []
+    for pg in pages:
+        title = str(titles.get(str(pg['page']), '')).strip()
+        count = sum(1 for s in pg['slots'] if s)
+        if title or not sections:
+            sections.append([title or '작업 사진', count])
+        else:
+            sections[-1][1] += count
+    lines = [f'{i}. {name} ({count}매)' for i, (name, count) in enumerate(sections, 1)]
+    return lines if len(lines) <= max_lines else [*lines[:max_lines - 1], f'… 외 {len(lines) - max_lines + 1}건']
+
+
 def _album(wb: Workbook, used: set, doc, photos, image_of, layout) -> None:
     hd = doc['header']
     placeholder = wb.active
     pages = add_photo_sheets(wb, used, hd, photos, image_of, layout.get('photoFit', 'cover'))
     if hd.get('withCover'):
-        lines = []
-        titles = hd.get('pageTitles') or {}
-        for i, pg in enumerate(pages, 1):
-            lines.append(f"{i}. {str(titles.get(str(pg['page']), '')).strip() or '작업 사진'} ({sum(1 for s in pg['slots'] if s)}매)")
+        lines = album_index_lines(hd, pages)
         _cover_sheet(wb, used, '표지', '엔진 작업 사진첩', hd.get('vesselName', ''), hd.get('model', ''), lines,
                      [('작업 장소 : ', hd.get('location')), ('작업 일자 : ', hd.get('workDate'))], layout)
         wb.move_sheet(wb.sheetnames[-1], offset=-(len(wb.sheetnames) - 1))     # 표지를 맨 앞으로

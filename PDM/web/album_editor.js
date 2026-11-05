@@ -1,6 +1,6 @@
 // 부품사진첩 편집기 — 서비스레포트의 사진 부분만 + (판매용이면) 표지 정보.
 //   표지 포함: 판매용 주문은 처음부터 켜져 있고, 공사와 연계된 주문은 꺼져 있다 (언제든 바꿀 수 있다).
-//   표지 INDEX 는 사진 페이지 제목과 장 수로 자동으로 만들어진다 — 페이지 제목을 입력하세요.
+//   표지 INDEX 는 직접 쓴 줄(header.indexLines)이 있으면 그대로, 비어 있으면 챕터 제목과 장 수로 자동으로 만들어진다 — 챕터 제목과 따로 입력할 수 있다.
 // 의존: dom.js(h), editor_bar.js(EditorBar), photo_grid.js(PhotoGrid), eel
 const AlbumEditor = (() => {
     const INPUT = 'w-full px-2 py-1 border border-slate-300 rounded text-sm bg-white';
@@ -21,6 +21,13 @@ const AlbumEditor = (() => {
         };
         const engine = h('textarea', { class: INPUT, rows: 2, maxlength: 200, title: '표지 박스에 나오는 엔진 (줄바꿈 가능, 예: NO.1 G/E CATERPILLAR 3412)' }, header.model || '');
         engine.addEventListener('input', () => { header.model = engine.value.replace(/\s+$/, ''); });
+
+        // 표지 INDEX: 챕터 제목과 별개로 직접 쓸 수 있다 (한 줄에 한 항목, 최대 6줄). 비워 두면 챕터 제목으로 자동 생성.
+        const MAX_INDEX = 6;
+        const indexArea = h('textarea', { class: INPUT, rows: 4, placeholder: '비워 두면 챕터 제목으로 자동 생성됩니다 (예: 1. NO.1 G/E 쿨러 외 작업 사진 (2매))' }, (header.indexLines || []).join('\n'));
+        const readIndex = () => { header.indexLines = indexArea.value.split('\n').map(s => s.trim()).filter(Boolean).slice(0, MAX_INDEX); };
+        indexArea.addEventListener('input', readIndex);
+        const fillIndex = () => { indexArea.value = grid.indexSuggestion().join('\n'); readIndex(); };
 
         const cover = h('input', { type: 'checkbox', checked: header.withCover === true });
         cover.addEventListener('change', () => { header.withCover = cover.checked; });
@@ -48,7 +55,12 @@ const AlbumEditor = (() => {
                 h('label', { class: 'text-sm font-bold' }, cover, ' 표지 포함 ', h('span', { class: 'font-normal text-xs text-slate-500' }, '(판매용은 켜고, 공사와 연계된 경우는 보통 끕니다)')),
                 h('div', { class: 'grid grid-cols-2 gap-3' },
                     labeled('엔진 (표지)', engine, 'col-span-2'),
-                    labeled('작업 장소 (표지)', input('location')), labeled('작업 일자 (표지)', input('workDate')))),
+                    labeled('작업 장소 (표지)', input('location')), labeled('작업 일자 (표지)', input('workDate'))),
+                h('div', {},
+                    h('div', { class: 'flex items-center gap-2 mb-1' }, h('span', { class: 'text-xs text-slate-500' }, '표지 INDEX (챕터 제목과 따로 입력 · 한 줄에 한 항목, 최대 6줄)'),
+                        h('button', { class: 'px-2 py-0.5 rounded border border-slate-300 bg-white hover:bg-slate-100 text-xs', title: '지금 챕터 제목과 사진 수로 INDEX 를 채운 뒤 고칠 수 있습니다', onclick: fillIndex }, '챕터 제목으로 채우기'),
+                        h('button', { class: 'px-2 py-0.5 rounded border border-slate-300 bg-white hover:bg-slate-100 text-xs', title: '직접 쓴 INDEX 를 지우고 챕터 제목으로 자동 생성', onclick: () => { indexArea.value = ''; readIndex(); } }, '자동으로')),
+                    indexArea)),
             photosBox);
 
         const bar = EditorBar.create({

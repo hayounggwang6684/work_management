@@ -29,6 +29,9 @@
   구간이 가득 차면 구간 끝에 페이지를 추가해 뒤 구간을 통째로 한 페이지 뒤로(`pdm_insert_photo_page`: 사진 slot + 저장된 `header.pageTitles` 를 함께 이동), 당기기/밀기는 구간 끝(`end_slot`) 앞까지만.
   부품사진첩 표지 INDEX 도 구간 단위("1. 1호기 (8매)").
 - **사진 대치 / 챕터 복사**: 사진 우클릭 `대치`(파일을 골라 같은 칸·캡션에 다른 사진으로 교체, 편집 이력/원본 복원은 비움 — `pdm_replace_photo`/`swap_image`). `Photos` 옆 `⧉ 챕터 복사`(소제목 구간 하나를 사진·캡션·제목째 문서 끝에 새 챕터로 복사 — `pdm_copy_photo_chapter`/`copy_pages`, 첫 페이지 제목이 비면 '복사본'으로 표시해 앞 챕터에 붙지 않게). 챕터가 여럿이면 고르는 창. 1호기→2호기처럼 내용이 같고 사진만 다를 때 복사 후 대치.
+- **부품사진첩 표지 INDEX 직접 입력**: `header.indexLines`(최대 6줄, 줄당 100자)가 있으면 표지/엑셀 표지에 그대로, 비면 챕터 제목+사진 수로 자동(`PrintLogic.albumIndexFor` / `excel_export.album_index_lines` 같은 규칙). 편집기 표지 박스에 INDEX 입력칸 + `챕터 제목으로 채우기`/`자동으로` 버튼.
+- **출력 경고 오탐(v3.0.6~3.0.7)**: 한 줄 칸의 세로 넘침까지 보던 경고가 제목 띠에서 항상 "일부가 잘립니다"로 떴다 → 한 줄 칸은 가로만, 두 줄로 줄인 칸만 세로도 본다.
+- **내장 계측 양식 핫리로드**: `measurement._builtin_forms` 가 양식 JSON 수정 시각이 바뀌면 다시 읽는다(앱 재시작 전 패치 적용 시 새 양식이 안 보이던 문제).
 - **계측 양식 7종**: 위 6종 + 실린더 블록(SJ-101, `cylblock`: F/A × D1~D3, 표 `groupSize:3` — 그룹 라벨이 3줄에 걸침, 규격 표 없음, 표준값 `block_bore`→Unit 기준값).
 - **서비스레포트 첫 페이지**: Remark 는 항상 Summary 뒤(`PrintLogic.planServiceReport` — Summary 가 첫 페이지를 넘으면 마지막 Summary 줄 아래, 자리가 없으면 Remark 만 있는 새 페이지). 한 줄 칸은 `[data-shrink]` 로 글자를 줄이고(60%까지) 그래도 넘치면 두 줄로 줄여 맞춘다(print_view `shrinkToFit`). 엔진 제조사 약어(CUM'/CAT/MHI)는 생성 시와 출력 시 풀네임(`expand_engine`/`expandEngine`, 두 맵 동기화).
 - **새 페이지 버튼**: 서비스레포트/부품사진첩 `Photos` 옆 `＋ 새 페이지` — 앞 페이지를 다 채우지 않고 다음 사진 페이지를 시작(`PhotoGrid.addPage`, 슬롯 번호에 빈 구간이 생겨도 출력은 사진 있는 페이지만).

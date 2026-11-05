@@ -365,3 +365,15 @@ def test_standalone_delete_is_refused_when_another_users_private_documents_exist
     assert pdm_api.pdm_delete_standalone_order('S-PRIV')['success'] is False
     as_user(monkeypatch, '김작성')
     assert pdm_api.pdm_delete_standalone_order('S-PRIV')['success'] is True
+
+
+def test_album_index_lines_are_normalized_and_kept_separate_from_chapter_titles(work_db):
+    doc = pdm_api.pdm_create_document('photo_album', 'SH-2026-057-T')['document']
+    assert doc['header']['indexLines'] == []
+    dirty = {**doc['header'], 'pageTitles': {'0': '1호기'}, 'indexLines': ['  1. 직접 쓴 항목  ', '', 'x' * 300, 3, '2', '3', '4', '5', '6', '7']}
+    assert pdm_api.pdm_save_document(doc['id'], doc['updatedAt'], doc['title'], dirty)['success']
+    hd = pdm_api.pdm_get_document(doc['id'])['document']['header']
+    assert hd['indexLines'][0] == '1. 직접 쓴 항목' and len(hd['indexLines'][1]) == 100 and len(hd['indexLines']) == 6
+    assert hd['pageTitles'] == {'0': '1호기'}                                        # 챕터 제목은 그대로
+    assert pdm_api.pdm_save_document(doc['id'], pdm_api.pdm_get_document(doc['id'])['document']['updatedAt'], doc['title'], {**hd, 'indexLines': 'bad'})['success']
+    assert pdm_api.pdm_get_document(doc['id'])['document']['header']['indexLines'] == []
