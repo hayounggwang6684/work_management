@@ -2,7 +2,7 @@
 const PrintLogic = (() => {
     const SR_FIRST_PAGE_LINES = 18;   // 서비스레포트 1페이지 Summary 용량 (양식 기준 줄 간격 5.9mm)
     const SR_NEXT_PAGE_LINES = 38;    // 이어지는 페이지 용량
-    const PHOTOS_PER_PAGE = 6;        // 2열 × 3행 (photo_grid.js 의 PER_PAGE 와 같아야 한다)
+    const PHOTOS_PER_PAGE = 6;        // 기본 한 페이지 사진 수 (세로 2열 × 3행). 4장(가로)은 PHOTO_GEOMETRY[4]
 
     // Summary 줄 → 페이지별 묶음. 항상 첫 페이지(빈 배열 가능)는 있다.
     function splitSummary(lines, first = SR_FIRST_PAGE_LINES, next = SR_NEXT_PAGE_LINES) {

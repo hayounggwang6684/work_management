@@ -25,7 +25,7 @@ def _user_name() -> str:
 def pdm_get_layout() -> Dict[str, Any]:
     try:
         return {'success': True, 'layout': layout.effective(get_db().get_layout()), 'engineNames': engine_names()}
-    except Exception as e:
+    except Exception:
         logger.exception('pdm_get_layout')
         return fail('출력 양식 조회 중 오류가 발생했습니다.')
 
@@ -39,7 +39,7 @@ def pdm_save_layout(new_layout: Dict[str, Any]) -> Dict[str, Any]:
         return {'success': True, 'layout': layout.effective(saved)}
     except (ValueError, PhotoError) as e:
         return fail(str(e))
-    except Exception as e:
+    except Exception:
         logger.exception('pdm_save_layout')
         return fail('출력 양식 저장 중 오류가 발생했습니다.')
 
@@ -57,7 +57,7 @@ def pdm_save_form_def(definition: Dict[str, Any], form_id: Optional[str] = None)
         return {'success': True, 'form': form}
     except (ValueError, PhotoError) as e:
         return fail(str(e))
-    except Exception as e:
+    except Exception:
         logger.exception('pdm_save_form_def')
         return fail('양식 저장 중 오류가 발생했습니다.')
 
@@ -71,7 +71,7 @@ def pdm_preview_form_def(definition: Dict[str, Any]) -> Dict[str, Any]:
         return {'success': True, 'form': form, 'instance': measurement.preview_instance(form)}
     except (ValueError, PhotoError) as e:
         return fail(str(e))
-    except Exception as e:
+    except Exception:
         logger.exception('pdm_preview_form_def')
         return fail('미리보기 중 오류가 발생했습니다.')
 
@@ -89,6 +89,6 @@ def pdm_delete_form_def(form_id: str) -> Dict[str, Any]:
             return fail(f'이 양식을 쓰는 계측지가 {used}건 있어 삭제할 수 없습니다. 먼저 해당 문서에서 항목을 제거하세요.')
         db.delete_custom_form(form_id)
         return {'success': True}
-    except Exception as e:
+    except Exception:
         logger.exception('pdm_delete_form_def')
         return fail('양식 삭제 중 오류가 발생했습니다.')

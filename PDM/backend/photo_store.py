@@ -4,7 +4,7 @@
 """
 import json
 from contextlib import contextmanager
-from typing import Any, Dict, Iterator, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence
 
 from PDM.backend.pdm_db import PdmDb
 from PDM.backend.photo_service import ProcessedImage

@@ -51,7 +51,7 @@ def pdm_list_photos(doc_id: int, known_ids: List[int] = None) -> Dict[str, Any]:
         return {'success': True,
                 'photos': [{**p, **({'thumb': _data_uri(thumbs[p['id']])} if p['id'] in thumbs else {})}
                            for p in photos]}
-    except Exception as e:
+    except Exception:
         logger.exception('pdm_list_photos')
         return fail('사진 목록 중 오류가 발생했습니다.')
 
@@ -73,7 +73,7 @@ def pdm_add_photo(doc_id: int, slot_index: int, data: str) -> Dict[str, Any]:
         return fail(str(e))
     except (sqlite3.IntegrityError, KeyError):
         return fail('문서를 찾을 수 없습니다.')
-    except Exception as e:
+    except Exception:
         logger.exception('pdm_add_photo')
         return fail('사진 입력 중 오류가 발생했습니다.')
 
@@ -89,7 +89,7 @@ def pdm_get_photo(photo_id: int, max_edge: int = 0) -> Dict[str, Any]:
         return {'success': True, 'image': _data_uri(resize_jpeg(get_photos().get_image(photo_id), int(max_edge or 0)))}
     except KeyError:
         return fail('사진을 찾을 수 없습니다.')
-    except Exception as e:
+    except Exception:
         logger.exception('pdm_get_photo')
         return fail('사진 조회 중 오류가 발생했습니다.')
 
@@ -106,7 +106,7 @@ def pdm_update_photo(doc_id: int, photo_id: int, data: str) -> Dict[str, Any]:
         return {'success': True, 'updatedAt': _touch(doc_id)}
     except PhotoError as e:
         return fail(str(e))
-    except Exception as e:
+    except Exception:
         logger.exception('pdm_update_photo')
         return fail('사진 저장 중 오류가 발생했습니다.')
 
@@ -125,7 +125,7 @@ def pdm_restore_photo_original(doc_id: int, photo_id: int) -> Dict[str, Any]:
         if not store.restore_original(doc_id, photo_id, img.thumb, img.width, img.height):
             return fail('편집 이력이 없습니다.')
         return {'success': True, 'updatedAt': _touch(doc_id)}
-    except Exception as e:
+    except Exception:
         logger.exception('pdm_restore_photo_original')
         return fail('원본 복원 중 오류가 발생했습니다.')
 
@@ -138,7 +138,7 @@ def pdm_set_photo_caption(doc_id: int, photo_id: int, caption: str) -> Dict[str,
         if not get_photos().set_caption(doc_id, photo_id, (caption or '')[:200]):
             return fail('사진을 찾을 수 없습니다.')
         return {'success': True, 'updatedAt': _touch(doc_id)}
-    except Exception as e:
+    except Exception:
         logger.exception('pdm_set_photo_caption')
         return fail('캡션 저장 중 오류가 발생했습니다.')
 
@@ -152,7 +152,7 @@ def pdm_remove_photo(doc_id: int, slot_index: int, pull: bool, end_slot: int = N
         if not get_photos().remove(doc_id, slot_index, bool(pull), end_slot):
             return fail('해당 칸에 사진이 없습니다.')
         return {'success': True, 'updatedAt': _touch(doc_id)}
-    except Exception as e:
+    except Exception:
         logger.exception('pdm_remove_photo')
         return fail('사진 제거 중 오류가 발생했습니다.')
 
@@ -167,7 +167,7 @@ def pdm_insert_blank_slot(doc_id: int, slot_index: int, end_slot: int = None) ->
         return {'success': True, 'updatedAt': _touch(doc_id)}
     except ValueError as e:
         return fail(str(e))
-    except Exception as e:
+    except Exception:
         logger.exception('pdm_insert_blank_slot')
         return fail('새 항목 중 오류가 발생했습니다.')
 
