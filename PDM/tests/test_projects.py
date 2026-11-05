@@ -377,3 +377,8 @@ def test_album_index_lines_are_normalized_and_kept_separate_from_chapter_titles(
     assert hd['pageTitles'] == {'0': '1호기'}                                        # 챕터 제목은 그대로
     assert pdm_api.pdm_save_document(doc['id'], pdm_api.pdm_get_document(doc['id'])['document']['updatedAt'], doc['title'], {**hd, 'indexLines': 'bad'})['success']
     assert pdm_api.pdm_get_document(doc['id'])['document']['header']['indexLines'] == []
+
+
+def test_album_cover_engine_is_expanded_like_the_service_report(work_db):
+    pdm_api.pdm_create_standalone_order('S-ENG', 'a', 'b', "CUM' KTA19")
+    assert pdm_api.pdm_list_documents('S-ENG', 'photo_album')['documents'][0]['header']['model'] == 'CUMMINS KTA19'

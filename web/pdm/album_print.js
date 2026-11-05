@@ -18,7 +18,7 @@ const AlbumPrint = (() => {
             center(47, 24, '엔진 작업 사진첩', `font-family:${GULIM};line-height:10mm`),
             abs(`${mmStyle(45.3, 89.4, 119.5, 34.7)}background:#DAEEF3`),
             center(91, 26, hd.vesselName, `font-family:${GULIM};line-height:11mm`),
-            abs(`left:45.3mm;width:119.5mm;top:106.5mm;text-align:center;font-size:20pt;font-weight:bold;font-family:${GULIM};line-height:8.4mm;white-space:pre-line`, hd.model || ''),
+            abs(`left:45.3mm;width:119.5mm;top:106.5mm;text-align:center;font-size:20pt;font-weight:bold;font-family:${GULIM};line-height:8.4mm;white-space:pre-line`, PrintLogic.expandEngine(hd.model)),
             abs(`left:46mm;top:148mm;font-size:14pt;font-weight:bold;font-family:${SERIF}`, 'INDEX'),
             ...indexLines.map((line, i) => abs(`left:46mm;top:${164 + i * 7.94}mm;font-size:12pt;font-weight:bold;font-family:${SERIF};white-space:nowrap`, line)),
             ...info(212, '작업 장소 : ', hd.location), ...info(220, '작업 일자 : ', hd.workDate));

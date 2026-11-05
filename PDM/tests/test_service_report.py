@@ -109,3 +109,13 @@ def test_engine_manufacturer_abbreviations_are_expanded_to_full_names():
     from datetime import date
     hd = build_header({'engineModel': "CUM' 6BT"}, 'u', date(2026, 1, 1))
     assert hd['model'] == 'CUMMINS 6BT'
+
+
+def test_engine_abbreviation_map_matches_the_javascript_copy():
+    """서비스레포트(Python)와 출력 화면(JS)의 제조사 약어 맵이 어긋나지 않게 — 한쪽만 고치면 이 테스트가 깨진다."""
+    import re
+    from PDM.backend.service_report import ENGINE_FULL_NAMES
+    js = (Path(__file__).resolve().parent.parent / 'web' / 'print_logic.js').read_text(encoding='utf-8')
+    body = re.search(r'ENGINE_FULL_NAMES = \{([^}]*)\}', js).group(1)
+    assert dict(re.findall(r"(\w+): '([^']+)'", body)) == ENGINE_FULL_NAMES
+    assert set(re.search(r'\\b\(([A-Z|]+)\)\\b', js).group(1).split('|')) == set(ENGINE_FULL_NAMES)

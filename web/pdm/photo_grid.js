@@ -260,9 +260,10 @@ const PhotoGrid = (() => {
             pagesEl.lastElementChild?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         }
 
-        reload();
+        const loaded = reload();
         return {
             el: root,
+            ready: loaded,                // 사진 목록을 처음 불러온 뒤 resolve (INDEX 자동 채우기 등이 기다린다)
             // 비어 있지 않은 페이지 제목만 (header.pageTitles 로 저장)
             getPageTitles: () => Object.fromEntries(Object.entries(pageTitles).filter(([, v]) => v.trim())),
             reload, addPage, copyChapter,

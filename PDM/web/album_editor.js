@@ -25,9 +25,19 @@ const AlbumEditor = (() => {
         // 표지 INDEX: 챕터 제목과 별개로 직접 쓸 수 있다 (한 줄에 한 항목, 최대 6줄). 비워 두면 챕터 제목으로 자동 생성.
         const MAX_INDEX = 6;
         const indexArea = h('textarea', { class: INPUT, rows: 4, placeholder: '비워 두면 챕터 제목으로 자동 생성됩니다 (예: 1. NO.1 G/E 쿨러 외 작업 사진 (2매))' }, (header.indexLines || []).join('\n'));
-        const readIndex = () => { header.indexLines = indexArea.value.split('\n').map(s => s.trim()).filter(Boolean).slice(0, MAX_INDEX); };
+        const readIndex = () => {
+            const lines = indexArea.value.split('\n').map(s => s.trim()).filter(Boolean);
+            if (lines.length > MAX_INDEX) indexArea.value = lines.slice(0, MAX_INDEX).join('\n');     // 표지에는 6줄까지만 들어가므로 입력칸도 같이 맞춘다 (저장/출력과 화면이 어긋나지 않게)
+            header.indexLines = lines.slice(0, MAX_INDEX);
+        };
         indexArea.addEventListener('input', readIndex);
-        const fillIndex = () => { indexArea.value = grid.indexSuggestion().join('\n'); readIndex(); };
+        const fillIndex = async () => {
+            await grid.ready;                                                  // 사진 목록을 불러온 뒤에 계산한다
+            const lines = grid.indexSuggestion();
+            if (!lines.length) return;                                         // 사진이 없으면 직접 쓴 INDEX 를 지우지 않는다
+            indexArea.value = lines.join('\n');
+            readIndex();
+        };
 
         const cover = h('input', { type: 'checkbox', checked: header.withCover === true });
         cover.addEventListener('change', () => { header.withCover = cover.checked; });

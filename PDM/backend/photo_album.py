@@ -6,7 +6,7 @@
 from datetime import date
 from typing import Any, Dict
 
-from PDM.backend.service_report import MAX_TEXT_LEN, _page_titles, _photos_per_page, _text
+from PDM.backend.service_report import MAX_TEXT_LEN, _page_titles, _photos_per_page, _text, expand_engine
 
 MAX_ENGINE_LEN = 200            # 표지 엔진 칸은 2줄(줄바꿈 허용)
 MAX_INDEX_LINES = 6             # 표지 INDEX 칸에 들어가는 줄 수
@@ -18,7 +18,7 @@ def build_header(info: Dict[str, Any], today: date, with_cover: bool) -> Dict[st
         'orderNo': info.get('contractNumber', ''),
         'customer': info.get('company', ''),
         'vesselName': info.get('shipName', ''),
-        'model': info.get('engineModel', ''),
+        'model': expand_engine(info.get('engineModel', '')),          # 서비스레포트와 같이 제조사 약어를 풀네임으로
         'location': info.get('location', ''),
         'workDate': today.strftime('%Y.%m.%d'),
         'withCover': with_cover,

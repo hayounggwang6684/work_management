@@ -16,6 +16,8 @@ from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 from PIL import Image, ImageOps
 
+from PDM.backend.service_report import expand_engine
+
 FONT = 'Malgun Gothic'
 THIN = Side(style='thin', color='000000')
 BOX = Border(left=THIN, right=THIN, top=THIN, bottom=THIN)
@@ -237,7 +239,7 @@ def _album(wb: Workbook, used: set, doc, photos, image_of, layout) -> None:
     pages = add_photo_sheets(wb, used, hd, photos, image_of, layout.get('photoFit', 'cover'))
     if hd.get('withCover'):
         lines = album_index_lines(hd, pages)
-        _cover_sheet(wb, used, '표지', '엔진 작업 사진첩', hd.get('vesselName', ''), hd.get('model', ''), lines,
+        _cover_sheet(wb, used, '표지', '엔진 작업 사진첩', hd.get('vesselName', ''), expand_engine(hd.get('model', '')), lines,
                      [('작업 장소 : ', hd.get('location')), ('작업 일자 : ', hd.get('workDate'))], layout)
         wb.move_sheet(wb.sheetnames[-1], offset=-(len(wb.sheetnames) - 1))     # 표지를 맨 앞으로
     if placeholder.title == 'Sheet' and len(wb.sheetnames) > 1:
