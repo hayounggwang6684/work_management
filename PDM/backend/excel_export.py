@@ -284,10 +284,11 @@ def _journal_sheet(ws: Worksheet, form: Dict[str, Any], header: Dict[str, Any], 
             _cell(ws, f'{get_column_letter(3 + i)}{row}', i + 1, bold=True, border=True, fill=HEAD_FILL)
         data = (inst.get('tables') or {}).get(table['id']) or []
         two = len(table['rows'][0]) == 2
+        group = table.get('groupSize') or 2                                # F/A 같은 그룹 라벨이 걸치는 줄 수 (TB/PS = 2, D1~D3 = 3)
         for ri, labels in enumerate(table['rows']):
             row += 1
             if two:
-                _cell(ws, f'A{row}', labels[0] if (table.get('split') or labels[1] == 'TB') else None, bold=True, border=True)
+                _cell(ws, f'A{row}', labels[0] if (table.get('split') or ri % group == 0) else None, bold=True, border=True)
                 _cell(ws, f'B{row}', labels[1], border=True)
             else:
                 _merge(ws, f'A{row}:B{row}', labels[0], bold=True, border=True)
@@ -295,8 +296,8 @@ def _journal_sheet(ws: Worksheet, form: Dict[str, Any], header: Dict[str, Any], 
                 _cell(ws, f'{get_column_letter(3 + ci)}{row}', number_or_text(value), border=True)
         if two and not table.get('split'):                                # F / A 같은 그룹 라벨은 TB·PS 두 줄에 걸친다
             start = row - len(table['rows']) + 1
-            for r0 in range(start, row, 2):
-                ws.merge_cells(f'A{r0}:A{r0 + 1}')
+            for r0 in range(start, row, group):
+                ws.merge_cells(f'A{r0}:A{r0 + group - 1}')
         row += 1
     row += 1
     _merge(ws, f'A{row}:{get_column_letter(ncols)}{row}', '■ Remarks :', bold=True, align=LEFT)

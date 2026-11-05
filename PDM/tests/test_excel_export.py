@@ -228,3 +228,15 @@ def test_measurement_export_skips_forms_that_no_longer_exist():
     doc = measurement_doc()
     doc['header']['forms'].append({'formId': 'custom_gone', 'label': '', 'phase': '', 'gaugeNo': '', 'spec': {}, 'unitBase': {}, 'tables': {}, 'remarks': ''})
     assert len(load(X.build_workbook(doc, [], None, TEMPLATES, LAYOUT)).sheetnames) == 5
+
+
+def test_cylinder_block_sheet_merges_three_row_groups():
+    header = measurement.build_header({'contractNumber': 'A'}, 'u', __import__('datetime').date.today())
+    inst = measurement.default_instance('cylblock')
+    inst['tables']['bore'][0][0] = '5'
+    header['forms'] = [inst]
+    wb = load(X.build_workbook({'docType': 'measurement', 'title': 't', 'header': measurement.normalize_header(header)}, [], None, TEMPLATES, LAYOUT))
+    ws = wb[wb.sheetnames[1]]
+    merged = [r.coord for r in ws.merged_cells.ranges if r.min_col == 1 and r.max_col == 1 and r.max_row - r.min_row == 2]
+    assert len(merged) == 2 and 'D1' in texts(ws) and 'D3' in texts(ws)             # F, A 두 그룹이 각각 3줄에 걸친다
+    assert _overlaps(ws) == []

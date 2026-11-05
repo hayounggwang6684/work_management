@@ -39,6 +39,14 @@ const MmPrint = (() => {
             tables: [{ top: 78.0, hdr: 10.1, row: 8.2 }, { top: 164.0, hdr: 10.1, row: 8.2 }],
             labelCols: [9.3, 9.3], x0: 12.6, titleX: 12.1, dataX0: 31.2, dataX1: 197.9,
         },
+        // SJ-101 실린더 블록: F/A × D1~D3 (그룹 3줄, 칸 높이 12.2mm = 엑셀 두 줄), 규격 표 없음
+        cylblock: {
+            frame: [10.2, 32.5, 200.4, 272.2], titleTop: 21.2, hdrRowH: 7.13, gaugeY: 55.2, unitTextY: null, remarksY: 253.2, footerY: 279.1,
+            spec: { top: 0, x: [0, 0, 0, 0], rows: [] },
+            diagram: { x: 30, y: 64, w: 150 },
+            tables: [{ top: 164.0, hdr: 10.0, row: 12.2 }],
+            labelCols: [9.3, 13.9], x0: 17.2, dataX0: 40.4, dataX1: 193.2,
+        },
         camshaft: {
             frame: [10.2, 32.5, 200.4, 274.4], titleTop: 21.2, hdrRowH: 7.13, gaugeY: 55.2, unitTextY: 55.0, remarksY: 255.3, footerY: 279.1,
             spec: { top: 63.7, x: [142.2, 160.7, 188.5], rows: [6.9, 6.6] },
@@ -156,7 +164,7 @@ const MmPrint = (() => {
         table.rows.forEach((labels, ri) => {
             if (lc === 2) {
                 if (table.split) cells.push({ r: ri + 1, c: 0, content: labels[0] });              // 위/아래 칸이 따로 (예: T / (  ))
-                else if (labels[1] === 'TB') cells.push({ r: ri + 1, c: 0, rs: 2, content: labels[0] });
+                else if (ri % (table.groupSize || 2) === 0) cells.push({ r: ri + 1, c: 0, rs: table.groupSize || 2, content: labels[0] });      // 그룹(F/A) 라벨은 groupSize 줄(기본 2 = TB/PS)에 걸친다
                 cells.push({ r: ri + 1, c: 1, content: labels[1] });
             } else cells.push({ r: ri + 1, c: 0, content: labels[0] });
             data[ri].forEach((v, ci) => cells.push({ r: ri + 1, c: lc + ci, content: v }));

@@ -88,7 +88,7 @@ const MmEditor = (() => {
             const grid = inputGrid({
                 get: () => inst.tables[table.id], set: g => { inst.tables[table.id] = g; },
                 rowHeads: r => (rows[r].length === 2
-                    ? [...(table.split ? [labelCell(rows[r][0])] : rows[r][1] === 'TB' ? [Object.assign(labelCell(rows[r][0]), { rowSpan: 2 })] : []), labelCell(rows[r][1])]
+                    ? [...(table.split ? [labelCell(rows[r][0])] : r % (table.groupSize || 2) === 0 ? [Object.assign(labelCell(rows[r][0]), { rowSpan: table.groupSize || 2 })] : []), labelCell(rows[r][1])]
                     : [labelCell(rows[r][0])]),
                 colHeads: Array.from({ length: table.cols }, (_, i) => String(i + 1)), cornerLabel: lines(table.colLabel),
             });

@@ -130,7 +130,7 @@ def test_apply_patch_keeps_measurements_and_does_not_mutate():
     assert inst['spec']['primary']['standard'] == ''
 
 
-@pytest.mark.parametrize('form_id', ['crankpin', 'mainjournal', 'conrod', 'linerpiston', 'pistonpin', 'camshaft'])
+@pytest.mark.parametrize('form_id', ['crankpin', 'mainjournal', 'conrod', 'linerpiston', 'pistonpin', 'camshaft', 'cylblock'])
 def test_every_fill_map_target_exists_in_the_form(form_id):
     form = {f['id']: f for f in measurement.load_templates()}[form_id]
     plan = standards.FILL_MAP[form_id]
@@ -230,3 +230,9 @@ def test_seed_runs_once_even_if_the_store_is_opened_twice():
     first = runtime.get_standards().list()
     runtime._standards = None
     assert len(runtime.get_standards().list()) == len(first)
+
+
+def test_cylinder_block_bore_becomes_the_unit_base_when_numeric():
+    assert standards.fill_patch('cylblock', {'block_bore': '111'})['unitBase'] == {'bore': '111'}
+    odd = standards.fill_patch('cylblock', {'block_bore': '0.05~0.12'})                   # 범위 표기는 기준값이 될 수 없으니 안내로만
+    assert odd['unitBase'] == {} and any('0.05~0.12' in n for n in odd['notes'])

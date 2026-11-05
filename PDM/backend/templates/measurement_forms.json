@@ -543,6 +543,56 @@
           "unit": null
         }
       ]
+    },
+    {
+      "id": "cylblock",
+      "label": "실린더 블록",
+      "title": "RECORD OF CYLINDER BLOCK",
+      "indexTitle": "RECORD OF CYLINDER BLOCK",
+      "code": "SJ-101 (1/'21.01.28)",
+      "layout": "journalGrid",
+      "diagram": "cylblock",
+      "spec": [],
+      "tables": [
+        {
+          "id": "bore",
+          "role": "plain",
+          "title": "CYLINDER BLOCK INNER DIA",
+          "colLabel": "Cyl.\nNo.",
+          "cols": 11,
+          "groupSize": 3,
+          "rows": [
+            [
+              "F",
+              "D1"
+            ],
+            [
+              "F",
+              "D2"
+            ],
+            [
+              "F",
+              "D3"
+            ],
+            [
+              "A",
+              "D1"
+            ],
+            [
+              "A",
+              "D2"
+            ],
+            [
+              "A",
+              "D3"
+            ]
+          ],
+          "unit": {
+            "base": "",
+            "op": "+"
+          }
+        }
+      ]
     }
   ]
 }

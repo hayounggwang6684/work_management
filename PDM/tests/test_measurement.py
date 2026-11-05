@@ -15,7 +15,7 @@ INFO = {'contractNumber': 'SH-2026-179-T', 'company': '선진엔텍', 'shipName'
 
 def test_templates_define_the_forms_without_fixed_sides():
     forms = M.load_templates()
-    assert [f['id'] for f in forms] == ['crankpin', 'mainjournal', 'conrod', 'linerpiston', 'pistonpin', 'camshaft']
+    assert [f['id'] for f in forms] == ['crankpin', 'mainjournal', 'conrod', 'linerpiston', 'pistonpin', 'camshaft', 'cylblock']
     assert all('sides' not in f for f in forms)           # PORT/STBD 고정 구분은 없다 — 장 수와 라벨을 사용자가 정한다
 
 
@@ -135,3 +135,10 @@ def test_normalize_keeps_order_and_limits_common_text():
     out = M.normalize_header(header)
     assert [(f['formId'], f['label']) for f in out['forms']] == [('conrod', '2호기'), ('crankpin', '1호기')]
     assert len(out['owner']) == M.MAX_TEXT_LEN
+
+
+def test_cylinder_block_form_has_three_row_groups_and_no_spec():
+    inst = M.default_instance('cylblock')
+    assert inst['spec'] == {} and [len(r) for r in inst['tables']['bore']] == [11] * 6
+    form = {f['id']: f for f in M.load_templates()}['cylblock']
+    assert form['tables'][0]['groupSize'] == 3 and form['code'] == "SJ-101 (1/'21.01.28)"

@@ -147,6 +147,7 @@ FILL_MAP: Dict[str, Dict[str, Dict[str, Any]]] = {
                     'base': {'linerDia': 'liner_std', 'pistonDia': 'piston_std'}},
     'pistonpin': {'base': {'pinDia': 'pin', 'bossBush': 'bush'}},
     'camshaft': {'spec': {'primary': ('cam_std', 'cam_limit')}, 'base': {'outDia': 'cam_std'}},
+    'cylblock': {'base': {'bore': 'block_bore'}},
 }
 _NUMERIC = re.compile(r'^-?\d+(?:\.\d+)?$')
 _NUMERIC_ONLY = ('base', 'torque')      # Unit 기준값/체결 토크 칸은 숫자만 (글자가 섞인 표기는 notes 로)
