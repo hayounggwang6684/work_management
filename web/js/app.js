@@ -165,6 +165,19 @@ function checkUnsavedChanges(scope = 'current', message = '') {
 }
 
 // ============================================================================
+// 프로그램 종료 확인 — 창 닫기(X)/새로고침 때 한 번 더 묻는다
+// ============================================================================
+// 브라우저 기본 확인창(beforeunload)을 쓴다 (문구는 브라우저가 정한다). 의도한 새로고침은 allowPageUnload() 로 확인창을 건너뛴다.
+let _allowUnload = false;
+function allowPageUnload() { _allowUnload = true; }
+window.addEventListener('beforeunload', e => {
+    if (_allowUnload) return;
+    e.preventDefault();
+    e.returnValue = '프로그램을 종료하시겠습니까?';
+    return e.returnValue;
+});
+
+// ============================================================================
 // 날짜 관리
 // ============================================================================
 

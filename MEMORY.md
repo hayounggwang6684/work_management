@@ -52,6 +52,13 @@
 - 메뉴가 한 탭 늘어 버튼 글자가 줄바꿈되던 문제: 메뉴 컨테이너에 `[&_button]:whitespace-nowrap`.
   (`showView` 가 버튼 className 을 통째로 덮어쓰므로 **버튼 개별 클래스로 넣으면 첫 클릭 뒤 사라진다**)
 
+## Features Added (최근)
+
+### 프로그램 종료 확인
+- 창 닫기(X)/새로고침 때 브라우저 기본 확인창(`beforeunload`, `web/js/app.js`)으로 한 번 더 묻는다. 의도한 새로고침(`auth.js` 클라우드 연결 후 등)은 `allowPageUnload()` 로 건너뜀.
+- 트레이 `종료` 메뉴는 Windows 메시지 상자(`main.py _confirm_exit`, 예/아니오)로 확인. 상자를 띄우지 못하면 종료를 막지 않는다. `main.py` 변경이라 앱 재시작 후 적용.
+- 확인창 문구는 브라우저가 정해서 바꿀 수 없다 (Chrome 은 사용자가 화면을 한 번이라도 조작한 뒤에만 띄움).
+
 ## Bug Fixes Applied
 
 ### 2026-10-13: PDM 인쇄가 본체에서 백지로 나옴

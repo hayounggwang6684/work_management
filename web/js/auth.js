@@ -2094,6 +2094,7 @@ async function connectExternalCloud() {
         showCustomAlert('연결 완료', result.message + '\n\n이제 외부 PC 모드로 동작합니다.', 'success');
         loadCloudStatus();
         // 페이지 전체 새로고침으로 DB 변경 반영
+        if (typeof allowPageUnload === 'function') allowPageUnload();      // 의도한 새로고침 — 종료 확인창 없이
         setTimeout(() => location.reload(), 500);
 
     } catch (e) {
