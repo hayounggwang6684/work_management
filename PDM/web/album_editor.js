@@ -35,7 +35,8 @@ const AlbumEditor = (() => {
                 h('option', { value: '6', selected: perPage === 6 }, '6장 (세로)'), h('option', { value: '4', selected: perPage === 4 }, '4장 (가로)'));
             select.addEventListener('change', () => { perPage = Number(select.value); mountGrid(grid.getPageTitles()); });
             const newPage = h('button', { class: 'ml-2 px-2 py-0.5 rounded border border-slate-300 bg-white hover:bg-slate-100 text-sm font-normal', title: '앞 페이지를 다 채우지 않고 다음 사진 페이지를 시작합니다', onclick: () => grid.addPage() }, '＋ 새 페이지');
-            photosBox.replaceChildren(h('h3', { class: 'font-bold text-lg mb-1' }, '■ Photos', select, newPage),
+            const copyBtn = h('button', { class: 'ml-2 px-2 py-0.5 rounded border border-slate-300 bg-white hover:bg-slate-100 text-sm font-normal', title: '챕터(소제목 구간)를 사진·캡션·제목째 새 챕터로 복사합니다. 내용이 같고 사진만 다를 때 복사한 뒤 사진을 우클릭 [대치]로 바꾸세요', onclick: () => grid.copyChapter() }, '⧉ 챕터 복사');
+            photosBox.replaceChildren(h('h3', { class: 'font-bold text-lg mb-1' }, '■ Photos', select, newPage, copyBtn),
                 h('p', { class: 'text-xs text-slate-400 mb-1' }, '페이지 제목은 사진 위 제목 띠와 표지 INDEX 에 쓰입니다 (제목을 비우면 띠가 나오지 않고, INDEX 에는 "작업 사진"으로 나옵니다).'), grid.el);
         };
         mountGrid(header.pageTitles);

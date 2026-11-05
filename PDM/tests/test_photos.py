@@ -294,3 +294,49 @@ def test_insert_page_at_the_end_changes_nothing_and_validates_input(store):
     assert slots_of(s, doc) == [0]
     with pytest.raises(ValueError):
         s.insert_page(doc, 1, 5)
+
+
+# ── 대치 / 챕터 복사 ──────────────────────────────────────────────────────────
+
+def test_swap_image_replaces_the_picture_but_keeps_slot_and_caption_and_drops_edit_history(store):
+    s, doc = store
+    pid = s.add_photo(doc, 3, IMG)
+    s.set_caption(doc, pid, '쿨러')
+    s.replace_image(doc, pid, process_image(make_png(400, 400)))                   # 편집해서 원본이 보존된 상태
+    assert s.get_original(doc, pid) is not None
+    new = process_image(make_png(300, 150, 'RGB', 'JPEG'))
+    assert s.swap_image(doc, pid, new)
+    photo = s.list_photos(doc)[0]
+    assert (photo['slotIndex'], photo['caption'], photo['width'], photo['height'], photo['edited']) == (3, '쿨러', 300, 150, False)
+    assert s.get_original(doc, pid) is None and not s.swap_image(doc, 99999, new)
+
+
+def test_copy_pages_appends_the_chapter_with_photos_captions_and_titles(store):
+    s, doc = store
+    for slot in (0, 1, 2, 6):                                  # 챕터 1 = 페이지 0~1 (제목 '1호기')
+        pid = s.add_photo(doc, slot, IMG)
+        s.set_caption(doc, pid, f'c{slot}')
+    out = s.copy_pages(doc, 0, 2, 6, {'0': '1호기'})
+    assert out['newStartPage'] == 2 and out['copied'] == 4
+    assert [p['slotIndex'] for p in s.list_photos(doc)] == [0, 1, 2, 6, 12, 13, 14, 18]
+    assert [p['caption'] for p in s.list_photos(doc) if p['slotIndex'] >= 12] == ['c0', 'c1', 'c2', 'c6']
+    assert out['pageTitles'] == {'2': '1호기'}                                    # 서버에 저장된 제목 + 복사본 제목 (화면의 저장 전 제목은 화면이 가지고 있다)
+
+
+def test_copy_pages_goes_after_the_last_chapter_and_names_an_untitled_first_page(store):
+    s, doc = store
+    for slot in (0, 6, 12):
+        s.add_photo(doc, slot, IMG)
+    out = s.copy_pages(doc, 1, 2, 6, {'0': 'A', '2': 'C'})                       # 가운데 챕터(페이지 1)를 복사 → 마지막 페이지(2) 다음
+    assert out['newStartPage'] == 3 and [p['slotIndex'] for p in s.list_photos(doc)] == [0, 6, 12, 18]
+    assert out['pageTitles']['3'] == '복사본'                                    # 제목이 비면 앞 챕터에 붙지 않게 표시용 제목
+
+
+def test_copy_pages_rejects_empty_or_invalid_chapters_and_keeps_source_untouched(store):
+    s, doc = store
+    s.add_photo(doc, 0, IMG)
+    with pytest.raises(ValueError):
+        s.copy_pages(doc, 3, 4, 6, {})
+    with pytest.raises(ValueError):
+        s.copy_pages(doc, 0, 1, 5, {})
+    assert [p['slotIndex'] for p in s.list_photos(doc)] == [0]

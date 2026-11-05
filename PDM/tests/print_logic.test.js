@@ -172,3 +172,10 @@ test('planServiceReport: 마지막 페이지에 Remark 가 들어갈 줄이 없�
 test('planServiceReport: Remark 가 비어 있어도 Remark 제목 자리는 Summary 뒤에 둔다 (최소 1줄)', () => {
     assert.deepEqual(L.planServiceReport(sum(40), []).rest.map(r => r.remark), ['after']);
 });
+
+test('chaptersOf: 제목이 있는 페이지마다 새 챕터, 첫 페이지는 항상 챕터 시작', () => {
+    assert.deepEqual(L.chaptersOf({ 0: '1호기', 2: '2호기' }, 4), [{ startPage: 0, endPage: 2 }, { startPage: 2, endPage: 4 }]);
+    assert.deepEqual(L.chaptersOf({}, 3), [{ startPage: 0, endPage: 3 }]);
+    assert.deepEqual(L.chaptersOf({ 1: 'B', 5: 'X' }, 3), [{ startPage: 0, endPage: 1 }, { startPage: 1, endPage: 3 }]);      // 사진 있는 페이지 범위를 넘는 제목은 무시
+    assert.deepEqual(L.chaptersOf({}, 0), []);
+});

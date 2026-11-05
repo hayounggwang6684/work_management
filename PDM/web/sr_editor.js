@@ -57,7 +57,8 @@ const SrEditor = (() => {
                 h('option', { value: '6', selected: perPage === 6 }, '6장 (세로)'), h('option', { value: '4', selected: perPage === 4 }, '4장 (가로)'));
             select.addEventListener('change', () => { perPage = Number(select.value); mountGrid(grid.getPageTitles()); });
             const newPage = h('button', { class: 'ml-2 px-2 py-0.5 rounded border border-slate-300 bg-slate-50 hover:bg-slate-100 text-sm font-normal', title: '앞 페이지를 다 채우지 않고 다음 사진 페이지를 시작합니다', onclick: () => grid.addPage() }, '＋ 새 페이지');
-            photosBox.replaceChildren(h('h3', { class: 'font-bold text-lg mb-1' }, '■ Photos', select, newPage), grid.el);
+            const copyBtn = h('button', { class: 'ml-2 px-2 py-0.5 rounded border border-slate-300 bg-slate-50 hover:bg-slate-100 text-sm font-normal', title: '챕터(소제목 구간)를 사진·캡션·제목째 새 챕터로 복사합니다. 내용이 같고 사진만 다를 때 복사한 뒤 사진을 우클릭 [대치]로 바꾸세요', onclick: () => grid.copyChapter() }, '⧉ 챕터 복사');
+            photosBox.replaceChildren(h('h3', { class: 'font-bold text-lg mb-1' }, '■ Photos', select, newPage, copyBtn), grid.el);
         };
         mountGrid(doc.header.pageTitles);
         const root = h('div', { class: 'bg-white rounded-lg shadow p-6 max-w-3xl mx-auto' },

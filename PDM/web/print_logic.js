@@ -57,6 +57,12 @@ const PrintLogic = (() => {
         return { startPage, endPage: endPage <= lastTitled ? endPage : null };
     }
 
+    // 사진이 있는 페이지 수(totalPages)까지를 챕터(소제목 구간)로 나눈다 → [{startPage, endPage(미포함)}]. 챕터 복사에서 복사할 범위를 고를 때 쓴다.
+    function chaptersOf(pageTitles, totalPages) {
+        const starts = [0, ...Array.from({ length: Math.max(0, totalPages - 1) }, (_, i) => i + 1).filter(p => hasTitle(pageTitles, p))];
+        return totalPages > 0 ? starts.map((startPage, i) => ({ startPage, endPage: i + 1 < starts.length ? starts[i + 1] : totalPages })) : [];
+    }
+
     // before 페이지 앞에 빈 페이지를 끼운 뒤의 제목 (before 이상 페이지의 제목이 한 페이지씩 뒤로). 새 객체.
     function shiftTitles(pageTitles, before) {
         return Object.fromEntries(Object.entries(pageTitles || {}).filter(([k]) => /^\d+$/.test(k)).map(([k, v]) => [String(Number(k) >= before ? Number(k) + 1 : Number(k)), v]));
@@ -100,7 +106,7 @@ const PrintLogic = (() => {
         return { x: g.cols[index % 2], y: g.rows[Math.floor(index / 2)] };
     }
 
-    return { SR_FIRST_PAGE_LINES, SR_NEXT_PAGE_LINES, PHOTOS_PER_PAGE, PHOTO_GEOMETRY, splitSummary, planServiceReport, REMARK_HEADING_LINES, photoPages, expandEngine, sectionOf, shiftTitles, albumIndexLines, pageLabel, slotPosition };
+    return { SR_FIRST_PAGE_LINES, SR_NEXT_PAGE_LINES, PHOTOS_PER_PAGE, PHOTO_GEOMETRY, splitSummary, planServiceReport, REMARK_HEADING_LINES, photoPages, expandEngine, sectionOf, chaptersOf, shiftTitles, albumIndexLines, pageLabel, slotPosition };
 })();
 
 if (typeof module !== 'undefined') module.exports = PrintLogic;

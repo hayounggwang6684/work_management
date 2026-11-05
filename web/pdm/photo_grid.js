@@ -1,6 +1,7 @@
 // 사진 그리드 — 한 페이지 6칸(2열×3행) 또는 4칸(가로 2열×2행, options.perPage), 칸마다 캡션. 서비스레포트 사진 페이지의 화면 편집용.
 // 입력: ① 파일 드래그앤드롭 ② 우클릭 메뉴 [입력] ③ 빈칸 더블클릭 → 모두 파일 선택/드롭 후 같은 경로로 저장.
-// 우클릭 메뉴: 입력 / 수정 / 제거 / 새 항목. 사진 더블클릭 = 수정(photo_editor.js).
+// 우클릭 메뉴: 입력 / 수정 / 대치(다른 사진으로 교체) / 제거 / 새 항목. 사진 더블클릭 = 수정(photo_editor.js).
+// 챕터 복사: 소제목 구간 하나를 사진·캡션·제목째 문서 끝에 새 챕터로 복사 — 1호기/2호기처럼 내용이 같고 사진만 다를 때 복사한 뒤 사진만 대치한다.
 // 칸에 맞추는 방식(cover/contain)은 출력과 같은 PDM_LAYOUT.photoFit 을 따른다 (화면 = 인쇄 결과).
 // 소제목 구간: 제목이 입력된 페이지는 새 항목(구간)의 시작이다. 한 구간에 사진을 더 넣거나 중간에 끼우거나 빼도 뒤 구간의 사진은 밀리지 않고,
 //   구간이 가득 차면 그 구간 끝에 페이지가 하나 추가되며 뒤 구간이 한 페이지씩 뒤로 간다 (서버 pdm_insert_photo_page — 사진과 저장된 페이지 제목이 함께 밀림).
@@ -146,12 +147,56 @@ const PhotoGrid = (() => {
             });
         }
 
+        // 대치: 파일을 골라 이 사진을 다른 사진으로 바꾼다 (칸·캡션은 그대로)
+        function replacePhoto(photo) {
+            const input = h('input', { type: 'file', accept: 'image/*' });
+            input.addEventListener('change', async () => {
+                const file = input.files[0];
+                if (!file) return;
+                if (!file.type.startsWith('image/')) { say('이미지 파일만 선택할 수 있습니다.'); return; }
+                say('대치 중…');
+                const r = await eel.pdm_replace_photo(docId, photo.id, await toUploadData(file))();
+                if (!r.success) { say('⚠ ' + r.message); return; }
+                touched(r);
+                thumbs.delete(photo.id);
+                await reload();
+                say('사진을 대치했습니다');
+            });
+            input.click();
+        }
+
+        // 챕터 복사: 챕터가 하나면 그것을, 여럿이면 고른 챕터를 문서 끝에 새 챕터로 복사한다
+        async function copyChapter() {
+            const total = Math.floor(lastSlot() / perPage) + 1;
+            const chapters = lastSlot() < 0 ? [] : PrintLogic.chaptersOf(pageTitles, total);
+            if (!chapters.length) { say('복사할 사진이 없습니다.'); return; }
+            const name = (c, i) => `챕터 ${i + 1}${String(pageTitles[c.startPage] || '').trim() ? ` (${String(pageTitles[c.startPage]).trim()})` : ''}`;
+            let index = 0;
+            if (chapters.length > 1) {
+                const picked = await showChoice('챕터 복사', '어느 챕터를 복사할까요? 사진·캡션·제목이 문서 끝에 새 챕터로 복사됩니다.',
+                    [...chapters.map((c, i) => ({ label: name(c, i), value: i })), { label: '취소', value: null }]);
+                if (picked === null || picked === undefined) return;
+                index = picked;
+            } else if (await showChoice('챕터 복사', `${name(chapters[0], 0)} 전체를 복사해 새 챕터로 만들까요? 복사한 뒤 사진만 우클릭 [대치]로 바꾸면 됩니다.`,
+                [{ label: '복사', value: true, primary: true }, { label: '취소', value: false }]) !== true) return;
+            const c = chapters[index];
+            const r = await eel.pdm_copy_photo_chapter(docId, c.startPage, c.endPage, perPage, { ...pageTitles })();
+            if (!r.success) { say('⚠ ' + r.message); return; }
+            const added = Object.entries(r.pageTitles).filter(([k]) => Number(k) >= r.newStartPage);        // 복사본 제목만 화면 제목에 반영 (앞 페이지의 저장 전 제목은 그대로)
+            for (const [k, v] of added) pageTitles[k] = v;
+            touched(r);
+            await reload();
+            say(`${name(c, index)}을(를) 복사했습니다 (${r.copied}장) — 사진을 우클릭 [대치]로 바꾸세요`);
+            pagesEl.children[r.newStartPage]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
         function menuFor(slot, e) {
             e.preventDefault();
             const photo = bySlot.get(slot);
             showContextMenu(e.clientX, e.clientY, [
                 { label: '입력', disabled: !!photo, onClick: () => pickFiles(slot) },
                 { label: '수정', disabled: !photo, onClick: () => editPhoto(photo) },
+                { label: '대치', disabled: !photo, onClick: () => replacePhoto(photo) },
                 { label: '제거', disabled: !photo, onClick: () => removeAt(slot) },
                 { label: '새 항목', disabled: !photo && lastSlot() < slot, onClick: () => insertBlank(slot) },
             ]);
@@ -220,7 +265,7 @@ const PhotoGrid = (() => {
             el: root,
             // 비어 있지 않은 페이지 제목만 (header.pageTitles 로 저장)
             getPageTitles: () => Object.fromEntries(Object.entries(pageTitles).filter(([, v]) => v.trim())),
-            reload, addPage,
+            reload, addPage, copyChapter,
         };
     }
 

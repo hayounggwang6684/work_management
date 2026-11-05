@@ -81,6 +81,49 @@ class PhotoStore:
                 'image_blob=?, thumb_blob=?, width=?, height=? WHERE id=? AND doc_id=?',
                 (img.image, img.thumb, img.width, img.height, photo_id, doc_id)).rowcount)
 
+    def swap_image(self, doc_id: int, photo_id: int, img: ProcessedImage) -> bool:
+        """사진을 다른 사진으로 바꾼다 (대치): 칸/캡션은 그대로, 이미지는 통째로 교체하고 원본 보존(편집 이력)은 비운다."""
+        with self._tx() as conn:
+            return bool(conn.execute(
+                'UPDATE pdm_photos SET image_blob=?, thumb_blob=?, width=?, height=?, original_blob=NULL WHERE id=? AND doc_id=?',
+                (img.image, img.thumb, img.width, img.height, photo_id, doc_id)).rowcount)
+
+    def copy_pages(self, doc_id: int, start_page: int, end_page: int, per_page: int, titles: Dict[str, str]) -> Dict[str, Any]:
+        """[start_page, end_page) 페이지(한 챕터)의 사진/캡션/페이지 제목을 문서 끝에 그대로 복사해 새 챕터로 만든다.
+        titles: 화면에서 보내 준 현재 페이지 제목(저장 전 입력 포함) — 복사본의 제목으로 쓴다. 첫 페이지 제목이 비면 '복사본'(비어 있으면 앞 챕터에 붙어 버리므로).
+        반환 {newStartPage, copied, pageTitles(복사 반영된 전체)}."""
+        if per_page not in (4, 6) or not 0 <= start_page < end_page:
+            raise ValueError('복사할 챕터 정보가 올바르지 않습니다.')
+        lo, hi = start_page * per_page, end_page * per_page
+        with self._tx() as conn:
+            last = conn.execute('SELECT MAX(slot_index) FROM pdm_photos WHERE doc_id=?', (doc_id,)).fetchone()[0]
+            count = conn.execute('SELECT COUNT(*) FROM pdm_photos WHERE doc_id=? AND slot_index>=? AND slot_index<?', (doc_id, lo, hi)).fetchone()[0]
+            if not count:
+                raise ValueError('이 챕터에 복사할 사진이 없습니다.')
+            dest = max(end_page, (last // per_page) + 1)                       # 마지막 사진 페이지 다음 페이지부터
+            offset = (dest - start_page) * per_page
+            top = conn.execute('SELECT MAX(slot_index) FROM pdm_photos WHERE doc_id=? AND slot_index>=? AND slot_index<?', (doc_id, lo, hi)).fetchone()[0]
+            if top + offset >= MAX_SLOTS:
+                raise ValueError('사진칸이 너무 많아 더 복사할 수 없습니다.')
+            conn.execute(
+                'INSERT INTO pdm_photos (doc_id, page_group, slot_index, caption, image_blob, thumb_blob, width, height) '
+                'SELECT doc_id, page_group, slot_index + ?, caption, image_blob, thumb_blob, width, height '
+                'FROM pdm_photos WHERE doc_id=? AND slot_index>=? AND slot_index<?', (offset, doc_id, lo, hi))
+            row = conn.execute('SELECT header_json FROM pdm_documents WHERE id=?', (doc_id,)).fetchone()
+            if row is None:
+                raise KeyError(doc_id)
+            header = json.loads(row['header_json'])
+            merged = {str(k): v for k, v in (header.get('pageTitles') or {}).items()}
+            for page in range(start_page, end_page):
+                title = str((titles or {}).get(str(page), merged.get(str(page), '')) or '').strip()
+                if page == start_page and not title:
+                    title = '복사본'
+                if title:
+                    merged[str(page + dest - start_page)] = title[:100]
+            header['pageTitles'] = merged
+            conn.execute('UPDATE pdm_documents SET header_json=? WHERE id=?', (json.dumps(header, ensure_ascii=False), doc_id))
+            return {'newStartPage': dest, 'copied': count, 'pageTitles': merged}
+
     def restore_original(self, doc_id: int, photo_id: int, thumb: bytes, width: int, height: int) -> bool:
         """편집 전 원본으로 복원 (썸네일/크기는 호출자가 원본에서 계산해 전달). 편집 이력이 없으면 False."""
         with self._tx() as conn:

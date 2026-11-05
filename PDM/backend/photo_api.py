@@ -185,3 +185,35 @@ def pdm_insert_photo_page(doc_id: int, before_page: int, per_page: int) -> Dict[
     except Exception:
         logger.exception('pdm_insert_photo_page')
         return fail('페이지 추가 중 오류가 발생했습니다.')
+
+
+@eel.expose
+@guarded('write')
+@_visible_doc
+def pdm_replace_photo(doc_id: int, photo_id: int, data: str) -> Dict[str, Any]:
+    """대치: 사진을 다른 사진으로 바꾼다 (칸/캡션 유지, 이전 사진·편집 이력은 버림)."""
+    try:
+        img = process_image(decode_b64(data))
+        if not get_photos().swap_image(doc_id, photo_id, img):
+            return fail('사진을 찾을 수 없습니다.')
+        return {'success': True, 'updatedAt': _touch(doc_id)}
+    except PhotoError as e:
+        return fail(str(e))
+    except Exception:
+        logger.exception('pdm_replace_photo')
+        return fail('사진 대치 중 오류가 발생했습니다.')
+
+
+@eel.expose
+@guarded('write')
+@_visible_doc
+def pdm_copy_photo_chapter(doc_id: int, start_page: int, end_page: int, per_page: int, titles: Dict[str, str] = None) -> Dict[str, Any]:
+    """챕터(소제목 구간) 복사: start_page~end_page(미포함) 페이지의 사진/캡션/제목을 문서 끝에 새 챕터로 복사한다."""
+    try:
+        result = get_photos().copy_pages(doc_id, int(start_page), int(end_page), int(per_page), titles if isinstance(titles, dict) else {})
+        return {'success': True, **result, 'updatedAt': _touch(doc_id)}
+    except ValueError as e:
+        return fail(str(e))
+    except Exception:
+        logger.exception('pdm_copy_photo_chapter')
+        return fail('챕터 복사 중 오류가 발생했습니다.')
