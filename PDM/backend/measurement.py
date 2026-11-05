@@ -19,10 +19,15 @@ PHASES = ('', 'before', 'after')
 COMMON_TEXT_KEYS = ('workNo', 'inspDate', 'owner', 'shipName', 'inspBy', 'apprBy', 'makerType', 'coverEngine', 'coverShip')
 
 
-@lru_cache(maxsize=1)
-def _builtin_forms() -> List[Dict[str, Any]]:
+@lru_cache(maxsize=4)
+def _load_builtin(mtime_ns: int) -> List[Dict[str, Any]]:
     with open(TEMPLATE_PATH, encoding='utf-8') as f:
         return [{**form, 'builtin': True} for form in json.load(f)['forms']]
+
+
+def _builtin_forms() -> List[Dict[str, Any]]:
+    """내장 양식 정의. 파일 수정 시각이 바뀌면 다시 읽는다 — 앱을 켠 채로 패치가 적용돼도(재시작 전에도) 새 양식이 보이게."""
+    return _load_builtin(TEMPLATE_PATH.stat().st_mtime_ns)
 
 
 _custom_provider: Optional[Callable[[], List[Dict[str, Any]]]] = None

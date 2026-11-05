@@ -142,3 +142,15 @@ def test_cylinder_block_form_has_three_row_groups_and_no_spec():
     assert inst['spec'] == {} and [len(r) for r in inst['tables']['bore']] == [11] * 6
     form = {f['id']: f for f in M.load_templates()}['cylblock']
     assert form['tables'][0]['groupSize'] == 3 and form['code'] == "SJ-101 (1/'21.01.28)"
+
+
+def test_builtin_forms_are_reloaded_when_the_definition_file_changes(tmp_path, monkeypatch):
+    import json, os
+    path = tmp_path / 'forms.json'
+    path.write_text(json.dumps({'forms': [{'id': 'a', 'label': 'A', 'layout': 'journalGrid', 'spec': [], 'tables': []}]}), encoding='utf-8')
+    monkeypatch.setattr(M, 'TEMPLATE_PATH', path)
+    assert [f['id'] for f in M.load_templates()] == ['a']
+    path.write_text(json.dumps({'forms': [{'id': 'a', 'label': 'A', 'layout': 'journalGrid', 'spec': [], 'tables': []},
+                                          {'id': 'b', 'label': 'B', 'layout': 'journalGrid', 'spec': [], 'tables': []}]}), encoding='utf-8')
+    os.utime(path, ns=(10**18, 10**18 + 1))                                        # 수정 시각이 달라진 것으로
+    assert [f['id'] for f in M.load_templates()] == ['a', 'b']
