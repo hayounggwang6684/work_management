@@ -108,7 +108,7 @@ const SrPrint = (() => {
         });
         // 제목을 입력하지 않았으면 제목 띠(색 박스)를 아예 그리지 않는다
         const band = title ? [shrink(abs(`left:${g.band.x}mm;top:${g.band.y}mm;width:${g.band.w}mm;height:${g.band.h}mm;background:#DAEEF3;border:3px solid #000;text-align:center;` +
-            "line-height:9.1mm;overflow:hidden;white-space:nowrap;font-family:'Dotum','돋움','Malgun Gothic',sans-serif", title))] : [];
+            "line-height:9.1mm;overflow:hidden;white-space:nowrap;font-weight:bold;font-family:'Dotum','돋움','Malgun Gothic',sans-serif", title))] : [];      // 챕터(소제목) 제목은 볼드
         return h('section', { class: 'pdm-page' + (g.landscape ? ' pdm-landscape' : '') }, logo(layout),
             ...band, ...cells, ...seal(layout, g), ...footer(layout, g.footerTop));
     }

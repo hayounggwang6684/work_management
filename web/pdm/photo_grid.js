@@ -233,7 +233,7 @@ const PhotoGrid = (() => {
 
         function pageEl(page) {
             const title = h('input', {
-                class: 'w-full border border-slate-400 bg-sky-50 rounded px-2 py-1 text-sm text-center',
+                class: 'w-full border border-slate-400 bg-sky-50 rounded px-2 py-1 text-sm text-center font-bold',
                 placeholder: `페이지 ${page + 1} 제목 (비우면 출력에 제목 띠가 나오지 않음)`, value: pageTitles[page] || '',
             });
             title.addEventListener('input', () => { pageTitles[page] = title.value; });
