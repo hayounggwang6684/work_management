@@ -12,7 +12,7 @@ const EditorBar = (() => {
         let current = doc;
         const status = h('span', { class: 'text-sm text-slate-500' });
         const titleInput = h('input', {
-            class: 'flex-1 min-w-0 px-2 py-1 border border-slate-300 rounded bg-white',
+            class: 'flex-1 min-w-[8rem] px-2 py-1 border border-slate-300 rounded bg-white',
             value: doc.title, title: '파일 이름',
         });
 
@@ -53,26 +53,25 @@ const EditorBar = (() => {
             status.textContent = '엑셀 파일을 받았습니다: ' + r.filename;
         };
 
-        const draftBtn = h('button', { class: 'px-3 py-1 rounded bg-amber-500 text-white', title: '다른 사용자에게는 보이지 않게 작성자만 볼 수 있도록 저장합니다', onclick: () => save(true) }, '임시 저장');
-        const saveBtn = h('button', { class: 'px-4 py-1 rounded bg-blue-600 text-white', onclick: () => save(false) }, '저장');
+        const draftBtn = h('button', { class: 'inline-flex items-center justify-center w-9 h-9 rounded text-lg leading-none whitespace-nowrap bg-amber-500 text-white', title: '임시 저장 — 다른 사용자에게는 보이지 않게 작성자만 볼 수 있도록 저장합니다', 'aria-label': '임시 저장', onclick: () => save(true) }, '📝');
+        const saveBtn = h('button', { class: 'inline-flex items-center justify-center w-9 h-9 rounded text-lg leading-none whitespace-nowrap bg-blue-600 text-white', 'aria-label': '저장', onclick: () => save(false) }, '💾');
         const badge = h('span', { class: 'px-2 py-0.5 rounded bg-amber-100 text-amber-800 text-xs whitespace-nowrap', title: '[저장]을 누르면 다른 사용자에게도 공개됩니다' }, '🔒 임시 (작성자만)');
         const paintPrivacy = () => {
             draftBtn.classList.toggle('hidden', !current.isPrivate);
             badge.classList.toggle('hidden', !current.isPrivate);
-            saveBtn.textContent = current.isPrivate ? '저장 (공개)' : '저장';
-            saveBtn.title = current.isPrivate ? '저장하면 다른 사용자에게도 보입니다' : '';
+            saveBtn.title = current.isPrivate ? '저장 (공개) — 저장하면 다른 사용자에게도 보입니다' : '저장';
             saveBtn.classList.toggle('hidden', !!window.PDM_EMBEDDED);       // 본체에서는 상단 💾 저장으로 통합
         };
 
-        const el = h('div', { class: `${maxWidthClass} mx-auto mb-3 flex items-center gap-3` },
-            h('button', { class: 'px-3 py-1 rounded bg-slate-200', onclick: onBack }, '← 목록'),
+        const el = h('div', { class: `${maxWidthClass} mx-auto mb-3 flex flex-wrap items-center gap-x-2 gap-y-2` },
+            h('button', { class: 'inline-flex items-center justify-center w-9 h-9 rounded text-lg leading-none whitespace-nowrap bg-slate-200', title: '목록으로', 'aria-label': '목록', onclick: onBack }, '←'),
             titleInput,
             badge, draftBtn, saveBtn,
             ...(window.PDM_EMBEDDED ? [h('span', { class: 'text-xs text-slate-500 whitespace-nowrap', title: '본체 상단의 💾 저장 버튼 또는 Ctrl+S' }, '저장: 상단 💾 (Ctrl+S)')] : []),
-            h('button', { class: 'px-4 py-1 rounded bg-emerald-600 text-white', onclick: print }, '인쇄 / PDF'),
-            h('button', { class: 'px-4 py-1 rounded bg-green-800 text-white', title: '엑셀(.xlsx) 파일로 받기', onclick: toExcel }, '엑셀'),
+            h('button', { class: 'inline-flex items-center justify-center w-9 h-9 rounded text-lg leading-none whitespace-nowrap bg-emerald-600 text-white', title: '인쇄 / PDF', 'aria-label': '인쇄 / PDF', onclick: print }, '🖨'),
+            h('button', { class: 'inline-flex items-center justify-center w-9 h-9 rounded text-lg leading-none whitespace-nowrap bg-green-800 text-white', title: '엑셀(.xlsx) 파일로 받기', 'aria-label': '엑셀', onclick: toExcel }, '📊'),
             status,
-            h('span', { class: 'ml-auto text-xs text-slate-400' }, `최종 수정: ${doc.updatedBy || '-'} · ${doc.updatedAt}`));
+            h('span', { class: 'ml-auto text-xs text-slate-400 whitespace-nowrap' }, `최종 수정: ${doc.updatedBy || '-'} · ${doc.updatedAt}`));
 
         paintPrivacy();
         const api = { el, save, current: () => current, touch: ts => { current = { ...current, updatedAt: ts }; } };
