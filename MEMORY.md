@@ -54,6 +54,12 @@
 
 ## Features Added (최근)
 
+### 비밀번호 초기화·변경 / 일일작업 열 너비 (v3.0.11 이후, 미배포)
+- 비밀번호는 PBKDF2 해시라 조회 불가. 관리자 화면 사용자 행 `비번초기화` → `auth_manager.reset_password()` 가 임시 비밀번호(8자, 헷갈리는 글자 제외) 발급 + `must_change_password=1`. 알림창에 한 번만 보여 준다.
+- 임시 비밀번호로 로그인하면 `authenticate` 응답의 `must_change_password` 로 `openPasswordChange({forced:true})` 가 새 비밀번호를 받을 때까지 앱 진입을 막는다(클라이언트 강제). 본인 변경은 헤더 🔑 → `change_my_password`(대상은 서버 세션 사용자, 클라이언트가 준 아이디 쓰지 않음).
+- 관리자(admin) 계정 행에는 초기화 버튼이 없다(ha_admin 은 설정의 초기 비밀번호). 자동 로그인 토큰은 PC별 파일이라 다른 PC 의 토큰은 초기화로 무효화되지 않는다. 퇴사 처리는 soft delete 라 같은 아이디로 재가입 불가.
+- 일일작업 표 머리글 경계선 드래그로 열 너비 조정(`web/js/col_resize.js`), 더블클릭 = 원래대로, 너비는 PC별 localStorage(`colWidths:<구역id>`).
+
 ### 프로그램 종료 확인
 - 창 닫기(X)/새로고침 때 브라우저 기본 확인창(`beforeunload`, `web/js/app.js`)으로 한 번 더 묻는다. 의도한 새로고침(`auth.js` 클라우드 연결 후 등)은 `allowPageUnload()` 로 건너뜀.
 - 트레이 `종료` 메뉴는 Windows 메시지 상자(`main.py _confirm_exit`, 예/아니오)로 확인. 상자를 띄우지 못하면 종료를 막지 않는다. `main.py` 변경이라 앱 재시작 후 적용.
