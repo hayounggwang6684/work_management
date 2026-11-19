@@ -135,7 +135,8 @@ def authenticate(user_id: str, password: str) -> Dict[str, Any]:
             'tray_mode': bool(result.get('tray_mode', 0)),
             'leave_report_edit': bool(result.get('leave_report_edit', 0)),
             'can_write': bool(result.get('can_write', 0)),
-            'erp_input': bool(result.get('erp_input', 0))
+            'erp_input': bool(result.get('erp_input', 0)),
+            'must_change_password': bool(result.get('must_change_password', 0)),
         }
         # 서버측 세션 기록 — 이후 모든 권한 판정의 유일한 근거
         begin_session(user_payload)
@@ -359,6 +360,34 @@ def admin_update_user_status(user_id: str, status: str, admin_id: str) -> Dict[s
         }
     except Exception as e:
         logger.error(f"사용자 상태 변경 오류: {e}")
+        return {'success': False, 'message': '요청 처리 중 오류가 발생했습니다.'}
+
+
+@eel.expose
+@require('admin')
+def admin_reset_password(user_id: str, admin_id: str) -> Dict[str, Any]:
+    """사용자 비밀번호 초기화 (관리자) — 임시 비밀번호를 발급한다. 사용자는 다음 로그인 때 새 비밀번호를 정해야 한다."""
+    try:
+        temp = auth_manager.reset_password(user_id, (current_user() or {}).get('user_id', ''))
+        if not temp:
+            return {'success': False, 'message': '비밀번호를 초기화하지 못했습니다. 없는 사용자인지 확인하세요.'}
+        return {'success': True, 'temp_password': temp}
+    except Exception as e:
+        logger.error(f"비밀번호 초기화 오류: {e}")
+        return {'success': False, 'message': '요청 처리 중 오류가 발생했습니다.'}
+
+
+@eel.expose
+@require('login')
+def change_my_password(old_password: str, new_password: str) -> Dict[str, Any]:
+    """로그인한 본인의 비밀번호 변경 (대상은 서버 세션의 사용자 — 클라이언트가 보낸 아이디를 쓰지 않는다)"""
+    try:
+        if len(old_password) > 200 or len(new_password) > 200:
+            return {'success': False, 'message': '입력값이 너무 깁니다.'}
+        reason = auth_manager.change_password((current_user() or {}).get('user_id', ''), old_password, new_password)
+        return {'success': not reason, 'message': reason or '비밀번호를 변경했습니다.'}
+    except Exception as e:
+        logger.error(f"비밀번호 변경 오류: {e}")
         return {'success': False, 'message': '요청 처리 중 오류가 발생했습니다.'}
 
 

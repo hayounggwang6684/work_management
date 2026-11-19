@@ -159,6 +159,12 @@ async function handleLogin() {
         if (result.success) {
             currentUser = result.user;
 
+            // 관리자가 임시 비밀번호로 초기화한 계정 — 새 비밀번호를 정해야 앱으로 들어간다
+            if (currentUser.must_change_password) {
+                await openPasswordChange({ forced: true, oldPassword: password });
+                currentUser.must_change_password = false;
+            }
+
             // 자동 로그인 처리
             const rememberCb = document.getElementById('rememberMe');
             if (rememberCb && rememberCb.checked) {
@@ -1635,6 +1641,11 @@ async function loadAllUsers() {
                                 </button>
                             ` : ''}
                             ${user.status !== 'retired' ? `
+                                <button onclick="resetUserPassword('${escapeJs(user.user_id)}')"
+                                        class="px-3 py-1 bg-slate-600 text-white text-sm rounded hover:bg-slate-700"
+                                        title="임시 비밀번호를 발급합니다 (사용자는 다음 로그인 때 새로 정합니다)">
+                                    비번초기화${user.must_change_password ? ' (변경 대기)' : ''}
+                                </button>
                                 <button onclick="deleteUser('${escapeJs(user.user_id)}')"
                                         class="px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700">
                                     퇴사처리
@@ -2844,3 +2855,73 @@ window.addEventListener('DOMContentLoaded', function() {
         checkAutoLogin();
     }
 });
+
+// ============================================================================
+// 비밀번호 초기화(관리자) / 변경(본인)
+// ============================================================================
+
+async function resetUserPassword(userId) {
+    if (!confirm(`${userId} 사용자의 비밀번호를 초기화하시겠습니까?\n임시 비밀번호가 발급되고, 사용자는 다음 로그인 때 새 비밀번호를 정해야 합니다.`)) return;
+    try {
+        const result = await eel.admin_reset_password(userId, currentUser.user_id)();
+        if (result.success) {
+            showCustomAlert('임시 비밀번호', `${userId}\n\n임시 비밀번호: ${result.temp_password}\n\n사용자에게 전달해 주세요. 이 창을 닫으면 다시 볼 수 없습니다.`, 'success');
+            await loadAdminData();
+        } else {
+            showCustomAlert('오류', result.message, 'error');
+        }
+    } catch (error) {
+        console.error('비밀번호 초기화 오류:', error);
+        showCustomAlert('오류', '비밀번호 초기화 중 오류가 발생했습니다.', 'error');
+    }
+}
+
+// 비밀번호 변경 창. forced(임시 비밀번호로 로그인) 이면 취소할 수 없고, oldPassword 는 방금 로그인에 쓴 값을 쓴다.
+// 변경에 성공하면 resolve 한다 (취소하면 resolve 하지 않고 창만 닫힌다 — forced 가 아닐 때만).
+function openPasswordChange({ forced = false, oldPassword = '' } = {}) {
+    return new Promise(resolve => {
+        const FIELD = 'w-full px-3 py-2 border border-slate-300 rounded-lg mb-3';
+        const overlay = document.createElement('div');
+        overlay.className = 'fixed inset-0 z-[10000] bg-black/50 flex items-center justify-center';
+        overlay.innerHTML = `
+            <div class="bg-white rounded-xl shadow-xl p-6 w-full max-w-sm">
+                <h3 class="text-lg font-bold mb-1">${forced ? '새 비밀번호를 정해 주세요' : '비밀번호 변경'}</h3>
+                ${forced ? '<p class="text-sm text-slate-500 mb-3">관리자가 비밀번호를 초기화했습니다. 새 비밀번호를 정하면 계속 사용할 수 있습니다.</p>' : ''}
+                ${forced ? '' : `<input id="pwOld" type="password" class="${FIELD}" placeholder="현재 비밀번호" autocomplete="current-password">`}
+                <input id="pwNew" type="password" class="${FIELD}" placeholder="새 비밀번호 (4자 이상)" autocomplete="new-password">
+                <input id="pwNew2" type="password" class="${FIELD}" placeholder="새 비밀번호 확인" autocomplete="new-password">
+                <p id="pwMsg" class="text-sm text-red-600 h-5 mb-2"></p>
+                <div class="flex justify-end gap-2">
+                    ${forced ? '' : '<button id="pwCancel" class="px-4 py-2 rounded-lg bg-slate-200">취소</button>'}
+                    <button id="pwOk" class="px-4 py-2 rounded-lg bg-blue-600 text-white">변경</button>
+                </div>
+            </div>`;
+        document.body.appendChild(overlay);
+        const $ = id => overlay.querySelector('#' + id);
+        const say = text => { $('pwMsg').textContent = text; };
+        const close = () => overlay.remove();
+        (forced ? $('pwNew') : $('pwOld')).focus();
+
+        $('pwOk').onclick = async () => {
+            const next = $('pwNew').value;
+            if (next !== $('pwNew2').value) { say('새 비밀번호가 서로 다릅니다.'); return; }
+            const old = forced ? oldPassword : $('pwOld').value;
+            $('pwOk').disabled = true;
+            try {
+                const r = await eel.change_my_password(old, next)();
+                if (!r.success) { say(r.message); return; }
+                close();
+                showToast('비밀번호를 변경했습니다.');
+                resolve(true);
+            } catch (e) {
+                console.error('비밀번호 변경 오류:', e);
+                say('비밀번호를 바꾸지 못했습니다.');
+            } finally {
+                $('pwOk').disabled = false;
+            }
+        };
+        const cancel = $('pwCancel');
+        if (cancel) cancel.onclick = close;
+        overlay.addEventListener('keydown', e => { if (e.key === 'Enter') $('pwOk').click(); });
+    });
+}

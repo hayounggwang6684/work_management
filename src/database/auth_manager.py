@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import random
+import secrets
 import string
 import threading
 from datetime import datetime, timedelta
@@ -99,6 +100,11 @@ class AuthManager:
                     cursor.execute(f'ALTER TABLE auth_users ADD COLUMN {_col} {_defn}')
                 except sqlite3.OperationalError:
                     pass  # 이미 존재
+            # 임시 비밀번호로 초기화된 계정 — 다음 로그인 때 새 비밀번호를 정하게 한다 (0=아님, 1=변경 필요)
+            try:
+                cursor.execute('ALTER TABLE auth_users ADD COLUMN must_change_password INTEGER DEFAULT 0')
+            except sqlite3.OperationalError:
+                pass  # 이미 존재
             # 트레이 모드 컬럼 추가 (0=앱 완전 종료(기본), 1=트레이로 최소화)
             try:
                 cursor.execute('ALTER TABLE auth_users ADD COLUMN tray_mode INTEGER DEFAULT 0')
@@ -206,6 +212,51 @@ class AuthManager:
             return hashlib.sha256(password.encode()).hexdigest() == stored_hash
     
     # =========================================================================
+    # 비밀번호 초기화 / 변경
+    # =========================================================================
+
+    MIN_PASSWORD_LENGTH = 4
+    # 헷갈리는 글자(0 O 1 l I)를 뺀 임시 비밀번호 문자 집합
+    _TEMP_PASSWORD_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789'
+
+    def reset_password(self, user_id: str, admin_id: str) -> Optional[str]:
+        """관리자가 사용자 비밀번호를 임시 비밀번호로 초기화 → 임시 비밀번호 반환 (없는 사용자면 None).
+        원래 비밀번호는 해시라 알 수 없으므로 새로 발급한다. 사용자는 다음 로그인 때 새 비밀번호를 정해야 한다."""
+        temp = ''.join(secrets.choice(self._TEMP_PASSWORD_CHARS) for _ in range(8))
+        try:
+            with self.get_connection() as conn:
+                cur = conn.execute(
+                    'UPDATE auth_users SET password_hash = ?, must_change_password = 1 WHERE user_id = ?',
+                    (self._hash_password(temp), user_id))
+                if cur.rowcount == 0:
+                    return None
+            logger.info(f"비밀번호 초기화: {user_id} by {admin_id}")
+            return temp
+        except Exception as e:
+            logger.error(f"비밀번호 초기화 실패: {e}")
+            return None
+
+    def change_password(self, user_id: str, old_password: str, new_password: str) -> str:
+        """본인 비밀번호 변경. 성공하면 '' , 실패하면 사용자에게 보여 줄 사유를 반환한다."""
+        if len(new_password) < self.MIN_PASSWORD_LENGTH:
+            return f'비밀번호는 {self.MIN_PASSWORD_LENGTH}자 이상이어야 합니다.'
+        if new_password == old_password:
+            return '새 비밀번호가 현재 비밀번호와 같습니다.'
+        try:
+            with self.get_connection() as conn:
+                row = conn.execute('SELECT password_hash FROM auth_users WHERE user_id = ?', (user_id,)).fetchone()
+                if not row or not self._verify_password(old_password, row['password_hash']):
+                    return '현재 비밀번호가 일치하지 않습니다.'
+                conn.execute(
+                    'UPDATE auth_users SET password_hash = ?, must_change_password = 0 WHERE user_id = ?',
+                    (self._hash_password(new_password), user_id))
+            logger.info(f"비밀번호 변경: {user_id}")
+            return ''
+        except Exception as e:
+            logger.error(f"비밀번호 변경 실패: {e}")
+            return '비밀번호를 바꾸지 못했습니다.'
+
+    # =========================================================================
     # 인증 관련 메서드
     # =========================================================================
     
@@ -305,7 +356,7 @@ class AuthManager:
                 try:
                     cursor.execute('''
                         SELECT id, user_id, full_name, role, status, created_at, last_login,
-                               leave_report_edit, can_write, erp_input
+                               leave_report_edit, can_write, erp_input, must_change_password
                         FROM auth_users
                         ORDER BY created_at DESC
                     ''')
