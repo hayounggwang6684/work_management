@@ -95,6 +95,7 @@ const MmPrint = (() => {
         const W = x1 - x0, rowH = geo.hdrRowH || 8.05;
         const fr = v => +(v / 190.2 * W).toFixed(2);                    // 크랭크핀 기준 열 위치를 프레임 폭에 비례
         const cut = [46.3, 82.7, 115.5, 150.8, 169.5, 178.7, 192.4].map(v => v - 10.2);
+        const END = 190.2;                                              // 기준 폭 (cut 은 이 폭 기준이므로 마지막 칸 끝도 END)
         const seg = (a, b) => fr(b - a);
         const row = (top, cells) => gridBox(x0, top, cells.map(c => c.w), [rowH], cells.map((c, i) => ({ r: 0, c: i, content: c.t, style: c.style })));
         const lab = { style: `font-size:9.9pt;` };
@@ -105,14 +106,14 @@ const MmPrint = (() => {
                 { w: seg(0, cut[0]), t: 'WORK NO' }, { w: seg(cut[0], cut[1]), t: header.workNo },
                 { w: seg(cut[1], cut[2]), t: 'INSP. DATE' }, { w: seg(cut[2], cut[3]), t: header.inspDate },
                 { w: seg(cut[3], cut[4]), t: 'BEFORE' }, { w: seg(cut[4], cut[5]), t: phaseMark('before') },
-                { w: seg(cut[5], cut[6]), t: 'AFTER' }, { w: seg(cut[6], W), t: phaseMark('after') }]),
+                { w: seg(cut[5], cut[6]), t: 'AFTER' }, { w: seg(cut[6], END), t: phaseMark('after') }]),
             row(y0 + rowH, [
                 { w: seg(0, cut[0]), t: 'OWNER' }, { w: seg(cut[0], cut[1]), t: header.owner },
                 { w: seg(cut[1], cut[2]), t: 'SHIP NAME' }, { w: seg(cut[2], cut[3]), t: header.shipName },
-                { w: seg(cut[3], cut[5]), t: 'INSP. BY' }, { w: seg(cut[5], W), t: header.inspBy }]),
+                { w: seg(cut[3], cut[5]), t: 'INSP. BY' }, { w: seg(cut[5], END), t: header.inspBy }]),
             row(y0 + rowH * 2, [
                 { w: seg(0, cut[0]), t: 'MAKER/TYPE' }, { w: seg(cut[0], cut[3]), t: marker },
-                { w: seg(cut[3], cut[5]), t: 'APPR. BY' }, { w: seg(cut[5], W), t: header.apprBy }]),
+                { w: seg(cut[3], cut[5]), t: 'APPR. BY' }, { w: seg(cut[5], END), t: header.apprBy }]),
         ];
         return [
             abs(`left:0;right:0;top:${geo.titleTop}mm;text-align:center;font-size:14.8pt;text-decoration:underline;line-height:6mm;font-family:${GOTHIC}`, form.title),
