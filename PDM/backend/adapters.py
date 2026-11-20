@@ -5,6 +5,7 @@
     check_access  (tier) -> Optional[str]   권한 등급(guest/login/write/admin) 판정. 거부 사유 문장, 허용이면 None
     work_db_path  () -> Path   작업현황 DB (읽기 전용으로만 연다)
     pdm_db_path   () -> Path   PDM 전용 DB (pdm.db)
+    report_error  (caption, file_name, data) -> dict   PDF 읽기 오류 보고(파일 첨부) 전송 — {'success': bool, 'message': str}. 없으면 보고 기능 없음
 환경변수 PDM_DB_PATH / PDM_WORK_DB_PATH 는 훅보다 우선한다 (테스트/개발용). 훅이 없으면 거부가 기본이며 PDM_DEV_MODE=1 또는 enable_dev_mode() 로만 연다.
 """
 import os
@@ -51,6 +52,14 @@ def check_access(tier: str) -> Optional[str]:
     if hook:
         return hook(tier)
     return None if _dev_mode else '권한 판정이 설정되지 않아 요청을 처리할 수 없습니다.'
+
+
+def send_error_report(caption: str, file_name: str, data: bytes) -> Dict[str, Any]:
+    """PDF 읽기 오류와 PDF 를 관리자에게 보낸다 (본체가 훅으로 연결). 사용자가 팝업에서 [보내기]를 눌렀을 때만 부른다."""
+    hook = _hooks.get('report_error')
+    if not hook:
+        return {'success': False, 'message': '오류 보고 기능이 연결되어 있지 않습니다.'}
+    return hook(caption, file_name, data)
 
 
 def can_manage_templates(user: Optional[Dict[str, Any]] = None) -> bool:

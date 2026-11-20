@@ -5,16 +5,22 @@ PDM 은 본체를 import 하지 않는다. 대신 PDM.backend.adapters 의 훅�
     - 현재 사용자 / 권한 판정 → 서버 세션(permissions.py). JS 가 넘기는 값은 신뢰하지 않는다
     - 작업현황 DB / pdm.db 경로 → 본체 설정(config.db_path). pdm.db 는 본체 DB 와 같은 폴더
 """
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from PDM.backend import adapters
 from ..utils.config import config
+from ..utils.telegram_notifier import telegram_notifier
 from . import permissions
 
 
 def _check_access(tier: str) -> Optional[str]:
     denial = permissions.access_denial(tier)
     return denial[1] if denial else None
+
+
+def _report_error(caption: str, file_name: str, data: bytes) -> Dict[str, Any]:
+    """PDF 읽기 오류 보고 → 텔레그램이 연결된 관리자에게 (사용자가 팝업에서 보내기를 눌렀을 때만 호출된다)."""
+    return telegram_notifier.send_document_to_admins(file_name, data, caption)
 
 
 def install() -> None:
@@ -24,4 +30,5 @@ def install() -> None:
         check_access=_check_access,
         work_db_path=lambda: config.db_path,
         pdm_db_path=lambda: config.db_path.parent / 'pdm.db',
+        report_error=_report_error,
     )

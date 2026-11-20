@@ -90,6 +90,9 @@ function showMainApp() {
 
     // 자동 로그인 만료 임박 알림
     _showAutoLoginExpiryBanner();
+
+    // 승선신고서 만료 임박 알림 (쓰기 권한자만, 오늘 그만 보기 가능)
+    if (typeof checkBoardingExpiryAlerts === 'function') checkBoardingExpiryAlerts();
 }
 
 /**
@@ -1903,6 +1906,8 @@ async function loadAdminSettings() {
 
             // 현재 경로 표시
             document.getElementById('currentDbPath').textContent = paths.local_db_path || '설정 안됨';
+            document.getElementById('currentPdmDbPath').textContent = paths.pdm_db_path || '-';
+            document.getElementById('currentCustomsDir').textContent = paths.customs_dir || '-';
             document.getElementById('currentCloudPath').textContent = paths.cloud_sync_path || '설정 안됨';
             document.getElementById('currentBackupPath').textContent = paths.backup_path || '설정 안됨';
 
@@ -1978,9 +1983,9 @@ async function updateLocalDbPath() {
 
         if (result.success) {
             if (result.used_existing) {
-                showCustomAlert('완료', '대상 경로에 기존 DB 파일이 있어 그대로 사용합니다.\n현재 PC의 데이터는 복사되지 않습니다.\n\n프로그램을 재시작하면 해당 DB로 연결됩니다.', 'info');
+                showCustomAlert('완료', '대상 경로에 기존 DB 파일이 있어 그대로 사용합니다.\n' + (result.path || '') + '\n현재 PC의 데이터는 복사되지 않습니다.\n\n프로그램을 재시작하면 해당 DB로 연결됩니다.', 'info');
             } else {
-                showCustomAlert('완료', 'DB 경로가 변경되었습니다.\n\n프로그램을 재시작해주세요.', 'info');
+                showCustomAlert('완료', 'DB 경로가 변경되었습니다.\n' + (result.path || '') + '\n\n프로그램을 재시작해주세요.', 'info');
             }
         } else {
             showCustomAlert('오류', result.message, 'error');

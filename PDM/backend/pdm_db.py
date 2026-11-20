@@ -71,6 +71,20 @@ CREATE TABLE IF NOT EXISTS pdm_orders (
     created_by TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS pdm_customs_files (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    contract_number TEXT NOT NULL COLLATE NOCASE,
+    kind TEXT NOT NULL,
+    file_name TEXT NOT NULL DEFAULT '',
+    stored_path TEXT NOT NULL,
+    size_bytes INTEGER NOT NULL DEFAULT 0,
+    expiry_date TEXT NOT NULL DEFAULT '',
+    lang TEXT NOT NULL DEFAULT '',
+    note TEXT NOT NULL DEFAULT '',
+    uploaded_by TEXT NOT NULL DEFAULT '',
+    uploaded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_pdm_customs_contract ON pdm_customs_files(contract_number, kind);
 CREATE TABLE IF NOT EXISTS pdm_summary_history (
     engine_model TEXT NOT NULL,
     text TEXT NOT NULL,
@@ -98,6 +112,12 @@ class PdmDb:
     @staticmethod
     def _migrate(conn: sqlite3.Connection) -> None:
         """기존 pdm.db 에 없는 열을 추가한다. is_private: 1 이면 작성자(created_by)에게만 보이는 임시 문서 (기존 문서는 0 = 공개)."""
+        customs_columns = {r['name'] for r in conn.execute('PRAGMA table_info(pdm_customs_files)')}
+        if 'lang' not in customs_columns:                      # 소견서의 국문/영문 구분 (v3.1 이전에 만든 pdm.db 에는 없음)
+            try:
+                conn.execute("ALTER TABLE pdm_customs_files ADD COLUMN lang TEXT NOT NULL DEFAULT ''")
+            except sqlite3.OperationalError:
+                pass
         columns = {r['name'] for r in conn.execute('PRAGMA table_info(pdm_documents)')}
         if 'is_private' not in columns:
             try:
@@ -158,6 +178,16 @@ class PdmDb:
             params.append(doc_type)
         with self.connect() as conn:
             rows = conn.execute(sql + ' ORDER BY updated_at DESC, id DESC', params).fetchall()
+        return [_doc_row(r) for r in rows]
+
+    def search_documents(self, doc_type: str, query: str, viewer: str, exclude_id: int = 0, limit: int = 50) -> List[Dict[str, Any]]:
+        """불러오기용 문서 검색: 같은 종류의 문서를 계약번호/선박/파일 이름 부분일치로 (최근 수정 순). 남의 임시 문서는 제외."""
+        like = '%' + (query or '').strip().replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_') + '%'
+        with self.connect() as conn:
+            rows = conn.execute(
+                'SELECT * FROM pdm_documents WHERE doc_type = ? AND id != ? AND (is_private = 0 OR created_by = ?) '
+                "AND (contract_number LIKE ? ESCAPE '\\' OR ship_name LIKE ? ESCAPE '\\' OR title LIKE ? ESCAPE '\\') "
+                'ORDER BY updated_at DESC, id DESC LIMIT ?', (doc_type, exclude_id, viewer, like, like, like, limit)).fetchall()
         return [_doc_row(r) for r in rows]
 
     def update_document(self, doc_id: int, expected_updated_at: str, title: str,

@@ -385,6 +385,30 @@ class TelegramNotifier:
             logger.error(f"텔레그램 메시지 전송 오류: {e}")
         return None
 
+    def send_document_to_admins(self, file_name: str, data: bytes, caption: str) -> Dict[str, Any]:
+        """텔레그램이 연결된 관리자에게 파일(PDF 등)과 설명을 보낸다. {'success', 'message', 'sent'} — 연결된 관리자가 없으면 실패로 알린다."""
+        from ..database.auth_manager import auth_manager
+        if not self.enabled or not self.bot_token:
+            return {'success': False, 'message': '텔레그램 봇이 설정되어 있지 않습니다.', 'sent': 0}
+        chat_ids = auth_manager.get_admin_telegram_chat_ids()
+        if not chat_ids:
+            return {'success': False, 'message': '텔레그램이 연결된 관리자가 없어 보내지 못했습니다. 관리자 계정에서 텔레그램 연결을 먼저 해 주세요.', 'sent': 0}
+        sent = 0
+        url = f"https://api.telegram.org/bot{self.bot_token}/sendDocument"
+        for chat_id in chat_ids:
+            try:
+                resp = requests.post(url, data={'chat_id': chat_id, 'caption': caption[:1000]},
+                                     files={'document': (file_name, data, 'application/pdf')}, timeout=60)
+                if resp.status_code == 200 and resp.json().get('ok'):
+                    sent += 1
+                else:
+                    logger.error(f"텔레그램 파일 전송 실패: {resp.status_code} - {resp.text[:200]}")
+            except Exception as e:
+                logger.error(f"텔레그램 파일 전송 오류: {e}")
+        if not sent:
+            return {'success': False, 'message': '텔레그램으로 보내지 못했습니다. 네트워크를 확인해 주세요.', 'sent': 0}
+        return {'success': True, 'message': '관리자에게 보냈습니다.', 'sent': sent}
+
     def send_daily_summary(self, date: str):
         """당일 작업 현황 요약을 연결된 모든 사용자에게 발송"""
         if not self.enabled or not self.bot_token:

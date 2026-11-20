@@ -6,7 +6,7 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
-    <title>금일작업현황 관리 - 로그인</title>
+    <title>통합업무관리 - 로그인</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
     <!-- 스플래시: head에서 가장 먼저 로드 (body 파싱 전에 실행 준비) -->
@@ -37,7 +37,7 @@
 
         <!-- 로고 / 타이틀 -->
         <div class="mb-10 text-center">
-            <h1 class="text-4xl font-bold text-white tracking-wide">금일작업현황 관리</h1>
+            <h1 class="text-4xl font-bold text-white tracking-wide">통합업무관리</h1>
             <p class="text-blue-300 mt-2 text-sm tracking-widest">WORK MANAGEMENT SYSTEM</p>
         </div>
 
@@ -67,7 +67,7 @@
         <div class="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full">
             <div class="text-center mb-8">
                 <img src="assets/logo_login.png" alt="Logo" class="mx-auto mb-4 h-24 w-auto">
-                <h1 class="text-3xl font-bold text-slate-800 mb-2">금일작업현황 관리</h1>
+                <h1 class="text-3xl font-bold text-slate-800 mb-2">통합업무관리</h1>
                 <p class="text-slate-600">Work Management System</p>
             </div>
             
@@ -156,24 +156,20 @@
     <div id="mainApp" class="hidden">
         <!-- 기존 작업 관리 화면 -->
         <header class="bg-white shadow-md sticky top-0 z-50">
-            <div class="container mx-auto px-6 py-3 flex flex-wrap justify-between items-center gap-x-4 gap-y-2">
+            <div class="w-full px-4 py-3 flex flex-wrap justify-between items-center gap-x-4 gap-y-2">
                 <div class="flex items-baseline gap-2 whitespace-nowrap">
-                    <h1 class="text-2xl font-bold whitespace-nowrap">금일작업현황 관리</h1>
+                    <h1 class="text-2xl font-bold whitespace-nowrap">통합업무관리</h1>
                     <span id="appVersionBadge" class="text-xs text-slate-400 font-normal">v-.-.-</span>
                 </div>
                 <div class="flex flex-wrap items-center justify-end gap-2 [&_button]:whitespace-nowrap">
                     <button onclick="showView('dashboard')" id="btnDashboard" 
                             class="px-4 py-2 rounded-lg bg-blue-600 text-white">대시보드</button>
-                    <button onclick="showView('daily')" id="btnDaily" 
-                            class="px-4 py-2 rounded-lg bg-slate-200">일일 작업</button>
-                    <button onclick="showView('report')" id="btnReport" 
-                            class="px-4 py-2 rounded-lg bg-slate-200">보고서</button>
-                    <button onclick="showView('search')" id="btnSearch"
-                            class="px-4 py-2 rounded-lg bg-slate-200">조회</button>
-                    <button onclick="showView('projects')" id="btnProjects"
-                            class="px-4 py-2 rounded-lg bg-slate-200">레포트관리</button>
+                    <button onclick="showGroup('work')" id="btnGroupWork"
+                            class="px-4 py-2 rounded-lg bg-slate-200">작업현황</button>
+                    <button onclick="showGroup('docs')" id="btnGroupDocs"
+                            class="px-4 py-2 rounded-lg bg-slate-200">문서관리</button>
                     <button onclick="showView('employee')" id="btnEmployee"
-                            class="px-4 py-2 rounded-lg bg-slate-200">직원 관리</button>
+                            class="px-4 py-2 rounded-lg bg-slate-200">직원관리</button>
                     <span id="currentUser" class="font-medium whitespace-nowrap"></span>
                     <button onclick="showView('settings')" id="btnSettings"
                             class="px-4 py-2 bg-slate-200 rounded-lg">설정</button>
@@ -209,7 +205,24 @@
                     class="px-3 py-1 bg-slate-500 hover:bg-slate-400 rounded text-white text-xs font-medium">← 관리자 페이지로 돌아가기</button>
         </div>
 
-        <main class="container mx-auto px-6 py-8">
+        <div class="w-full px-4 py-4 flex flex-col md:flex-row md:items-start gap-4 md:gap-4">
+            <!-- 사이드바: 작업현황/문서관리 하위 메뉴 (대시보드·직원관리·설정에서는 숨김) -->
+            <aside id="sideNav" class="hidden md:w-40 md:shrink-0 md:sticky md:top-20">
+                <nav id="sideNavWork" class="hidden flex md:flex-col gap-1 overflow-x-auto [&_button]:whitespace-nowrap [&_button]:text-left">
+                    <button onclick="showView('daily')" id="btnDaily" class="px-4 py-2 rounded-lg bg-slate-200">일일 작업</button>
+                    <button onclick="showView('report')" id="btnReport" class="px-4 py-2 rounded-lg bg-slate-200">보고서</button>
+                    <button onclick="showView('search')" id="btnSearch" class="px-4 py-2 rounded-lg bg-slate-200">조회</button>
+                </nav>
+                <nav id="sideNavDocs" class="hidden flex md:flex-col gap-1 overflow-x-auto [&_button]:whitespace-nowrap [&_button]:text-left">
+                    <button onclick="showView('projects')" id="btnProjects" class="px-4 py-2 rounded-lg bg-slate-200">통합조회</button>
+                    <button onclick="showView('docSR')" id="btnDocSR" class="px-4 py-2 rounded-lg bg-slate-200">서비스레포트</button>
+                    <button onclick="showView('docMM')" id="btnDocMM" class="px-4 py-2 rounded-lg bg-slate-200">계측지</button>
+                    <button onclick="showView('docPA')" id="btnDocPA" class="px-4 py-2 rounded-lg bg-slate-200">부품사진첩</button>
+                    <button onclick="showView('docCustoms')" id="btnDocCustoms" class="px-4 py-2 rounded-lg bg-slate-200">세관서류</button>
+                    <button onclick="showView('docOpinion')" id="btnDocOpinion" class="px-4 py-2 rounded-lg bg-slate-200">소견서</button>
+                </nav>
+            </aside>
+        <main class="flex-1 min-w-0">
             <!-- 일일 작업 화면 -->
             <div id="dailyView">
                 <!-- 주간/야간 서브탭 -->
@@ -433,6 +446,7 @@
 
             <!-- 레포트관리 화면 (PDM: 기간별 공사 목록 → 서비스레포트/계측지). 처음 열 때 pdm/ 스크립트를 불러와 채운다 -->
             <div id="projectsView" class="hidden"></div>
+
 
             <!-- 직원 관리 화면 -->
             <div id="employeeView" class="hidden">
@@ -1157,6 +1171,7 @@
                 </div>
             </div>
         </main>
+        </div>
     </div>
 
     <!-- 관리자 페이지 -->
@@ -1243,11 +1258,13 @@
                         <label class="block text-sm font-semibold mb-2 text-blue-900">로컬 DB 경로</label>
                         <div class="mb-2">
                             <p class="text-sm text-blue-800">현재 경로: <span id="currentDbPath" class="font-mono text-blue-600">-</span></p>
+                            <p class="text-xs text-blue-800 mt-1">문서 DB(pdm.db): <span id="currentPdmDbPath" class="font-mono text-blue-600">-</span></p>
+                            <p class="text-xs text-blue-800">세관서류 PDF 폴더: <span id="currentCustomsDir" class="font-mono text-blue-600">-</span></p>
                         </div>
                         <div class="flex gap-2">
                             <input type="text" id="dbPath"
                                    class="flex-1 px-4 py-2 border rounded-lg"
-                                   placeholder="예: C:\WorkManagement\data\work_management.db">
+                                   placeholder="폴더 또는 파일 경로 (예: D:\db 또는 D:\db\work_management.db)">
                             <button onclick="selectDbPath()" 
                                     class="px-4 py-2 bg-slate-600 text-white rounded-lg hover:bg-slate-700">
                                 경로 선택
@@ -1258,7 +1275,7 @@
                             </button>
                         </div>
                         <p class="text-xs text-blue-700 mt-2">
-                            ⚠️ 기존 DB 파일이 새 위치로 복사됩니다. 변경 후 프로그램을 재시작하세요.
+                            ⚠️ 폴더를 입력하면 그 폴더 안의 work_management.db 를 씁니다. pdm.db 와 세관서류 폴더도 같은 위치에 만들어집니다. 기존 DB 파일이 새 위치로 복사되며, 변경 후 프로그램을 재시작하세요.
                         </p>
                     </div>
 
@@ -1852,13 +1869,14 @@
     <!-- 중요: eel.js를 먼저 로드 -->
     <script type="text/javascript" src="/eel.js"></script>
     <!-- 그 다음 app.js 로드 (버전 파라미터로 캐시 방지) -->
-    <script src="js/auth.js?v=3.0.13"></script>
-    <script src="js/app.js?v=3.0.13"></script>
-    <script src="js/report.js?v=3.0.13"></script>
-    <script src="js/update.js?v=3.0.13"></script>
-    <script src="js/col_resize.js?v=3.0.13"></script>
-    <script src="js/projects_tab.js?v=3.0.13"></script>
-    <script src="pdm/pdm_loader.js?v=3.0.13"></script>
+    <script src="js/auth.js?v=3.1.0"></script>
+    <script src="js/app.js?v=3.1.0"></script>
+    <script src="js/report.js?v=3.1.0"></script>
+    <script src="js/update.js?v=3.1.0"></script>
+    <script src="js/col_resize.js?v=3.1.0"></script>
+    <script src="js/boarding_alert.js?v=3.1.0"></script>
+    <script src="js/projects_tab.js?v=3.1.0"></script>
+    <script src="pdm/pdm_loader.js?v=3.1.0"></script>
 
     <script>
         // eel이 준비되면 스플래시 닫기

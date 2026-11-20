@@ -65,3 +65,12 @@ test('sortProjects: 부품사진첩 건수로 정렬', () => {
     const mk = (cn, n) => ({ contractNumber: cn, docs: { serviceReport: 0, measurement: 0, photoAlbum: n }, daysInRange: 0 });
     assert.deepEqual(L.sortProjects([mk('A', 1), mk('B', 3), mk('C', 2)], 'photoAlbum', 'desc').map(p => p.contractNumber), ['B', 'C', 'A']);
 });
+
+test('세관서류 종류별 건수로 정렬하고, customs 가 없는 응답도 0 으로 본다', () => {
+    const mk = (cn, counts) => ({ contractNumber: cn, docs: { serviceReport: 0, measurement: 0, photoAlbum: 0 }, daysInRange: 1, ...(counts ? { customs: { counts } } : {}) });
+    const list = [mk('B', { boarding: 2, loading: 9 }), mk('A', null), mk('C', { boarding: 5 })];
+    assert.deepEqual(L.sortProjects(list, 'cBoarding', 'desc').map(p => p.contractNumber), ['C', 'B', 'A']);
+    assert.deepEqual(L.sortProjects(list, 'cBoarding', 'asc').map(p => p.contractNumber), ['A', 'B', 'C']);
+    assert.deepEqual(L.sortProjects(list, 'cLoading', 'desc').map(p => p.contractNumber), ['B', 'A', 'C']);        // 같은 값(0)은 계약번호 순
+    assert.deepEqual(L.sortProjects(list, 'cSupplies', 'asc').map(p => p.contractNumber), ['A', 'B', 'C']);
+});

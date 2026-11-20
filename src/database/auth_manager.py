@@ -718,6 +718,21 @@ class AuthManager:
             logger.error(f"텔레그램 쓰기권한 사용자 목록 조회 실패: {e}")
             return []
 
+    def get_admin_telegram_chat_ids(self) -> List[str]:
+        """텔레그램이 연결된 관리자(admin) 계정의 chat_id 목록 — PDF 읽기 오류 보고 수신자."""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT telegram_chat_id FROM auth_users
+                    WHERE role = 'admin' AND telegram_chat_id IS NOT NULL AND telegram_chat_id != ''
+                      AND COALESCE(status, 'active') IN ('active', 'approved')
+                ''')
+                return [row['telegram_chat_id'] for row in cursor.fetchall()]
+        except Exception as e:
+            logger.error(f"관리자 chat_id 조회 실패: {e}")
+            return []
+
     def get_user_by_chat_id(self, chat_id: int) -> Optional[Dict[str, Any]]:
         """chat_id로 사용자 조회"""
         try:

@@ -7,17 +7,23 @@ const ProjectsView = (() => {
     const STORAGE_KEY = 'pdmProjectsFilter';
     const PRESETS = [['thisMonth', '이번 달'], ['lastMonth', '지난 달'], ['last3Months', '최근 3개월'], ['thisYear', '올해']];
     const COLUMNS = [
-        ['contractNumber', '계약번호', 'w-36 font-mono'], ['shipName', '선박', 'w-36'], ['company', '업체', ''],
-        ['engineModel', '엔진', 'w-36'], ['lastDate', '작업 기간', 'w-44'], ['daysInRange', '작업일', 'w-16 text-right'],
-        ['serviceReport', '서비스레포트', 'w-24 text-center'], ['measurement', '계측지', 'w-20 text-center'], ['photoAlbum', '부품사진첩', 'w-24 text-center'],
+        ['contractNumber', '계약번호', 'w-36 font-mono'], ['shipName', '선박', 'w-32'], ['company', '업체', ''],
+        ['engineModel', '엔진', 'w-32'], ['lastDate', '작업 기간', 'w-40'], ['daysInRange', '작업일', 'w-14 text-right'],
+        ['serviceReport', 'Service\nreport', 'w-20 text-center'], ['measurement', '계측지', 'w-16 text-center'], ['photoAlbum', '부품\n사진첩', 'w-16 text-center'],
+        ['cBoarding', '승선', 'w-14 text-center'], ['boardingExpiry', '승선\n만료일', 'w-24 text-center'],
+        ['cUnloading', '하선', 'w-14 text-center'], ['cLoading', '적재', 'w-14 text-center'], ['cSupplies', '선용품', 'w-16 text-center'],
     ];
+    const WIDTHS_KEY = 'pdmProjectsColWidths';
     let hasQueried = false;       // 한 번이라도 조회했으면, 편집 화면에서 돌아왔을 때 같은 조건으로 다시 조회한다 (문서 건수 갱신)
 
     const load = () => { try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null'); } catch (_) { return null; } };
     const save = state => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (_) { /* 저장 불가 환경 */ } };
 
     // options: {onMenu(x, y, contractNumber, project), onOpen(contractNumber, x, y), onNew()}
-    function create({ onMenu, onOpen, onNew }) {
+    // onSelect(p): 행을 고르면(클릭/우클릭/더블클릭) 알린다. selected: 처음부터 고른 상태로 보여 줄 주문
+    function create({ onMenu, onOpen, onNew, onSelect = () => {}, selected = null }) {
+        let selectedCn = selected ? selected.contractNumber : '';
+        const rowByContract = new Map();
         const state = { ...ProjectsLogic.presetRange('thisMonth'), query: '', onlyUnwritten: false, sortKey: 'lastDate', sortDir: 'desc', ...(load() || {}) };
         let projects = [];
         const info = h('span', { class: 'text-sm text-slate-500' });
@@ -29,33 +35,54 @@ const ProjectsView = (() => {
         const queryInput = h('input', { class: 'border rounded px-2 py-1 text-sm w-56', placeholder: '계약번호 / 선박 / 업체', value: state.query });
         const unwritten = h('input', { type: 'checkbox', checked: state.onlyUnwritten });
 
+        const table = h('table', { class: 'w-full min-w-[1100px] table-fixed text-left' }, h('thead', {}, headRow), body);
+        const decorateHead = ColWidths.create(table, WIDTHS_KEY);
+        const customsCount = (p, kind) => ((p.customs || {}).counts || {})[kind] || 0;
+
+        // 행 강조만 바꾼다 (표를 다시 그리면 더블클릭이 끊긴다)
+        function select(p) {
+            rowByContract.get(selectedCn)?.classList.remove('bg-sky-100');
+            selectedCn = p.contractNumber;
+            rowByContract.get(selectedCn)?.classList.add('bg-sky-100');
+            onSelect(p);
+        }
+
         const badge = n => h('span', { class: n ? 'px-2 rounded-full bg-emerald-100 text-emerald-700 text-xs' : 'text-slate-300' }, n ? String(n) : '—');
 
         function paintHead() {
             headRow.replaceChildren(...COLUMNS.map(([key, label, cls]) => h('th', {
-                class: `px-2 py-1 text-xs font-normal text-slate-500 cursor-pointer select-none hover:text-slate-800 ${cls}`,
+                class: `px-2 py-1 text-xs font-normal text-slate-500 cursor-pointer select-none hover:text-slate-800 whitespace-pre-line leading-tight align-bottom ${cls}`,
                 onclick: () => { state.sortDir = state.sortKey === key && state.sortDir === 'asc' ? 'desc' : 'asc'; state.sortKey = key; save(state); paint(); },
             }, label + (state.sortKey === key ? (state.sortDir === 'asc' ? ' ▲' : ' ▼') : ''))));
+            decorateHead(headRow);
         }
 
         function paint() {
             paintHead();
             const rows = ProjectsLogic.sortProjects(ProjectsLogic.filterUnwritten(projects, state.onlyUnwritten), state.sortKey, state.sortDir);
             info.textContent = `${rows.length}건` + (rows.length !== projects.length ? ` (전체 ${projects.length}건 중)` : '');
+            rowByContract.clear();
             const empty = hasQueried ? '조건에 맞는 공사/주문이 없습니다.' : '기간과 검색어를 정하고 [조회]를 눌러 주세요.';
             body.replaceChildren(...(rows.length ? rows.map(row) : [h('tr', {}, h('td', { colspan: COLUMNS.length, class: 'text-center text-sm text-slate-400 py-8' }, empty))]));
         }
 
         function row(p) {
-            const tr = h('tr', { class: 'border-t hover:bg-sky-50 cursor-context-menu text-sm', title: '우클릭: 서비스레포트 / 계측지 / 부품사진첩 · 더블클릭: 서비스레포트 열기' },
+            const tr = h('tr', { class: 'border-t hover:bg-sky-50 cursor-context-menu text-sm', title: '클릭: 주문 선택 · 우클릭: 문서 메뉴 · 더블클릭: 서비스레포트' },
                 h('td', { class: 'px-2 py-1.5 font-mono' }, p.contractNumber, ...(p.standalone ? [h('span', { class: 'ml-1 px-1 rounded bg-amber-100 text-amber-700 text-xs font-sans', title: '판매용으로 등록한 주문 (작업현황에 공사 없음)' }, '판매')] : [])),
                 h('td', { class: 'px-2' }, p.shipName), h('td', { class: 'px-2 truncate max-w-0' }, p.company), h('td', { class: 'px-2' }, p.engineModel),
                 h('td', { class: 'px-2 text-slate-600' }, ProjectsLogic.periodText(p.firstDate, p.lastDate)),
                 h('td', { class: 'px-2 text-right text-slate-600' }, String(p.daysInRange)),
                 h('td', { class: 'px-2 text-center' }, badge(p.docs.serviceReport)), h('td', { class: 'px-2 text-center' }, badge(p.docs.measurement)),
-                h('td', { class: 'px-2 text-center' }, badge(p.docs.photoAlbum)));
-            tr.addEventListener('contextmenu', e => { e.preventDefault(); onMenu(e.clientX, e.clientY, p.contractNumber, p); });
-            tr.addEventListener('dblclick', e => onOpen(p.contractNumber, e.clientX, e.clientY));
+                h('td', { class: 'px-2 text-center' }, badge(p.docs.photoAlbum)),
+                h('td', { class: 'px-2 text-center' }, badge(customsCount(p, 'boarding'))),
+                h('td', { class: 'px-2 text-center text-slate-600' }, p.boardingExpiry || h('span', { class: 'text-slate-300' }, '—')),
+                h('td', { class: 'px-2 text-center' }, badge(customsCount(p, 'unloading'))), h('td', { class: 'px-2 text-center' }, badge(customsCount(p, 'loading'))),
+                h('td', { class: 'px-2 text-center' }, badge(customsCount(p, 'ship_supplies'))));
+            rowByContract.set(p.contractNumber, tr);
+            if (p.contractNumber === selectedCn) tr.classList.add('bg-sky-100');
+            tr.addEventListener('click', () => select(p));
+            tr.addEventListener('contextmenu', e => { e.preventDefault(); select(p); onMenu(e.clientX, e.clientY, p.contractNumber, p); });
+            tr.addEventListener('dblclick', e => { select(p); onOpen(p.contractNumber, e.clientX, e.clientY, p); });
             return tr;
         }
 
@@ -89,7 +116,7 @@ const ProjectsView = (() => {
                 h('button', { class: 'px-4 py-1 rounded bg-blue-600 text-white text-sm', onclick: refresh }, '조회'),
                 h('button', { class: 'px-4 py-1 rounded bg-emerald-600 text-white text-sm', title: '작업현황에 공사가 없는 판매용 주문 등록 + 표지 포함 부품사진첩', onclick: () => onNew() }, '신규'),
                 h('label', { class: 'text-sm ml-2' }, unwritten, ' 서비스레포트 미작성만'), info),
-            h('table', { class: 'w-full table-fixed text-left' }, h('thead', {}, headRow), body));
+            h('div', { class: 'overflow-x-auto' }, table));
         if (hasQueried) refresh(); else paint();
         return { el, refresh };
     }

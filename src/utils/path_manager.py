@@ -52,7 +52,8 @@ class PathManager:
         import json
         
         try:
-            new_path = Path(new_path)
+            from .settings_manager import normalize_db_path
+            new_path = normalize_db_path(new_path, config.get('database.filename', 'work_management.db'))
             
             # 경로 유효성 검사
             if not new_path.parent.exists():

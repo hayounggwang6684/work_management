@@ -25,17 +25,23 @@ function openAdminReportTab() {
     return _pdmAdminMounting;
 }
 
-function openProjectsTab() {
+// 사이드바에서 다른 문서 종류로 옮길 때, 작성 중인 문서 화면이 있으면 닫아도 되는지 묻는다
+function pdmConfirmFilterChange(docType) {
+    if (!_pdmMounted || !PDM.isEditing() || PDM.currentFilter() === docType) return true;
+    return confirm('작성 중인 문서를 닫고 목록으로 이동합니다.\n저장하지 않은 내용은 사라집니다. 이동할까요?');
+}
+
+function openProjectsTab(docType = null) {
     const el = document.getElementById('projectsView');
     if (!el) return Promise.resolve();
     if (_pdmMounted) {
-        PDM.show();                           // 이미 열려 있으면 목록(문서 건수)만 갱신
+        PDM.show(docType);                    // 이미 열려 있으면 목록(문서 건수)만 갱신
         return Promise.resolve();
     }
     if (!_pdmMounting) {
         el.textContent = '불러오는 중…';
         _pdmMounting = PdmLoader.load()
-            .then(() => PDM.mount(el))
+            .then(() => PDM.mount(el, docType, type => showView(FILTER_VIEW[String(type)])))
             .then(() => { _pdmMounted = true; })
             .catch(e => {                     // 실패하면 다음에 탭을 열 때 다시 시도한다
                 console.error('레포트관리 로드 실패:', e);

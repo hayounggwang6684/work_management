@@ -17,8 +17,11 @@ const ProjectsLogic = (() => {
         }
     }
 
+    const CUSTOMS_SORT = { cBoarding: 'boarding', cUnloading: 'unloading', cLoading: 'loading', cSupplies: 'ship_supplies' };      // 세관서류 열 → 종류
+
     // 정렬 키 → 값. 문서 건수는 숫자, 나머지는 문자열.
     const sortValue = (p, key) => (key === 'serviceReport' ? p.docs.serviceReport : key === 'measurement' ? p.docs.measurement : key === 'photoAlbum' ? p.docs.photoAlbum
+        : key in CUSTOMS_SORT ? (((p.customs || {}).counts || {})[CUSTOMS_SORT[key]] || 0)
         : key === 'daysInRange' ? p.daysInRange : String(p[key] ?? ''));
 
     // 새 배열 반환 (원본 불변). 같은 값이면 계약번호 순으로 안정 정렬.

@@ -7,8 +7,8 @@
 // 의존: dom.js(h), print_view.js(PrintView), eel
 const EditorBar = (() => {
     let active = null;       // 지금 열려 있는 편집기 바 — 본체 상단 저장 버튼이 이 문서를 저장한다
-    // options: {doc, onBack, getHeader() → header, maxWidthClass}
-    function create({ doc, onBack, getHeader, maxWidthClass = 'max-w-3xl' }) {
+    // options: {doc, onBack, getHeader() → header, maxWidthClass, onReload() — 있으면 [불러오기] 버튼을 보인다 (가져온 뒤 편집기를 다시 그림)}
+    function create({ doc, onBack, getHeader, maxWidthClass = 'max-w-3xl', onReload = null }) {
         let current = doc;
         const status = h('span', { class: 'text-sm text-slate-500' });
         const titleInput = h('input', {
@@ -53,6 +53,8 @@ const EditorBar = (() => {
             status.textContent = '엑셀 파일을 받았습니다: ' + r.filename;
         };
 
+        const importBtn = h('button', { class: 'inline-flex items-center justify-center w-9 h-9 rounded text-lg leading-none whitespace-nowrap bg-violet-600 text-white', title: '다른 주문의 같은 문서에서 내용(사진 포함)을 불러오기 — 주문 정보는 가져오지 않습니다', 'aria-label': '불러오기',
+            onclick: () => ImportDialog.open({ doc: current, getUpdatedAt: () => current.updatedAt, onDone: onReload }) }, '📥');
         const draftBtn = h('button', { class: 'inline-flex items-center justify-center w-9 h-9 rounded text-lg leading-none whitespace-nowrap bg-amber-500 text-white', title: '임시 저장 — 다른 사용자에게는 보이지 않게 작성자만 볼 수 있도록 저장합니다', 'aria-label': '임시 저장', onclick: () => save(true) }, '📝');
         const saveBtn = h('button', { class: 'inline-flex items-center justify-center w-9 h-9 rounded text-lg leading-none whitespace-nowrap bg-blue-600 text-white', 'aria-label': '저장', onclick: () => save(false) }, '💾');
         const badge = h('span', { class: 'px-2 py-0.5 rounded bg-amber-100 text-amber-800 text-xs whitespace-nowrap', title: '[저장]을 누르면 다른 사용자에게도 공개됩니다' }, '🔒 임시 (작성자만)');
@@ -67,6 +69,7 @@ const EditorBar = (() => {
             h('button', { class: 'inline-flex items-center justify-center w-9 h-9 rounded text-lg leading-none whitespace-nowrap bg-slate-200', title: '목록으로', 'aria-label': '목록', onclick: onBack }, '←'),
             titleInput,
             badge, draftBtn, saveBtn,
+            ...(onReload ? [importBtn] : []),
             ...(window.PDM_EMBEDDED ? [h('span', { class: 'text-xs text-slate-500 whitespace-nowrap', title: '본체 상단의 💾 저장 버튼 또는 Ctrl+S' }, '저장: 상단 💾 (Ctrl+S)')] : []),
             h('button', { class: 'inline-flex items-center justify-center w-9 h-9 rounded text-lg leading-none whitespace-nowrap bg-emerald-600 text-white', title: '인쇄 / PDF', 'aria-label': '인쇄 / PDF', onclick: print }, '🖨'),
             h('button', { class: 'inline-flex items-center justify-center w-9 h-9 rounded text-lg leading-none whitespace-nowrap bg-green-800 text-white', title: '엑셀(.xlsx) 파일로 받기', 'aria-label': '엑셀', onclick: toExcel }, '📊'),

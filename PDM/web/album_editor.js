@@ -74,7 +74,7 @@ const AlbumEditor = (() => {
             photosBox);
 
         const bar = EditorBar.create({
-            doc, onBack,
+            doc, onBack, onReload: () => render(container, docId, onBack),
             getHeader: () => ({ ...header, pageTitles: grid.getPageTitles(), photosPerPage: perPage }),
         });
         container.replaceChildren(bar.el, root);

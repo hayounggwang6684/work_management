@@ -161,7 +161,7 @@ const MmEditor = (() => {
         if (!res.success || !tpl.success) { container.replaceChildren(h('p', { class: 'text-red-600' }, res.message || tpl.message)); return; }
         const templates = tpl.forms, byId = Object.fromEntries(templates.map(t => [t.id, t]));
         const header = structuredClone(res.document.header);        // 편집 작업 복사본 (저장 전까지 서버와 분리)
-        const bar = EditorBar.create({ doc: res.document, onBack, getHeader: () => header, maxWidthClass: 'max-w-5xl' });
+        const bar = EditorBar.create({ doc: res.document, onBack, getHeader: () => header, maxWidthClass: 'max-w-5xl', onReload: () => render(container, docId, onBack) });
         const formsEl = h('div', { class: 'space-y-4' });
         const selectorEl = h('div', { class: 'space-y-1' });
 

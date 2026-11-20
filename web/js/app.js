@@ -47,63 +47,69 @@ const koreanToEnglish = {
 // 화면 전환 (일일 작업 / 보고서)
 // ============================================================================
 
+// 상단 그룹 → 사이드바 하위 화면. 대시보드/직원관리/설정은 그룹 없음(사이드바 숨김).
+const VIEW_GROUP = { daily: 'work', report: 'work', search: 'work', projects: 'docs',
+                     docSR: 'docs', docMM: 'docs', docPA: 'docs', docCustoms: 'docs', docOpinion: 'docs' };
+// 문서관리 사이드바 → PDM 화면 종류 (null = 통합조회 목록). 종류 화면은 통합조회에서 고른 주문의 문서를 다룬다
+const DOC_FILTER = { projects: null, docSR: 'service_report', docMM: 'measurement', docPA: 'photo_album', docCustoms: 'customs', docOpinion: 'opinion' };
+const FILTER_VIEW = Object.fromEntries(Object.entries(DOC_FILTER).map(([view, f]) => [String(f), view]));   // 문서 종류 → 화면 키 (null → 'projects')
+const _lastViewOfGroup = { work: 'daily', docs: 'projects' };
+const VIEW_BUTTON = { dashboard: 'btnDashboard', daily: 'btnDaily', report: 'btnReport', search: 'btnSearch',
+                      projects: 'btnProjects', docSR: 'btnDocSR', docMM: 'btnDocMM', docPA: 'btnDocPA',
+                      docCustoms: 'btnDocCustoms', docOpinion: 'btnDocOpinion', employee: 'btnEmployee', settings: 'btnSettings' };
+const VIEW_PANEL = { dashboard: 'dashboardView', daily: 'dailyView', report: 'reportView', search: 'searchView',
+                     projects: 'projectsView', docSR: 'projectsView', docMM: 'projectsView', docPA: 'projectsView',
+                     docCustoms: 'projectsView', docOpinion: 'projectsView',
+                     employee: 'employeeView', settings: 'settingsView' };
+
+function _setActive(el, on) {
+    if (!el) return;
+    el.classList.toggle('bg-blue-600', on);
+    el.classList.toggle('text-white', on);
+    el.classList.toggle('bg-slate-200', !on);
+}
+
+// 상단 "작업현황"/"문서관리" 버튼: 그 그룹에서 마지막으로 보던 화면으로 간다
+function showGroup(group) {
+    showView(_lastViewOfGroup[group] || (group === 'docs' ? 'projects' : 'daily'));
+}
+
 function showView(view) {
     if (view !== 'daily' && !checkUnsavedChanges('any')) return;
-    const btnDaily = document.getElementById('btnDaily');
-    const btnReport = document.getElementById('btnReport');
-    const btnSearch = document.getElementById('btnSearch');
-    const btnDashboard = document.getElementById('btnDashboard');
-    const btnSettings = document.getElementById('btnSettings');
-    const dailyView = document.getElementById('dailyView');
-    const reportView = document.getElementById('reportView');
-    const searchView = document.getElementById('searchView');
-    const dashboardView = document.getElementById('dashboardView');
-    const settingsView  = document.getElementById('settingsView');
-    const btnEmployee    = document.getElementById('btnEmployee');
-    const employeeView   = document.getElementById('employeeView');
-    const btnProjects    = document.getElementById('btnProjects');
-    const projectsView   = document.getElementById('projectsView');
+    if (!VIEW_PANEL[view] || !document.getElementById(VIEW_PANEL[view])) return;
+    if (view in DOC_FILTER && !pdmConfirmFilterChange(DOC_FILTER[view])) return;   // 작성 중인 문서가 있으면 확인
 
-    if (!btnDaily || !btnReport || !dailyView || !reportView) return;
+    const group = VIEW_GROUP[view] || '';
+    if (group) _lastViewOfGroup[group] = view;
 
-    // 모든 버튼 초기화
-    btnDaily.className = 'px-4 py-2 rounded-lg bg-slate-200';
-    btnReport.className = 'px-4 py-2 rounded-lg bg-slate-200';
-    if (btnSearch)    btnSearch.className    = 'px-4 py-2 rounded-lg bg-slate-200';
-    if (btnDashboard) btnDashboard.className = 'px-4 py-2 rounded-lg bg-slate-200';
-    if (btnSettings)  btnSettings.className  = 'px-4 py-2 rounded-lg bg-slate-200';
-    if (btnEmployee)  btnEmployee.className  = 'px-4 py-2 rounded-lg bg-slate-200';
-    if (btnProjects)  btnProjects.className  = 'px-4 py-2 rounded-lg bg-slate-200';
+    // 버튼 강조: 화면 버튼(사이드바 포함) + 상단 그룹 버튼
+    Object.entries(VIEW_BUTTON).forEach(([key, id]) => _setActive(document.getElementById(id), key === view));
+    _setActive(document.getElementById('btnGroupWork'), group === 'work');
+    _setActive(document.getElementById('btnGroupDocs'), group === 'docs');
 
-    // 모든 뷰 숨기기
-    dailyView.classList.add('hidden');
-    reportView.classList.add('hidden');
-    if (searchView)   searchView.classList.add('hidden');
-    if (dashboardView) dashboardView.classList.add('hidden');
-    if (settingsView)  settingsView.classList.add('hidden');
-    if (employeeView)  employeeView.classList.add('hidden');
-    if (projectsView)  projectsView.classList.add('hidden');
+    // 사이드바: 그룹이 있을 때만 보이고, 그 그룹의 메뉴만 보인다
+    const sideNav = document.getElementById('sideNav');
+    if (sideNav) sideNav.classList.toggle('hidden', !group);
+    const navWork = document.getElementById('sideNavWork');
+    const navDocs = document.getElementById('sideNavDocs');
+    if (navWork) navWork.classList.toggle('hidden', group !== 'work');
+    if (navDocs) navDocs.classList.toggle('hidden', group !== 'docs');
 
-    // 선택된 뷰 표시
+    // 모든 화면 숨기고 선택한 화면만 표시
+    const activeId = VIEW_PANEL[view];
+    new Set(Object.values(VIEW_PANEL)).forEach(id => {
+        const panel = document.getElementById(id);
+        if (panel) panel.classList.toggle('hidden', id !== activeId);
+    });
+
     if (view === 'dashboard') {
-        if (btnDashboard) btnDashboard.className = 'px-4 py-2 rounded-lg bg-blue-600 text-white';
-        if (dashboardView) dashboardView.classList.remove('hidden');
         showDashboardTab('chart');
-    } else if (view === 'daily') {
-        btnDaily.className = 'px-4 py-2 rounded-lg bg-blue-600 text-white';
-        dailyView.classList.remove('hidden');
     } else if (view === 'report') {
-        btnReport.className = 'px-4 py-2 rounded-lg bg-blue-600 text-white';
-        reportView.classList.remove('hidden');
         showReportTab('daily');
     } else if (view === 'search') {
-        if (btnSearch) btnSearch.className = 'px-4 py-2 rounded-lg bg-blue-600 text-white';
-        if (searchView) searchView.classList.remove('hidden');
         showSearchTab('status');
         initSearchTabDefaults();
     } else if (view === 'settings') {
-        if (btnSettings) btnSettings.className = 'px-4 py-2 rounded-lg bg-blue-600 text-white';
-        if (settingsView) settingsView.classList.remove('hidden');
         loadUserSettings();
         // ERP 입력 탭 버튼 — erp_input 권한 또는 admin인 경우에만 표시
         const erpTabBtn = document.getElementById('btnSettingsErp');
@@ -112,13 +118,9 @@ function showView(view) {
                 !currentUser?.erp_input && currentUser?.role !== 'admin');
         }
         showSettingsTab('userSettings'); // 기본 탭: 사용자 설정
-    } else if (view === 'projects') {
-        if (btnProjects) btnProjects.className = 'px-4 py-2 rounded-lg bg-blue-600 text-white';
-        if (projectsView) projectsView.classList.remove('hidden');
-        openProjectsTab();   // js/projects_tab.js — PDM 레포트관리
+    } else if (view in DOC_FILTER) {
+        openProjectsTab(DOC_FILTER[view]);   // js/projects_tab.js — PDM 통합조회 (문서 종류 필터)
     } else if (view === 'employee') {
-        if (btnEmployee) btnEmployee.className = 'px-4 py-2 rounded-lg bg-blue-600 text-white';
-        if (employeeView) employeeView.classList.remove('hidden');
         showEmployeeTab('leave');
         loadLeaveEmployeeList();
     }

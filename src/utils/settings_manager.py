@@ -8,6 +8,21 @@ from ..utils.logger import logger
 from ..utils.config import config
 
 
+DB_FILE_SUFFIXES = ('.db', '.sqlite', '.sqlite3')
+
+
+def normalize_db_path(raw: str, filename: str = 'work_management.db') -> Path:
+    """사용자가 입력한 DB 위치 → DB 파일 경로.
+
+    폴더 경로(이미 있는 폴더이거나 .db 확장자가 없는 경로)가 오면 그 폴더 안의 filename 으로 본다.
+    예전에는 폴더를 그대로 파일로 취급해 parent 가 저장 위치가 되어, DB 와 pdm.db 가 한 단계 위 폴더에 만들어졌다.
+    """
+    path = Path((raw or '').strip().strip('"').strip("'"))
+    if path.is_dir() or path.suffix.lower() not in DB_FILE_SUFFIXES:
+        return path / filename
+    return path
+
+
 class SettingsManager:
     """설정 관리 클래스"""
     
@@ -22,12 +37,14 @@ class SettingsManager:
             'cloud_sync_path': config.get('database.cloud_path', ''),
             'backup_path': config.get('database.backup_path', ''),
             'cloud_sync_enabled': config.get('database.cloud_sync_enabled', False),
+            'pdm_db_path': str(config.db_path.parent / 'pdm.db'),            # 문서(서비스레포트 등) DB — 작업 DB 와 같은 폴더
+            'customs_dir': str(config.db_path.parent / 'customs'),           # 세관서류 PDF 저장 폴더
         }
     
     def update_local_db_path(self, new_path: str) -> Dict[str, Any]:
         """로컬 DB 경로 변경"""
         try:
-            new_path = Path(new_path)
+            new_path = normalize_db_path(new_path, config.get('database.filename', 'work_management.db'))
             current_path = Path(config.db_path)
 
             # 새 경로 디렉토리 생성
@@ -39,8 +56,9 @@ class SettingsManager:
                 self._update_config_file('database.local_path', str(new_path.parent))
                 return {
                     'success': True,
-                    'message': '대상 경로에 기존 DB 파일이 있어 그대로 사용합니다. 프로그램을 재시작하세요.',
-                    'used_existing': True
+                    'message': f'대상 경로에 기존 DB 파일이 있어 그대로 사용합니다: {new_path} 프로그램을 재시작하세요.',
+                    'used_existing': True,
+                    'path': str(new_path)
                 }
 
             # 대상에 파일 없음 → 현재 DB를 새 경로로 복사
@@ -54,8 +72,9 @@ class SettingsManager:
 
             return {
                 'success': True,
-                'message': 'DB 경로가 변경되었습니다. 프로그램을 재시작하세요.',
-                'used_existing': False
+                'message': f'DB 경로가 변경되었습니다: {new_path} 프로그램을 재시작하세요.',
+                'used_existing': False,
+                'path': str(new_path)
             }
 
         except Exception as e:

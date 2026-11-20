@@ -42,3 +42,6 @@ pyinstaller>=6.0.0
 pytest>=7.4.0
 black>=23.0.0
 flake8>=6.1.0
+
+# Customs documents (read expiry date from boarding-report PDF)
+pypdf>=4.0

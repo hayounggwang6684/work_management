@@ -54,6 +54,23 @@
 
 ## Features Added (최근)
 
+### 통합업무관리 개편 1단계 (v3.0.13 이후, 미배포 — feat/tier-redesign)
+
+- 제목 "금일작업현황 관리" → "통합업무관리" (index.html 로그인 화면·헤더·창 제목만. 트레이/설치파일/config app.name 은 그대로)
+- 상단: 대시보드 / 작업현황 / 문서관리 / 직원관리 / 사용자이름 / 설정 / 저장 … 로그아웃. 작업현황·문서관리는 `showGroup()` 으로 마지막에 보던 하위 화면에 진입
+- 좌측 사이드바(`#sideNav`): 작업현황 = 일일 작업·보고서·조회, 문서관리 = 통합조회(기존 레포트관리). 대시보드·직원관리·설정에서는 숨김, md 미만 폭에서는 가로 탭
+- `showView(view)` 는 view 키(daily/report/search/projects/…)와 버튼 id(btnDaily 등)를 그대로 유지. 매핑은 app.js 의 VIEW_GROUP/VIEW_BUTTON/VIEW_PANEL
+- 2~3단계: 문서관리 사이드바 = 통합조회/서비스레포트/계측지/부품사진첩/세관서류/소견서. 앞 4개는 같은 #projectsView 목록(해당 문서가 1건 이상인 공사만 필터, `PDM.show(docType)`·`ProjectsView.create({docType})`), 세관서류·소견서는 `#docsPlaceholderView` "준비 중". 작성 중 문서가 있으면 다른 종류로 옮길 때 `pdmConfirmFilterChange` 확인
+- 세관서류 백엔드(1~2단계 완료): `PDM/backend/customs.py`(저장소: PDF를 `<pdm.db 폴더>\customs\<연도>\<계약번호>\` 파일로 저장, 메타는 `pdm_customs_files`), `customs_api.py`(@guarded: 목록·다운로드 login / 올리기·삭제 write, 삭제는 올린 사람·관리자만 — `pdm_customs_*`), `customs_pdf.py`(pypdf 로 승선신고서 "승선기간 … ~ 끝날짜" → 만료일 자동 입력, 실패 시 빈 값). 종류 4개: boarding/loading/unloading/ship_supplies. 공사(작업현황 계약번호) 없는 서류는 거부. **pypdf 를 설치파일 build_embedded 에도 포함해야 함 (requirements.txt 에 추가됨)**
+- 3단계 완료: 문서관리 > 세관서류 = 통합조회와 같은 목록(`filter==="customs"`, 필터 없음)에서 행 더블클릭/우클릭 "세관서류…" → `PDM/web/customs_view.js`(종류별 올리기·보기·인쇄·다운로드·삭제, 승선신고서는 올릴 때 만료일 확인 창). 통합조회 열 추가: 승선 만료일(`boardingExpiry`), 세관서류 건수(`customs`) — `pdm_list_projects` 가 `customs`/`boardingExpiry` 를 돌려줌. 목록 머리글 경계선 드래그 너비 조정 = `PDM/web/col_widths.js` (localStorage `pdmProjectsColWidths`, 더블클릭 초기화, 표 min-w 1250px)
+- 4단계 완료: 승선신고서 만료 알림 — 로그인 직후(`showMainApp`) 쓰기 권한자(게스트 제외)에게 팝업 `web/js/boarding_alert.js`. 대상 = 승선신고서의 공사별 가장 늦은 만료일이 오늘+3일 이내(지난 것 포함)이고 준공 전. 서버 `src/web/boarding_alert_api.py` `get_boarding_expiry_alerts`(@require write) + 순수 로직 `src/business/boarding_alerts.py`. 준공 판정은 대시보드 보드와 같은 규칙 `src/business/project_status.py resolve_status`(수동 project_status > board_projects > 자동: 마지막 작업일이 7일 넘으면 준공) — api.py 보드 코드도 이 함수를 쓰도록 바꿈. "오늘 그만 보기" = localStorage `boardingAlertSnooze:<user_id>`=오늘 날짜. 관리자 페이지(showAdminApp)에는 뜨지 않음
+- UI 재구성(구동 테스트 피드백 반영): 통합조회에서 주문을 고르면(클릭=선택 강조, 우클릭 메뉴, 더블클릭=서비스레포트) 우클릭 메뉴 선택이 사이드바 해당 종류 화면으로 이동해 그 주문의 문서를 편집(`PDM.goToType`, pending 동작). 종류 화면(서비스레포트/계측지/부품사진첩/세관서류/소견서)은 고른 주문이 없으면 "통합조회에서 주문을 선택해 주세요" 안내만 표시. 편집 후 돌아오면 그 종류 화면의 문서 목록. 소견서 = 준비 중 화면(통합조회 헤더에는 소견서 열 없음). 통합조회 헤더: Service/report, 계측지, 부품/사진첩, 승선, 승선/만료일, 하선, 적재, 선용품 (세관서류 4열). 레이아웃 전체 너비(container 제거), 사이드바 좌측 끝
+- 5단계 완료: DB 저장 위치 변경 버그 수정 — `settings_manager.normalize_db_path`: 폴더(이미 있는 폴더 / .db 확장자 없음)를 입력하면 `폴더\work_management.db` 로 보고 그 폴더를 `database.local_path` 로 저장(예전엔 폴더의 parent 가 저장되어 작업 DB·pdm.db 가 한 단계 위에 생김). 관리자 > 저장 위치 설정에 pdm.db 위치·세관서류 폴더 표시 추가. 이미 잘못 잡힌 PC 는 자동 이전하지 않음(DB 이동은 수동)
+- 소견서 = 엑셀에서 작성해 PDF 로 업로드(국문/영문 구분 `lang`, 세관서류와 같은 customs 저장소·`CustomsView.OPINION`). 입력폼/공문 양식은 만들지 않음(사진이 들어가면 양식이 달라져서). 샘플 3개(SJJH-0827/소견/1118 ANIVA)는 공문 형식: 문서번호 SJJH-MMDD(발행일), 수신/참조/발신/제목 ↔ Date/Doc.No/To/CC/From/Title
+- 불러오기(📥, 편집기 상단): `PDM/backend/import_doc.py`/`import_api.py`(`pdm_search_import_sources`, `pdm_import_document`) + `PDM/web/import_dialog.js`. 서비스레포트: subject/summary/remark/pageTitles/photosPerPage + 사진(원본·축소본·캡션·칸) 복사, 주문 정보(선박·IMO·엔진·S/N·주문번호·고객사·요청자·장소·기간·작성일·작성자)는 현재 문서 유지. 부품사진첩: pageTitles/photosPerPage/indexLines+사진. 계측지: forms 만. 충돌은 낙관적 잠금(expected_updated_at)
+- PDF 업로드(📤, 서비스레포트/부품사진첩 종류 화면): `PDM/backend/pdf_import.py`(pypdf 좌표로 헤더 칸·요약·비고·사진 칸 번호·캡션 복원 — 이 앱이 만든 PDF 만) + `import_api.pdm_import_pdf`(작성자 전용 임시 문서로 생성, 주문번호는 올린 주문 것, 실패 시 문서 삭제·recognitionError) + `PDM/web/pdf_upload.js`. 계측지 PDF 읽기는 미지원(2차). 읽기 실패 팝업에서 사용자가 [관리자에게 보내기]를 눌러야만 `adapters.send_error_report` → `telegram_notifier.send_document_to_admins`(텔레그램이 연결된 role=admin 계정 전원)로 오류+PDF 전송
+- 남은 일: 설치파일에 pypdf 포함(build_embedded), 소견서(샘플 후), 연도별 pdm.db 저장 설계, 회사 PC pdm.db 위치 확인 결과 반영
+
 ### 비밀번호 초기화·변경 / 일일작업 열 너비 (v3.0.11 이후, 미배포)
 - 비밀번호는 PBKDF2 해시라 조회 불가. 관리자 화면 사용자 행 `비번초기화` → `auth_manager.reset_password()` 가 임시 비밀번호(8자, 헷갈리는 글자 제외) 발급 + `must_change_password=1`. 알림창에 한 번만 보여 준다.
 - 임시 비밀번호로 로그인하면 `authenticate` 응답의 `must_change_password` 로 `openPasswordChange({forced:true})` 가 새 비밀번호를 받을 때까지 앱 진입을 막는다(클라이언트 강제). 본인 변경은 헤더 🔑 → `change_my_password`(대상은 서버 세션 사용자, 클라이언트가 준 아이디 쓰지 않음).

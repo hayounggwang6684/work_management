@@ -43,6 +43,16 @@ class PhotoStore:
                 'VALUES (?,?,?,?,?,?)', (doc_id, slot_index, img.image, img.thumb, img.width, img.height))
             return int(cur.lastrowid)
 
+    def replace_with_copy(self, source_doc_id: int, target_doc_id: int) -> int:
+        """target 의 사진을 모두 지우고 source 의 사진(원본/축소본/캡션/칸 번호 포함)을 그대로 복사한다. 복사한 장수를 돌려준다. 한 트랜잭션."""
+        with self._tx() as conn:
+            conn.execute('DELETE FROM pdm_photos WHERE doc_id=?', (target_doc_id,))
+            cur = conn.execute(
+                'INSERT INTO pdm_photos (doc_id, page_group, slot_index, caption, image_blob, thumb_blob, original_blob, width, height) '
+                'SELECT ?, page_group, slot_index, caption, image_blob, thumb_blob, original_blob, width, height FROM pdm_photos WHERE doc_id=?',
+                (target_doc_id, source_doc_id))
+            return int(cur.rowcount)
+
     def list_photos(self, doc_id: int) -> List[Dict[str, Any]]:
         with self.db.connect() as conn:
             rows = conn.execute(

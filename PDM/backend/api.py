@@ -12,7 +12,7 @@ import eel
 from PDM.backend.guard import guarded
 from PDM.backend import adapters
 from PDM.backend.naming import default_title
-from PDM.backend import export_api, measurement, photo_album, photo_api, settings_api, standards, standards_api  # noqa: F401  (photo/settings/standards/export_api: @eel.expose 등록)
+from PDM.backend import customs_api, export_api, import_api, measurement, photo_album, photo_api, settings_api, standards, standards_api  # noqa: F401  (customs/photo/settings/standards/export_api: @eel.expose 등록)
 from PDM.backend.pdm_db import ConflictError
 from PDM.backend.runtime import fail as _fail, get_db
 from PDM.backend.service_report import build_header, normalize_header as normalize_service_report_header
@@ -68,9 +68,13 @@ def pdm_list_projects(start: str, end: str, query: str = '') -> Dict[str, Any]:
         projects = adapters.list_projects(start, end, query)
         projects += _standalone_rows(start, end, query, {p['contractNumber'].upper() for p in projects})
         counts = get_db().document_counts([p['contractNumber'] for p in projects], _viewer())
+        customs = customs_api.get_store().summary_for([p['contractNumber'] for p in projects])
         for p in projects:
             c = counts.get(p['contractNumber'], {})
             p['docs'] = {'serviceReport': c.get('service_report', 0), 'measurement': c.get('measurement', 0), 'photoAlbum': c.get('photo_album', 0)}
+            cu = customs.get(p['contractNumber'].upper(), {})
+            p['customs'] = {'counts': cu.get('counts', {}), 'total': cu.get('total', 0)}
+            p['boardingExpiry'] = cu.get('boardingExpiry', '')
         return {'success': True, 'projects': projects}
     except ValueError as e:
         return _fail(str(e))

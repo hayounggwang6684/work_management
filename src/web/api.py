@@ -13,6 +13,7 @@ from .permissions import (
     current_user, is_guest, is_authenticated,
 )
 from ..business.work_record_service import work_record_service
+from ..business.project_status import AUTO_CLOSE_DAYS, resolve_status
 from ..business.calculations import separate_workers, split_manpower_by_type, calculate_record_manpower
 from ..database.db_manager import db
 from ..database.auth_manager import auth_manager
@@ -456,6 +457,8 @@ def admin_get_paths(admin_id: str = '') -> Dict[str, Any]:
             'success': True,
             'paths': {
                 'local_db_path': settings.get('local_db_path', ''),
+                'pdm_db_path': settings.get('pdm_db_path', ''),
+                'customs_dir': settings.get('customs_dir', ''),
                 'cloud_sync_path': settings.get('cloud_sync_path', ''),
                 'backup_path': settings.get('backup_path', '')
             }
@@ -5238,7 +5241,7 @@ def get_kanban_data() -> Dict[str, Any]:
         from datetime import datetime, timedelta
 
         now = datetime.now()
-        cutoff = (now - timedelta(days=7)).strftime('%Y-%m-%d')
+        cutoff = (now - timedelta(days=AUTO_CLOSE_DAYS)).strftime('%Y-%m-%d')
         current_month_start = now.strftime('%Y-%m-01')
 
         # 1. 접수 단계 프로젝트 (board_projects 테이블에서)
@@ -5307,22 +5310,7 @@ def get_kanban_data() -> Dict[str, Any]:
                 board_status = '준공'
 
             # 우선순위: project_status > board_projects > 자동
-            if manual_status and manual_status != 'auto':
-                # 기존 project_status의 값 매핑
-                if manual_status in ('inProgress', '착수'):
-                    final_status = '착수'
-                elif manual_status in ('completed', '준공'):
-                    final_status = '준공'
-                else:
-                    final_status = manual_status
-            elif board_status:
-                final_status = board_status
-            else:
-                # 자동 판단
-                if end_date >= cutoff:
-                    final_status = '착수'
-                else:
-                    final_status = '준공'
+            final_status = resolve_status(manual_status, board_status, end_date, cutoff)   # business/project_status.py
 
             # 마일스톤 데이터 — board_projects에서 계약번호로 매칭
             bp_data = board_started.get(contract_number) or board_done.get(contract_number) or {}
@@ -6643,6 +6631,7 @@ try:
     from . import pdm_bridge
     pdm_bridge.install()
     import PDM.backend.api  # noqa: F401  — @eel.expose pdm_* 함수 등록
+    from . import boarding_alert_api  # noqa: F401  — 승선신고서 만료 알림 (PDM 세관서류 + 작업현황 준공 상태)
 except Exception as _pdm_error:  # noqa: BLE001
     PDM_STATUS = 'error'
     logger.error(f"PDM 모듈 로드 실패 — 레포트관리 기능을 사용할 수 없습니다: {_pdm_error}", exc_info=True)

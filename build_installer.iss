@@ -3,12 +3,12 @@
 
 [Setup]
 AppName=금일작업현황 관리
-AppVersion=3.0.13
+AppVersion=3.1.0
 AppPublisher=Your Company
 DefaultDirName={autopf}\WorkManagement
 DefaultGroupName=금일작업현황 관리
 OutputDir=dist\installer
-OutputBaseFilename=WorkManagement_Setup_v3.0.13
+OutputBaseFilename=WorkManagement_Setup_v3.1.0
 Compression=lzma2/max
 SolidCompression=yes
 ArchitecturesAllowed=x64compatible
@@ -32,6 +32,8 @@ Source: "build_embedded\python\*"; DestDir: "{app}\python"; Flags: ignoreversion
 Source: "build_embedded\app\src\*"; DestDir: "{app}\app\src"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "build_embedded\app\web\*"; DestDir: "{app}\app\web"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "build_embedded\app\PDM\*"; DestDir: "{app}\app\PDM"; Flags: ignoreversion recursesubdirs createallsubdirs
+; PDF 읽기용 pypdf (순수 파이썬 - 패치만 적용한 PC 와 같은 방식으로 앱 폴더에서 불러온다)
+Source: "build_embedded\app\vendor\*"; DestDir: "{app}\app\vendor"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 ; 설정 파일 (최초 설치만 복사, 업데이트 후 사용자 설정 보존)
 ; 운영용 settings.json 은 토큰을 포함할 수 있으므로 설치본에 직접 포함하지 않는다.
